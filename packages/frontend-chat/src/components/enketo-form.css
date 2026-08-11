@@ -1,0 +1,583 @@
+/* ── Enketo-core form styles for AI-MED ─────────────────────────────
+   Uses CSS custom properties defined in style.css.
+   Adapts to light/dark via prefers-color-scheme automatically.
+   ─────────────────────────────────────────────────────────────────── */
+
+/* ── Container ── */
+.native-kobo-form {
+  background: var(--bg-app);
+  color: var(--text-body);
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 24px;
+  font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* ── Main form ── */
+.native-kobo-form .or {
+  max-width: 720px;
+  margin: 0 auto;
+  background: transparent;
+  color: var(--text-body);
+}
+
+/* ── Form title ── */
+.native-kobo-form #form-title {
+  color: var(--text-heading);
+  font-size: 1.4rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+}
+
+/* ── Questions ── */
+.native-kobo-form .question {
+  margin-bottom: 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.native-kobo-form .question:last-child {
+  border-bottom: none;
+}
+
+/* ── Labels ── */
+
+/* Multi-language: hide non-active language labels.
+   enketo-core adds .active to the selected language's [lang] elements;
+   all others must be hidden so only one language shows at a time. */
+.native-kobo-form .question-label[lang]:not(.active),
+.native-kobo-form .option-label[lang]:not(.active),
+.native-kobo-form .or-hint[lang]:not(.active) {
+  display: none;
+}
+
+/* Hide enketo's own language picker — we control language from App.tsx */
+.native-kobo-form #form-languages {
+  display: none;
+}
+
+.native-kobo-form .question-label.active {
+  color: var(--text-heading);
+  font-weight: 500;
+  font-size: 1rem;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.native-kobo-form .or-group > h4,
+.native-kobo-form .or-group-data > h4,
+.native-kobo-form .or-repeat > h4,
+.native-kobo-form legend {
+  color: var(--text-heading);
+  font-weight: 600;
+  font-size: 1.15rem;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Hints ── */
+.native-kobo-form .or-hint.active {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+/* ── Required: hide standalone asterisk span, inject via ::after on label ── */
+.native-kobo-form span.required {
+  display: none;
+}
+
+.native-kobo-form .question:has(> span.required) > .question-label.active::after {
+  content: ' *';
+  color: var(--error);
+}
+
+.native-kobo-form .or-required-msg,
+.native-kobo-form .or-constraint-msg {
+  display: none;
+  color: var(--error);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.native-kobo-form .invalid-required .or-required-msg.active,
+.native-kobo-form .invalid-constraint .or-constraint-msg.active {
+  display: block;
+}
+
+/* ── Itemset template (hidden clone source for dynamic choices) ── */
+.native-kobo-form .itemset-template {
+  display: none !important;
+}
+
+/* ── Itemset labels (enketo stores concatenated option labels here for
+       translation lookup; must be hidden or all labels show as one blob) ── */
+.native-kobo-form .itemset-labels {
+  display: none !important;
+}
+
+/* ── Text inputs, textareas, selects ── */
+.native-kobo-form input[type="text"],
+.native-kobo-form input[type="number"],
+.native-kobo-form input[type="url"],
+.native-kobo-form input[type="email"],
+.native-kobo-form input[type="tel"],
+.native-kobo-form input[type="date"],
+.native-kobo-form input[type="time"],
+.native-kobo-form input[type="datetime-local"],
+.native-kobo-form textarea,
+.native-kobo-form select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-body);
+  border-radius: 4px;
+  padding: 10px 12px;
+  width: 100%;
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.native-kobo-form textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.native-kobo-form input:focus,
+.native-kobo-form textarea:focus,
+.native-kobo-form select:focus {
+  border-color: var(--accent-glow);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+  outline: none;
+}
+
+.native-kobo-form input::placeholder,
+.native-kobo-form textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Readonly / disabled ── */
+.native-kobo-form input[readonly],
+.native-kobo-form textarea[readonly] {
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.native-kobo-form .disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ── Radio buttons and checkboxes ── */
+.native-kobo-form .option-wrapper {
+  margin-top: 6px;
+}
+
+.native-kobo-form .option-wrapper > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-body);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.native-kobo-form .option-wrapper > label:hover {
+  background: var(--bg-card);
+}
+
+.native-kobo-form .option-wrapper input[type="radio"],
+.native-kobo-form .option-wrapper input[type="checkbox"] {
+  accent-color: var(--accent-glow);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.native-kobo-form .option-label.active {
+  color: var(--text-body);
+}
+
+/* ── Toggle appearance: iOS-style yes/no pill ──
+   For select_one yes_no questions with appearance="toggle".
+   Renders the question label on the left and the radio pair as a
+   segmented pill on the right. ── */
+.native-kobo-form .question.or-appearance-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.native-kobo-form .question.or-appearance-toggle > .question-label.active {
+  flex: 1;
+  margin: 0;
+  font-weight: 400;
+}
+
+.native-kobo-form .or-appearance-toggle .option-wrapper {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  margin: 0;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  flex-shrink: 0;
+  width: 200px;
+  box-sizing: border-box;
+}
+
+.native-kobo-form .or-appearance-toggle .option-wrapper > label {
+  flex: 1;
+  padding: 6px 18px;
+  margin: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.native-kobo-form .or-appearance-toggle .option-wrapper > label:hover {
+  background: transparent;
+  color: var(--text-body);
+}
+
+.native-kobo-form .or-appearance-toggle .option-wrapper input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.native-kobo-form .or-appearance-toggle .option-wrapper > label:has(input[type="radio"]:checked) {
+  background: var(--accent-glow);
+  color: var(--bg-deep);
+  font-weight: 600;
+}
+
+/* ── Groups ── */
+.native-kobo-form .or-group,
+.native-kobo-form .or-group-data {
+  margin-bottom: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Non-relevant branches (hidden by skip logic) ──
+   enketo-core marks relevant branches by REMOVING disabled/pre-init classes.
+   So we hide branches that have those classes, not all branches. ── */
+.native-kobo-form .or-branch.disabled,
+.native-kobo-form .or-branch.pre-init {
+  display: none;
+}
+
+/* ── Display-only questions (no user input) ──
+   Covers: XLSForm "note" (.trigger), readonly bind (.readonly),
+   and label-appearance (.or-appearance-label) ── */
+.native-kobo-form .note input,
+.native-kobo-form .note textarea,
+.native-kobo-form .trigger input,
+.native-kobo-form .trigger textarea,
+.native-kobo-form .question.readonly input,
+.native-kobo-form .question.readonly textarea,
+.native-kobo-form .or-appearance-label input,
+.native-kobo-form .or-appearance-label textarea {
+  display: none;
+}
+
+.native-kobo-form .note .question-label.active,
+.native-kobo-form .trigger .question-label.active,
+.native-kobo-form .question.readonly .question-label.active {
+  color: var(--text-body);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.native-kobo-form .note,
+.native-kobo-form .trigger {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
+
+/* ── Links inside form labels (highlight style) ── */
+.native-kobo-form a {
+  color: #1a1a1a;
+  text-decoration: none;
+  background-color: #fbbf24;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  transition: background-color 0.15s;
+}
+.native-kobo-form a:hover {
+  background-color: #f59e0b;
+}
+
+/* ── Validation errors ── */
+.native-kobo-form .invalid-required .question-label,
+.native-kobo-form .invalid-constraint .question-label {
+  color: var(--error);
+}
+
+.native-kobo-form .invalid-required input,
+.native-kobo-form .invalid-required textarea,
+.native-kobo-form .invalid-required select,
+.native-kobo-form .invalid-constraint input,
+.native-kobo-form .invalid-constraint textarea,
+.native-kobo-form .invalid-constraint select {
+  border-color: var(--error);
+}
+
+/* ── Page navigation (multi-page forms) ── */
+.native-kobo-form .pages .or-group:not(.current),
+.native-kobo-form .pages .or-group-data:not(.current) {
+  display: none;
+}
+
+.native-kobo-form .form-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+}
+
+.native-kobo-form .form-footer .btn-page-next,
+.native-kobo-form .form-footer .btn-page-back {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.native-kobo-form .form-footer .btn-page-next:hover,
+.native-kobo-form .form-footer .btn-page-back:hover {
+  background: var(--accent-hover);
+}
+
+/* ── Select widget (enhanced dropdown) ── */
+.native-kobo-form select {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background: var(--bg-input);
+}
+
+/* ── Hidden fields (metadata, calculate, etc.) ── */
+.native-kobo-form .or-appearance-hide,
+.native-kobo-form .calculation,
+.native-kobo-form [data-type-xml="hidden"] {
+  display: none;
+}
+
+/* ── Submit button ── */
+.enketo-submit-bar {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.enketo-submit-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 12px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, sans-serif;
+  transition: background 0.15s;
+}
+
+.enketo-submit-btn:hover {
+  background: var(--accent-hover);
+}
+
+.enketo-submit-btn:disabled {
+  background: var(--border);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* ── Loading / error states ── */
+.enketo-loading,
+.enketo-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  padding: 24px;
+}
+
+.enketo-loading p,
+.enketo-error p {
+  text-align: center;
+}
+
+/* ── Scrollbar ── */
+.native-kobo-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.native-kobo-form::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+
+.native-kobo-form::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* ================================================================= */
+/* Drag-drop allocation widget                                       */
+/* Hides the three source select_one fieldsets and replaces them     */
+/* with a worker-pool-to-task-slot drag-and-drop UI.                 */
+/* ================================================================= */
+
+.dragdrop-source-hidden {
+  display: none !important;
+}
+
+.allocation-dragdrop {
+  margin: 1rem 0 1.5rem;
+  padding: 1rem;
+  background: var(--bg-elevated, #1a1d23);
+  border: 1px solid var(--border, #2a2e36);
+  border-radius: 8px;
+}
+
+.allocation-dragdrop-instructions {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #9ca3af);
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.allocation-pool-row {
+  margin-bottom: 1.25rem;
+}
+
+.allocation-pool-label,
+.allocation-task-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 0.4rem;
+}
+
+.allocation-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 72px;
+  padding: 0.5rem;
+  border: 2px dashed var(--border, #2a2e36);
+  border-radius: 6px;
+  background: var(--bg-app, #0f1114);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.allocation-pool.drag-over {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.allocation-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.allocation-task {
+  display: flex;
+  flex-direction: column;
+}
+
+.allocation-task-slot {
+  min-height: 72px;
+  padding: 0.5rem;
+  border: 2px dashed var(--border, #2a2e36);
+  border-radius: 6px;
+  background: var(--bg-app, #0f1114);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.allocation-task-slot.drag-over {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.allocation-task-slot:not(:empty) {
+  border-style: solid;
+  border-color: #34d399;
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.allocation-worker {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 0.55rem 0.8rem;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  border-radius: 6px;
+  cursor: grab;
+  user-select: none;
+  font-size: 0.85rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  min-width: 140px;
+}
+
+.allocation-worker:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.allocation-worker.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+.allocation-worker-name {
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.allocation-worker-sub {
+  font-size: 0.7rem;
+  opacity: 0.85;
+  margin-top: 0.15rem;
+}

@@ -1,0 +1,16 @@
+{
+  "name": "covid",
+  "title": "Outpatient Evaluation of COVID-19 Symptoms",
+  "templateType": "general-diagnosis",
+  "description": "Adult patient presents to primary care with COVID-19 symptoms confirmed by home rapid antigen test. Covers symptom assessment, risk stratification, Paxlovid eligibility evaluation, isolation guidance, and return-to-work counseling.",
+  "clinicalInvariants": [
+    "Chief complaint: cough, fatigue, and low-grade fever for 4 days with positive home COVID test",
+    "Conditions: mild intermittent asthma (risk factor for severe COVID), seasonal allergies",
+    "Medications: albuterol PRN, cetirizine daily, acetaminophen for current illness",
+    "Vaccination status: up to date including bivalent booster ~8 months ago",
+    "Clinical findings: SpO2 97% on room air, temp 100.2F, lungs clear, mild pharyngeal erythema",
+    "Assessment: mild-moderate COVID-19 with asthma as risk factor for complications",
+    "Management: assess Paxlovid eligibility, symptomatic care, isolation guidance, return-to-work documentation, asthma action plan",
+    "Provider questions and SP responses remain substantively identical across all variants"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "_comment": "Synthetic demo project UI strings. The consentParagraphs below are a PLACEHOLDER for a demo that enrolls nobody. They are not approved consent text and must not be copied into a project that collects data from real participants. See CREATING-A-PROJECT.md.",
+  "languages": [
+    { "code": "en", "name": "English" }
+  ],
+  "ui": {
+    "en": {
+      "welcome": {
+        "title": "AI-MED Core Demo",
+        "subtitle": "A synthetic scenario for checking that your installation works",
+        "instructionsLead": "Before you begin, read the following:",
+        "howItWorks": "How it works:",
+        "bullets": [
+          "You will interview a digital standardized patient (DSP) played by a language model",
+          "Ask questions about symptoms, history, and exposure, as you would in a consultation",
+          "Request examinations and tests from your nursing team when you want them",
+          "The patient and the case are entirely invented for software testing",
+          "There is no correct diagnosis, no score, and no time limit"
+        ],
+        "disclaimer": "This is a synthetic training exercise using AI. The patient does not exist and the case is fabricated. Nothing here is medical advice. Do not enter personal or sensitive data.",
+        "consentHeading": "Demo Notice",
+        "consentParagraphs": [
+          "This is a software demonstration, not a research study. No one is being enrolled and no consent is being sought.",
+          "The conversation you have on this screen is stored as a transcript by the application you are running, on infrastructure you control.",
+          "A real project MUST replace this notice with its own informed consent text, approved by the IRB or ethics committee that oversees it. Do not field a study using this text.",
+          "For guidance on supplying your own consent text, see CREATING-A-PROJECT.md in this repository."
+        ],
+        "getStarted": "Start the demo",
+        "languageLabel": "Language"
+      },
+      "chat": {
+        "headerTitle": "Patient Interview (Demo)",
+        "scenarioDescription": "Scenario: you are seeing a patient who has come to your clinic with a three-day history of elbow discomfort. Ask whatever you would normally ask, or request an examination from your nursing team.",
+        "inputPlaceholder": "Type your question here...",
+        "send": "Send",
+        "loadingForm": "Loading...",
+        "submittedTitle": "Submitted successfully",
+        "loadingNext": "Loading next scenario...",
+        "thanksTitle": "Thank you!",
+        "nextCase": "Next case",
+        "endThankYouMessage": "That is the end of the demo. Your installation is working. You can close this page.",
+        "patientMode": "Patient",
+        "diagnosis": "About",
+        "submitForm": "Submit",
+        "submittingForm": "Submitting...",
+        "formTitle": "Demo"
+      },
+      "feedback": {
+        "loading": "Analyzing your interview...",
+        "loadingDetail": "This will take just a few seconds",
+        "explored": "Topics you explored well:",
+        "continue": "Continue"
+      }
+    }
+  }
+}

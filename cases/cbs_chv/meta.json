@@ -1,0 +1,17 @@
+{
+  "name": "cbs_chv",
+  "title": "Community-Based Surveillance: CHV Signal Detection and Reporting",
+  "templateType": "general-diagnosis",
+  "description": "A Community Health Volunteer detects and investigates a cluster of acute watery diarrhoea across two villages, gathers information from key informants and affected households, records findings in a CHV notebook, and reports the signal to a local-level supervisor.",
+  "clinicalInvariants": [
+    "Disease pattern: cluster of acute watery diarrhoea with vomiting across two neighbouring villages within one week",
+    "Affected population: approximately 10 people (adults and children) in Village A lower area and Village C near river",
+    "Timeline: first cases Friday, signal detected Monday, three days of illness",
+    "Severity: at least one severely dehydrated elderly man (sunken eyes, not urinating, cannot stand)",
+    "Common exposures: shared open well near river (Village A), burial gathering with food and water (Village C)",
+    "No recent travel outside the area for affected households",
+    "CBS signal met: two or more persons with similar severe signs/symptoms in same community within one week",
+    "Key informant network: market vendor (Mama Asha), religious leader (Imam Karim), school teacher (Teacher Daniel)",
+    "Supervisor: Mr. Musa at health post in Village B"
+  ]
+}

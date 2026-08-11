@@ -1,0 +1,104 @@
+{
+  "_comment": "Language localization template for AI-MED projects. Copy to projects/{slug}/languages.json and customize. All sections (welcome, chat, feedback) are required. Add submitForm, submittingForm, loadingDetail, and continue fields if missing from existing projects.",
+  "languages": [
+    { "code": "en", "name": "English" },
+    { "code": "th", "name": "ไทย" }
+  ],
+  "ui": {
+    "en": {
+      "welcome": {
+        "title": "Accelerating Improvement in Medical Education and Delivery (AI-MED)",
+        "subtitle": "Practice your diagnostic skills with digital standardized patient (DSP) interviews",
+        "instructionsLead": "Please read the following instructions before you begin:",
+        "howItWorks": "How it works:",
+        "bullets": [
+          "You will interview a digital standardized patient (DSP)",
+          "Ask questions to gather information about symptoms, history, and exposure",
+          "Request clinical examinations and tests as needed from your nursing team",
+          "Complete the diagnostic assessment form based on your findings",
+          "The application will roleplay as both the patient and the nurse"
+        ],
+        "disclaimer": "This is a simulated training exercise using AI. Take your time and be thorough in your examination. Do not include any personal or sensitive data in your responses.",
+        "consentParagraphs": [
+          "REPLACE THIS ARRAY WITH YOUR OWN IRB-APPROVED INFORMED CONSENT TEXT. Do not ship the placeholder.",
+          "One array element per paragraph. The paragraphs render in order, in a scrollable box on the welcome page, and the participant must scroll past them before starting.",
+          "Your consent text must disclose that the full conversation is recorded and stored, because this platform logs every chat turn and attaches the transcript to the assessment submission.",
+          "If you have any questions about this study, you can contact [STUDY CONTACT NAME] at [INSTITUTION] at [PHONE]."
+        ],
+        "getStarted": "Get Started",
+        "languageLabel": "Language"
+      },
+      "chat": {
+        "headerTitle": "Patient Interview",
+        "scenarioDescription": "Scenario: You are a doctor interviewing a patient who just presented at your clinic. Ask any relevant question to the patient, or request diagnostics from your nursing team.",
+        "inputPlaceholder": "Type your message here...",
+        "send": "Send",
+        "loadingForm": "Loading form…",
+        "submittedTitle": "Submitted successfully",
+        "loadingNext": "Loading next scenario...",
+        "thanksTitle": "Thank you!",
+        "nextCase": "Next case",
+        "endThankYouMessage": "You have completed all scenarios. Thank you for your participation. You may now close this page.",
+        "patientMode": "Patient Mode",
+        "diagnosis": "Diagnosis",
+        "submitForm": "Submit",
+        "submittingForm": "Submitting...",
+        "formTitle": "Patient Diagnosis Form"
+      },
+      "feedback": {
+        "loading": "Analyzing your interview...",
+        "loadingDetail": "This will take just a few seconds",
+        "explored": "Topics you explored well:",
+        "opportunities": "Topics to explore further:",
+        "complete": "Feedback complete",
+        "error": "Unable to generate feedback. Please try again.",
+        "continue": "Continue"
+      }
+    },
+    "th": {
+      "welcome": {
+        "title": "การเร่งพัฒนาการศึกษาและการให้บริการทางการแพทย์ (AI-MED)",
+        "subtitle": "ฝึกทักษะการวินิจฉัยด้วยการสัมภาษณ์ผู้ป่วยจำลองโดยปัญญาประดิษฐ์",
+        "instructionsLead": "โปรดอ่านคำแนะนำต่อไปนี้ก่อนเริ่มต้น:",
+        "howItWorks": "วิธีการทำงาน:",
+        "bullets": [
+          "คุณจะสัมภาษณ์ผู้ป่วยจำลอง",
+          "ซักถามเพื่อรวบรวมข้อมูลเกี่ยวกับอาการ ประวัติ และการสัมผัสโรค",
+          "ขอให้พยาบาลทำการตรวจร่างกายและตรวจทางห้องปฏิบัติการตามความเหมาะสม",
+          "กรอกแบบประเมินการวินิจฉัยตามสิ่งที่คุณค้นพบ",
+          "แอปพลิเคชันจะสวมบทบาทเป็นทั้งผู้ป่วยและพยาบาล"
+        ],
+        "disclaimer": "นี่เป็นการฝึกอบรมแบบจำลองโดยใช้ปัญญาประดิษฐ์ กรุณาค่อยเป็นค่อยไปและตรวจอย่างรอบคอบ หลีกเลี่ยงการระบุข้อมูลส่วนบุคคลหรือข้อมูลอ่อนไหว",
+        "getStarted": "เริ่มต้น",
+        "languageLabel": "ภาษา"
+      },
+      "chat": {
+        "headerTitle": "การสัมภาษณ์ผู้ป่วย",
+        "scenarioDescription": "สถานการณ์: คุณเป็นแพทย์ที่กำลังสัมภาษณ์ผู้ป่วยที่เพิ่งมาที่คลินิก ซักถามได้ตามความเหมาะสม หรือขอให้พยาบาลทำการตรวจที่จำเป็น",
+        "inputPlaceholder": "พิมพ์ข้อความของคุณที่นี่...",
+        "send": "ส่ง",
+        "loadingForm": "กำลังโหลดแบบฟอร์ม…",
+        "submittedTitle": "ส่งเรียบร้อยแล้ว",
+        "loadingNext": "กำลังโหลดสถานการณ์ถัดไป...",
+        "thanksTitle": "ขอบคุณ!",
+        "nextCase": "กรณีถัดไป",
+        "endThankYouMessage": "คุณได้มาถึงจุดสิ้นสุดของการสาธิตแล้ว ขอบคุณมากสำหรับการมีส่วนร่วมของคุณ ขณะนี้คุณสามารถปิดหน้านี้ได้",
+        "patientMode": "โหมดผู้ป่วย",
+        "diagnosis": "การวินิจฉัย",
+        "submitForm": "ส่ง",
+        "submittingForm": "กำลังส่ง...",
+        "formTitle": "แบบฟอร์มการวินิจฉัยผู้ป่วย"
+      },
+      "feedback": {
+        "loading": "กำลังวิเคราะห์การสัมภาษณ์ของคุณ...",
+        "loadingDetail": "จะใช้เวลาเพียงไม่กี่วินาที",
+        "explored": "หัวข้อที่คุณสำรวจได้ดี:",
+        "opportunities": "หัวข้อที่ควรสำรวจเพิ่มเติม:",
+        "complete": "ข้อเสนอแนะเสร็จสมบูรณ์",
+        "error": "ไม่สามารถสร้างข้อเสนอแนะได้ โปรดลองอีกครั้ง",
+        "continue": "ดำเนินการต่อ"
+      }
+    }
+  }
+}
+

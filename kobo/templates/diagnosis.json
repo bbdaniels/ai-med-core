@@ -1,0 +1,50 @@
+{
+  "name": "Patient Diagnosis Form",
+  "description": "Standard form for AI-MED patient interview exercises. Collects the student's assessment/diagnosis and stores hidden metadata (vignette ID, chat transcript, user ID).",
+  "settings": {
+    "form_title": "Patient Diagnosis Form",
+    "form_id": "ai_med_diagnosis",
+    "version": "1",
+    "default_language": "English (en)"
+  },
+  "fields": [
+    {
+      "type": "note",
+      "name": "instructions",
+      "label": "To ask questions, use the chat box on the other panel (or tab if on mobile). When you are ready to complete the exercise, complete this field and then click the \"Submit\" button on this panel."
+    },
+    {
+      "type": "text",
+      "name": "diagnosis",
+      "label": "What is your assessment and plan for this patient?",
+      "required": true,
+      "appearance": "multiline"
+    },
+    {
+      "type": "hidden",
+      "name": "case_template",
+      "label": "Case template"
+    },
+    {
+      "type": "hidden",
+      "name": "vignette_id",
+      "label": "Vignette ID"
+    },
+    {
+      "type": "hidden",
+      "name": "chat_transcript",
+      "label": "Chat transcript"
+    },
+    {
+      "type": "hidden",
+      "name": "uid",
+      "label": "User ID"
+    },
+    {
+      "type": "hidden",
+      "name": "transcriptToken",
+      "label": "Transcript token"
+    }
+  ],
+  "choices": {}
+}

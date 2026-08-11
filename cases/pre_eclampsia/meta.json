@@ -1,0 +1,15 @@
+{
+  "name": "pre_eclampsia",
+  "title": "Management of Pre-eclampsia in a Pregnant Woman",
+  "templateType": "mch-obstetric",
+  "description": "Pregnant woman at 34 weeks gestation presents for routine antenatal visit with new-onset headaches, visual disturbances, and lower extremity oedema. Covers recognition and initial management of pre-eclampsia with severe features at a primary health centre, including magnesium sulphate administration and referral.",
+  "clinicalInvariants": [
+    "Gestational age: 34 weeks; Gravida 3 Para 2 with uncomplicated prior pregnancies",
+    "Chief complaint: persistent headaches for 4 days, bilateral pedal oedema for 1 week, occasional blurred vision",
+    "Clinical findings: BP >= 150/100, urine protein 3+, brisk reflexes (3+), bilateral pitting oedema 2+, no clonus",
+    "Foetal assessment: cephalic presentation, FHR 142 bpm, active foetal movements, SFH 33 cm",
+    "Assessment: pre-eclampsia with severe features; mild anaemia of pregnancy",
+    "Management: magnesium sulphate loading dose (Pritchard regimen), antihypertensive, urgent referral to secondary/tertiary facility",
+    "Key SP responses: previous pregnancies uncomplicated, family history of hypertension in mother, headache not relieved by paracetamol, no seizures or epigastric pain"
+  ]
+}

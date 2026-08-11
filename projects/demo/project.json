@@ -1,0 +1,34 @@
+{
+  "name": "demo",
+  "displayName": "AI-MED Demo (Synthetic)",
+  "frontend": "chat",
+  "formless": true,
+  "enableFeedback": false,
+  "enableVoice": false,
+  "cases": {
+    "systemPrompt": "projects/demo/system-prompt.md",
+    "vignettes": [
+      {
+        "key": "demo_case_1",
+        "template": "demo_case",
+        "title": "Synthetic Demo Case: Elbow Discomfort",
+        "file": "projects/demo/cases/demo_case/demo_case_1.md",
+        "profileId": null
+      }
+    ]
+  },
+  "languages": ["en"],
+  "tabs": [
+    {
+      "id": "about",
+      "type": "document",
+      "order": 0,
+      "pinned": true,
+      "label": { "en": "About This Demo" },
+      "contentFile": "projects/demo/content/about.md"
+    }
+  ],
+  "deployment": {
+    "tablePrefix": "demo"
+  }
+}

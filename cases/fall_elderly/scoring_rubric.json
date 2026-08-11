@@ -1,0 +1,455 @@
+{
+  "name": "4Ms Scoring Rubric",
+  "version": "1.0",
+  "source": "transcript",
+  "total_points": 71,
+  "categories": [
+    {
+      "name": "Person-centered healthcare",
+      "max_points": 35,
+      "items": [
+        {
+          "id": "pch_1",
+          "item_number": "1",
+          "description": "Amount of time spent interacting with patient",
+          "scoring": "numeric",
+          "max_points": 20,
+          "grading_rubric": "1 point per full minute spent interacting with patient, up to a maximum of 20 points",
+          "data_source": "survey_time"
+        },
+        {
+          "id": "pch_2",
+          "item_number": "2",
+          "description": "Expression of empathy",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any empathic statement or question is made (e.g., 'How has that been for you?' 'How has this affected you?')"
+        },
+        {
+          "id": "pch_3",
+          "item_number": "3",
+          "description": "Getting to know patient (hobbies, interests, how they spend time)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any question about hobbies, interests, or how they spend their time"
+        },
+        {
+          "id": "pch_4",
+          "item_number": "4",
+          "description": "Inquired about living situation",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if living situation is asked (e.g., where/with whom they live)"
+        },
+        {
+          "id": "pch_5",
+          "item_number": "5",
+          "description": "Asked about sources of support/family/paid or unpaid caregiver",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any question about social support or caregivers"
+        },
+        {
+          "id": "pch_6a",
+          "item_number": "6a",
+          "description": "Functional status - feeding",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if feeding ability is addressed"
+        },
+        {
+          "id": "pch_6b",
+          "item_number": "6b",
+          "description": "Functional status - dressing",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if dressing ability is addressed"
+        },
+        {
+          "id": "pch_6c",
+          "item_number": "6c",
+          "description": "Functional status - bathing",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if bathing ability is addressed"
+        },
+        {
+          "id": "pch_6d",
+          "item_number": "6d",
+          "description": "Functional status - transferring",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if transferring ability is addressed"
+        },
+        {
+          "id": "pch_6e",
+          "item_number": "6e",
+          "description": "Functional status - toileting",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if toileting ability is addressed"
+        },
+        {
+          "id": "pch_6f",
+          "item_number": "6f",
+          "description": "Functional status - managing medications",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if medication management ability is addressed"
+        },
+        {
+          "id": "pch_6g",
+          "item_number": "6g",
+          "description": "Functional status - managing finances",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if financial management ability is addressed"
+        },
+        {
+          "id": "pch_6h",
+          "item_number": "6h",
+          "description": "Functional status - driving",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if driving ability is addressed"
+        },
+        {
+          "id": "pch_6i",
+          "item_number": "6i",
+          "description": "Functional status - using telephone",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if telephone use is addressed"
+        },
+        {
+          "id": "pch_7",
+          "item_number": "7",
+          "description": "Asked how patient has been managing health concerns already/what has been helpful",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if patient's current self-management strategies or what helps is discussed"
+        },
+        {
+          "id": "pch_8",
+          "item_number": "8",
+          "description": "Asked about patient's daily (or special) goals / what they would like clinician to help them achieve",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any goals of what they want to be able to do are elicited"
+        }
+      ]
+    },
+    {
+      "name": "Mobility",
+      "max_points": 12,
+      "items": [
+        {
+          "id": "mob_1",
+          "item_number": "1",
+          "description": "Inquired if patient has fallen in last year OR feels off balance OR has history of falls",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any question about falls, feeling off balance, or history of falls is asked"
+        },
+        {
+          "id": "mob_2",
+          "item_number": "2",
+          "description": "Asked about use of assistive device (cane/walker/wheelchair)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any mobility aid is asked about"
+        },
+        {
+          "id": "mob_3",
+          "item_number": "3",
+          "description": "Asked about level of physical activity/exercise",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if activity level or exercise is discussed"
+        },
+        {
+          "id": "mob_4",
+          "item_number": "4",
+          "description": "Asked about recent medication changes OR performed medication reconciliation",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if recent medication changes or reconciliation are addressed"
+        },
+        {
+          "id": "mob_5",
+          "item_number": "5",
+          "description": "Asked about use of calcium and/or vitamin D",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if calcium or vitamin D use is asked about"
+        },
+        {
+          "id": "mob_6",
+          "item_number": "6",
+          "description": "Past medical history collected",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if past medical history relevant to mobility/falls is obtained"
+        },
+        {
+          "id": "mob_7",
+          "item_number": "7",
+          "description": "Physical exam - orthostatic vital signs",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if orthostatic vitals are measured or discussed"
+        },
+        {
+          "id": "mob_8",
+          "item_number": "8",
+          "description": "Physical exam - cardiovascular exam",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if a cardiovascular exam is performed or discussed"
+        },
+        {
+          "id": "mob_9",
+          "item_number": "9",
+          "description": "Physical exam - neurology examination (LE strength, LE sensory testing)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if neurological exam including lower extremity assessment is discussed"
+        },
+        {
+          "id": "mob_10",
+          "item_number": "10",
+          "description": "Physical exam - lower extremity joint range of motion",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if LE joint range of motion is assessed"
+        },
+        {
+          "id": "mob_11",
+          "item_number": "11",
+          "description": "Home hazards (throw rugs, loose cords, accessible walkways)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if ANY home hazard is asked about"
+        },
+        {
+          "id": "mob_12",
+          "item_number": "12",
+          "description": "Home accessibility (stairs, shower chair, grab bars, walk-in shower)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if ANY home accessibility features are asked about"
+        }
+      ]
+    },
+    {
+      "name": "Medications",
+      "max_points": 5,
+      "items": [
+        {
+          "id": "med_1",
+          "item_number": "1",
+          "description": "Reconciled medications / asked for medication list",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if medication list is reviewed or reconciliation is performed"
+        },
+        {
+          "id": "med_2",
+          "item_number": "2",
+          "description": "Asked whether/how often patient misses medications",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if adherence (missed doses) is discussed"
+        },
+        {
+          "id": "med_3",
+          "item_number": "3",
+          "description": "Asked how patient organizes medications (assistance/pill box/blister packs)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any question about how medications are organized or who helps"
+        },
+        {
+          "id": "med_4",
+          "item_number": "4",
+          "description": "Asked about trouble getting medications (pharmacy access/affording)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if access or cost barriers to medications are discussed"
+        },
+        {
+          "id": "med_5",
+          "item_number": "5",
+          "description": "Asked if any side effects from any medication",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if side effects from medications are asked about"
+        }
+      ]
+    },
+    {
+      "name": "Mind",
+      "max_points": 14,
+      "items": [
+        {
+          "id": "mind_1",
+          "item_number": "1",
+          "description": "Asked about memory loss or memory concerns",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if memory loss or concern about memory is asked"
+        },
+        {
+          "id": "mind_2",
+          "item_number": "2",
+          "description": "Asked about waxing/waning mental status OR performed brief concentration test",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if fluctuation in mental status or brief concentration testing is done"
+        },
+        {
+          "id": "mind_3",
+          "item_number": "3",
+          "description": "Performed cognitive evaluation (Mini-Cog or MoCA or MMSE)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any formal cognitive screen is performed or mentioned"
+        },
+        {
+          "id": "mind_4",
+          "item_number": "4",
+          "description": "Asked about mood/spirits/worries/anxiety",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if mood, anxiety, or worries are discussed"
+        },
+        {
+          "id": "mind_5",
+          "item_number": "5",
+          "description": "Functional status - feeding",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if feeding ability is addressed"
+        },
+        {
+          "id": "mind_6",
+          "item_number": "6",
+          "description": "Functional status - dressing",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if dressing ability is addressed"
+        },
+        {
+          "id": "mind_7",
+          "item_number": "7",
+          "description": "Functional status - bathing",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if bathing ability is addressed"
+        },
+        {
+          "id": "mind_8",
+          "item_number": "8",
+          "description": "Functional status - transferring",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if transferring ability is addressed"
+        },
+        {
+          "id": "mind_9",
+          "item_number": "9",
+          "description": "Functional status - toileting",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if toileting ability is addressed"
+        },
+        {
+          "id": "mind_10",
+          "item_number": "10",
+          "description": "Functional status - managing medications",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if medication management ability is addressed"
+        },
+        {
+          "id": "mind_11",
+          "item_number": "11",
+          "description": "Functional status - managing finances",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if financial management ability is addressed"
+        },
+        {
+          "id": "mind_12",
+          "item_number": "12",
+          "description": "Functional status - driving",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if driving ability is addressed"
+        },
+        {
+          "id": "mind_13",
+          "item_number": "13",
+          "description": "Functional status - using telephone",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if telephone use is addressed"
+        },
+        {
+          "id": "mind_14",
+          "item_number": "14",
+          "description": "Living situation (who lives at home, whether they have help)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if who lives with them and whether they have help at home is discussed"
+        }
+      ]
+    },
+    {
+      "name": "Matters Most",
+      "max_points": 5,
+      "items": [
+        {
+          "id": "mm_1",
+          "item_number": "1",
+          "description": "Asked about goals of care OR whether patient has discussed wishes with family/caregiver/medical team",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if goals of care or prior discussions of wishes are asked"
+        },
+        {
+          "id": "mm_2",
+          "item_number": "2",
+          "description": "Asked about sources of support or family/paid or unpaid caregiver",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if any question about sources of support or caregivers is asked"
+        },
+        {
+          "id": "mm_3",
+          "item_number": "3",
+          "description": "Asked about health care proxy",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if health care proxy is discussed"
+        },
+        {
+          "id": "mm_4",
+          "item_number": "4",
+          "description": "Asked about living will or POLST",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if living will or POLST is discussed"
+        },
+        {
+          "id": "mm_5",
+          "item_number": "5",
+          "description": "Asked about 'advanced directives' (if items 3 and 4 were not already counted)",
+          "scoring": "binary",
+          "max_points": 1,
+          "grading_rubric": "1 point if advance directives are discussed AND items 3 and 4 were not already counted"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "cbs_supervisor",
+  "title": "Community-Based Surveillance: Supervisor Triage, Verification, and Event Reporting",
+  "templateType": "general-diagnosis",
+  "description": "A local-level supervisor receives a signal report from a CHV about a cluster of acute watery diarrhoea, triages it for relevance, conducts verification within 24 hours by contacting multiple sources, completes the Signal Register, reports the event to the intermediate level, and provides supportive supervision to the CHV facing community backlash.",
+  "clinicalInvariants": [
+    "Disease pattern: cluster of acute watery diarrhoea with vomiting across two neighbouring villages within one week",
+    "Total verified cases: approximately 10 people across Village A lower area and Village C",
+    "Health post data: 3 patients treated over weekend including 1 requiring IV fluids",
+    "Timeline: first cases Friday, CHV report Monday evening, verification Tuesday",
+    "Severity: at least one severely dehydrated elderly man (sunken eyes, not urinating, cannot stand)",
+    "Common exposures: shared open well near river (Village A), burial gathering with food and water (Village C)",
+    "No recent travel outside the area for affected households",
+    "Verification outcome: confirmed as event -- report accurate, multiple reliable sources, meets signal definition 1",
+    "Signal definition met: two or more persons with similar severe signs/symptoms in same community within one week",
+    "Sources for verification: CHV Fatou, health post nurse, Imam Karim, Village C elder"
+  ]
+}

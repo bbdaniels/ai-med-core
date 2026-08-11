@@ -1,0 +1,283 @@
+{
+  "name": "Case Script Question Checklist",
+  "version": "1.0",
+  "source": "transcript",
+  "description": "Specific questions from the digital standardized patient (DSP) case scripts that providers should ask",
+  "sections": [
+    {
+      "name": "General Provider Questions",
+      "description": "Basic history-taking questions",
+      "items": [
+        {
+          "id": "gen_1",
+          "question_number": 1,
+          "question": "Can you tell me what happened when you fell?",
+          "expected_response": "I was reaching up for a pot and lost my balance. I landed on my right knee.",
+          "topic": "fall_description"
+        },
+        {
+          "id": "gen_2",
+          "question_number": 2,
+          "question": "Did you hit your head or pass out?",
+          "expected_response": "No, I didn't hit my head and I remember everything.",
+          "topic": "head_injury_loc"
+        },
+        {
+          "id": "gen_3",
+          "question_number": 3,
+          "question": "Are you having any pain now?",
+          "expected_response": "Just some soreness in my knee, nothing sharp.",
+          "topic": "current_pain"
+        },
+        {
+          "id": "gen_4",
+          "question_number": 4,
+          "question": "Have you fallen before?",
+          "expected_response": "Almost once or twice, but this was the first real fall.",
+          "topic": "fall_history"
+        },
+        {
+          "id": "gen_5",
+          "question_number": 5,
+          "question": "Do you use a cane or walker?",
+          "expected_response": "I have a cane, but I forget to grab it sometimes.",
+          "topic": "assistive_device"
+        },
+        {
+          "id": "gen_6",
+          "question_number": 6,
+          "question": "Do you ever feel dizzy or lightheaded?",
+          "expected_response": "Sometimes when I stand up too fast.",
+          "topic": "dizziness"
+        },
+        {
+          "id": "gen_7",
+          "question_number": 7,
+          "question": "How are you managing at home?",
+          "expected_response": "Okay, but the stairs make me nervous now.",
+          "topic": "home_management"
+        },
+        {
+          "id": "gen_8",
+          "question_number": 8,
+          "question": "Do you take your medications regularly?",
+          "expected_response": "Most of the time, though sometimes I'm not sure if I already took one.",
+          "topic": "medication_adherence"
+        },
+        {
+          "id": "gen_9",
+          "question_number": 9,
+          "question": "Do you have anyone helping you?",
+          "expected_response": "My daughter comes by twice a week to help with groceries.",
+          "topic": "support_system"
+        },
+        {
+          "id": "gen_10",
+          "question_number": 10,
+          "question": "Do you feel safe at home?",
+          "expected_response": "Mostly, but I'm scared I might fall again.",
+          "topic": "home_safety"
+        }
+      ]
+    },
+    {
+      "name": "What Matters",
+      "description": "Know and align care with what matters most to the older adult",
+      "items": [
+        {
+          "id": "wm_1",
+          "question_number": 1,
+          "question": "What's most important to you right now about your health or daily life?",
+          "expected_response": "I just want to stay in my own home and be able to move around without falling.",
+          "topic": "priorities"
+        },
+        {
+          "id": "wm_2",
+          "question_number": 2,
+          "question": "What are your biggest worries after this fall?",
+          "expected_response": "That I might fall again and end up in a nursing home.",
+          "topic": "worries"
+        },
+        {
+          "id": "wm_3",
+          "question_number": 3,
+          "question": "What activities do you want to keep doing?",
+          "expected_response": "I like cooking for myself and walking to the mailbox every morning.",
+          "topic": "activities"
+        },
+        {
+          "id": "wm_4",
+          "question_number": 4,
+          "question": "Do you have any goals for the next few months?",
+          "expected_response": "I'd like to get my strength back and not feel so nervous on the stairs.",
+          "topic": "goals"
+        },
+        {
+          "id": "wm_5",
+          "question_number": 5,
+          "question": "Has anyone talked with you about what to do if you get hurt again or can't call for help?",
+          "expected_response": "No, but my daughter said she wants to get me one of those alert buttons.",
+          "topic": "emergency_plan"
+        },
+        {
+          "id": "wm_6",
+          "question_number": 6,
+          "question": "If you were really sick and couldn't make decisions for yourself, do you have someone you'd like your medical team to contact who you'd want to make health care decisions for you?",
+          "expected_response": "Yes, I'd want you to contact my daughter.",
+          "topic": "healthcare_proxy"
+        },
+        {
+          "id": "wm_7",
+          "question_number": 7,
+          "question": "In the unlikely event of an emergency, would you want everything done to try to resuscitate you like doing CPR if your heart stopped or using a breathing machine if you had serious problems with your lungs?",
+          "expected_response": "I'd want you to call my daughter but if I was really sick, I wouldn't want heroic measures or to be kept alive on a machine.",
+          "topic": "code_status"
+        }
+      ]
+    },
+    {
+      "name": "Medication",
+      "description": "Medication Safety and Optimization - ensure medications support What Matters and do not interfere with Mentation or Mobility",
+      "items": [
+        {
+          "id": "med_1",
+          "question_number": 8,
+          "question": "Can you walk me through how you take your medications each day?",
+          "expected_response": "I keep them in a pillbox my daughter fills, but sometimes I forget if I've taken one.",
+          "topic": "medication_routine"
+        },
+        {
+          "id": "med_2",
+          "question_number": 9,
+          "question": "Do you ever skip or double up on doses?",
+          "expected_response": "If I can't remember, I usually just skip it to be safe.",
+          "topic": "dose_adherence"
+        },
+        {
+          "id": "med_3",
+          "question_number": 10,
+          "question": "Have you noticed any side effects from your medications--like dizziness or feeling tired?",
+          "expected_response": "Sometimes I feel lightheaded when I stand up. Not sure if it's the medicine or just me.",
+          "topic": "side_effects"
+        },
+        {
+          "id": "med_4",
+          "question_number": 11,
+          "question": "Do you take any over-the-counter medicines, vitamins, or herbal supplements?",
+          "expected_response": "Just Tylenol for my knees and sometimes a calcium pill.",
+          "topic": "otc_supplements"
+        },
+        {
+          "id": "med_5",
+          "question_number": 12,
+          "question": "Would you be open to having your doctor or pharmacist simplify your medication plan?",
+          "expected_response": "Yes, that would help a lot. It's hard to keep track of everything.",
+          "topic": "simplification"
+        }
+      ]
+    },
+    {
+      "name": "Mentation",
+      "description": "Cognitive and Emotional Health - prevent, identify, and manage dementia, depression, delirium",
+      "items": [
+        {
+          "id": "ment_1",
+          "question_number": 13,
+          "question": "Have you noticed any changes in your memory or thinking lately?",
+          "expected_response": "I forget things more than I used to--like what day it is--but it comes back to me.",
+          "topic": "memory_changes"
+        },
+        {
+          "id": "ment_2",
+          "question_number": 14,
+          "question": "Do you ever feel confused or disoriented, especially at night?",
+          "expected_response": "Sometimes I wake up and have to think about where I am, but it passes quickly.",
+          "topic": "confusion"
+        },
+        {
+          "id": "ment_3",
+          "question_number": 15,
+          "question": "How have you been feeling emotionally since the fall?",
+          "expected_response": "A bit anxious, honestly. I keep thinking about what could have happened.",
+          "topic": "emotional_state"
+        },
+        {
+          "id": "ment_4",
+          "question_number": 16,
+          "question": "Do you ever feel sad, lonely, or lose interest in things you used to enjoy?",
+          "expected_response": "Not sad exactly--just tired sometimes. It's quiet at home.",
+          "topic": "depression_screen"
+        },
+        {
+          "id": "ment_5",
+          "question_number": 17,
+          "question": "Do you have someone to talk to about your worries?",
+          "expected_response": "My daughter listens, but I don't want to bother her too much.",
+          "topic": "social_support"
+        },
+        {
+          "id": "ment_6",
+          "question_number": 18,
+          "question": "What sorts of help, if any, do you get at home?",
+          "expected_response": "My daughter helps me with my bills. She also helps fill my pill boxes. She drives me to the grocery store and to medical appointments. I can make my own meals but usually eat simple things like frozen dinners.",
+          "topic": "iadl_help"
+        },
+        {
+          "id": "ment_7",
+          "question_number": 19,
+          "question": "Are you able to do your basic day to day tasks like getting dressed, getting back and forth to the bathroom, and take a shower on your own?",
+          "expected_response": "Yes, I have been able to do those activities without help.",
+          "topic": "adl_independence"
+        }
+      ]
+    },
+    {
+      "name": "Mobility",
+      "description": "Functional Ability and Safety - ensure the patient moves safely and maintains independence",
+      "items": [
+        {
+          "id": "mob_1",
+          "question_number": 20,
+          "question": "How many times have you fallen in the last year?",
+          "expected_response": "Just this once but I almost fell a couple other times.",
+          "topic": "fall_frequency"
+        },
+        {
+          "id": "mob_2",
+          "question_number": 21,
+          "question": "Can you show me how you usually get up from a chair?",
+          "expected_response": "Sure--though I have to hold on to the armrest to steady myself.",
+          "topic": "transfer_assessment"
+        },
+        {
+          "id": "mob_3",
+          "question_number": 22,
+          "question": "Do you use your cane every time you walk?",
+          "expected_response": "Not always. Sometimes I forget or think I don't need it.",
+          "topic": "cane_compliance"
+        },
+        {
+          "id": "mob_4",
+          "question_number": 23,
+          "question": "How are you managing stairs or getting around your house?",
+          "expected_response": "The stairs are the hardest. I take them slowly and hold the railing.",
+          "topic": "mobility_challenges"
+        },
+        {
+          "id": "mob_5",
+          "question_number": 24,
+          "question": "Have you made any safety changes at home since your fall?",
+          "expected_response": "Not yet, but my daughter said she'd help move my bedroom downstairs.",
+          "topic": "safety_modifications"
+        },
+        {
+          "id": "mob_6",
+          "question_number": 25,
+          "question": "Would you be interested in physical therapy or balance training to help prevent more falls?",
+          "expected_response": "Yes, that sounds helpful. I don't want to go through this again.",
+          "topic": "pt_interest"
+        }
+      ]
+    }
+  ]
+}

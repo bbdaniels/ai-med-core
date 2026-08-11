@@ -1,0 +1,16 @@
+{
+  "name": "rsv",
+  "title": "Evaluation of Respiratory Illness in an Older Adult",
+  "templateType": "general-diagnosis",
+  "description": "Older adult with COPD presents with progressive cough, dyspnea, and low-grade fever after contact with sick grandchild. Covers RSV evaluation, differential diagnosis of acute respiratory illness, COPD exacerbation management, and hospitalization decision-making.",
+  "clinicalInvariants": [
+    "Chief complaint: worsening cough and shortness of breath for 5 days, preceded by URI symptoms for 7 days",
+    "Conditions: COPD (mild-moderate, FEV1 65%), hypertension (controlled), BPH, former smoker (30 pack-years)",
+    "Medications: tiotropium daily, lisinopril 10mg daily, tamsulosin 0.4mg, albuterol PRN",
+    "Exposure: grandchild with 'bad cold' visited 10 days ago; no RSV or flu vaccination this season",
+    "Clinical findings: SpO2 93%, RR 22, temp 37.9C, bilateral wheezes, rhonchi, basilar crackles, prolonged expiratory phase",
+    "Assessment: likely RSV with COPD exacerbation; rule out bacterial pneumonia, influenza, COVID-19, heart failure",
+    "Management: RSV/flu/COVID testing, CXR, labs, increased bronchodilators, supportive care, low threshold for admission",
+    "Provider questions and SP responses remain substantively identical across all variants"
+  ]
+}

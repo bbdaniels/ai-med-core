@@ -1,0 +1,2303 @@
+/* ================================================================== */
+/*  CSS Custom Properties — light default, dark via prefers-color-scheme */
+/* ================================================================== */
+:root {
+    /* Surfaces */
+    --bg-app:        #f0f3f7;
+    --bg-surface:    #ffffff;
+    --bg-input:      #ffffff;
+    --bg-panel:      #f5f7fa;
+    --bg-card:       #f0f3f6;
+    --bg-deep:       #e8ecf0;
+
+    /* Text */
+    --text-heading:    #0a1f2e;
+    --text-body:       #2c3e50;
+    --text-secondary:  #5a6b7a;
+    --text-muted:      #8a96a3;
+    --text-placeholder: #a0aab5;
+
+    /* Borders */
+    --border:        #dce4ec;
+    --border-strong:  #c5cfd8;
+    --border-subtle:  rgba(200, 210, 220, 0.4);
+
+    /* Accent */
+    --accent:         #0b5d8a;
+    --accent-hover:   #094a70;
+    --accent-focus:   #2d8abf;
+    --accent-glow:    #4a9fd4;
+    --typing-dot:     #4a8ab5;
+
+    /* Status */
+    --error:   #d94444;
+    --success: #28a745;
+    --success-hover: #218838;
+    --danger:  #dc3545;
+    --danger-hover: #c82333;
+
+    /* Messages */
+    --msg-user-bg:   #0b5d8a;
+    --msg-user-text: #ffffff;
+    --msg-bot-bg:    #f0f3f6;
+    --msg-bot-text:  #2c3e50;
+
+    /* Shadows */
+    --shadow-sm:  0 1px 3px rgba(0,0,0,0.06);
+    --shadow-md:  0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg:  0 12px 40px rgba(0,0,0,0.12);
+
+    /* Scrollbar */
+    --scrollbar-track: #f0f2f5;
+    --scrollbar-thumb: #c8d1da;
+    --scrollbar-hover: #a0b0c0;
+
+    /* Welcome card (light-themed) */
+    --wa-bg:           #ffffff;
+    --wa-step-bg:      #f4f7fa;
+    --wa-border:       #dce4ec;
+    --wa-heading:      #0a1f2e;
+    --wa-subtitle:     #2c4054;
+    --wa-step-text:    #1e2d3a;
+    --wa-step-num:     #7a8fa0;
+    --wa-consent-text: #3a4a58;
+    --wa-border-hover: #b0c4d4;
+    --wa-start-bg:     #15202b;
+    --wa-start-hover:  #0f1a22;
+
+    /* Language selector */
+    --lang-label:   #3d4351;
+    --lang-select-bg: #ffffff;
+    --lang-select-text: #1e2d3a;
+    --lang-select-border: #ccc;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-app:        #15202b;
+        --bg-surface:    #1a2530;
+        --bg-input:      #0f1a22;
+        --bg-panel:      #111d26;
+        --bg-card:       #1e2d3a;
+        --bg-deep:       #0f1a22;
+
+        --text-heading:    #e8edf2;
+        --text-body:       #d4dee6;
+        --text-secondary:  #a0b4c4;
+        --text-muted:      #6e8898;
+        --text-placeholder: #6b7f8e;
+
+        --border:        #2a3a48;
+        --border-strong:  #3a4e5e;
+        --border-subtle:  rgba(42, 58, 72, 0.4);
+
+        --accent:         #3a9fd5;
+        --accent-hover:   #2d8abf;
+        --accent-focus:   #5bb8e8;
+        --accent-glow:    #4a9fd4;
+        --typing-dot:     #5bb8e8;
+
+        --error:   #e05f5f;
+        --success: #4ade80;
+        --success-hover: #22c55e;
+        --danger:  #f87171;
+        --danger-hover: #ef4444;
+
+        --msg-user-bg:   #3a9fd5;
+        --msg-user-text: #ffffff;
+        --msg-bot-bg:    #1e2d3a;
+        --msg-bot-text:  #d4dee6;
+
+        --shadow-sm:  0 1px 3px rgba(0,0,0,0.2);
+        --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
+        --shadow-lg:  0 12px 40px rgba(0,0,0,0.4);
+
+        --scrollbar-track: #1a2530;
+        --scrollbar-thumb: #3a4e5e;
+        --scrollbar-hover: #4a6070;
+
+        --wa-bg:           #1a2530;
+        --wa-step-bg:      #1e2d3a;
+        --wa-border:       #2a3a48;
+        --wa-heading:      #e8edf2;
+        --wa-subtitle:     #8a9baa;
+        --wa-step-text:    #d4dee6;
+        --wa-step-num:     #5a7080;
+        --wa-consent-text: #8a9baa;
+        --wa-border-hover: #3a4e5e;
+        --wa-start-bg:     #3a9fd5;
+        --wa-start-hover:  #2d8abf;
+
+        --lang-label:   #8a9baa;
+        --lang-select-bg: #0f1a22;
+        --lang-select-text: #d4dee6;
+        --lang-select-border: #2a3a48;
+    }
+}
+
+/* ================================================================== */
+/*  Base / body                                                        */
+/* ================================================================== */
+
+.label {
+    margin: .75rem 0;
+}
+
+.hint {
+    margin: .5rem 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Fix for SurveyCTO iframe behavior */
+body {
+    overflow-x: hidden;
+}
+
+/* ================================================================== */
+/*  Chatbot container                                                  */
+/* ================================================================== */
+
+.chatbot-container {
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    background-color: var(--bg-app);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+}
+
+.conversation-display {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    background-color: var(--bg-app);
+    border-radius: 0;
+    box-sizing: border-box;
+    min-height: 0;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    overflow-x: hidden;
+    word-wrap: break-word;
+}
+
+/* Prevent body scroll when chatbot is scrolling */
+.chatbot-container:focus-within {
+    position: relative;
+}
+
+/* Custom scrollbar styling for WebKit browsers */
+.conversation-display::-webkit-scrollbar {
+    width: 6px;
+}
+
+.conversation-display::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 3px;
+}
+
+.conversation-display::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.conversation-display::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+}
+
+/* ================================================================== */
+/*  Messages                                                           */
+/* ================================================================== */
+
+.message {
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.user-message {
+    flex-direction: row-reverse;
+}
+
+.bot-message {
+    flex-direction: row;
+}
+
+.message-content {
+    max-width: 80%;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    word-wrap: break-word;
+    word-break: break-word;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+    box-sizing: border-box;
+    white-space: pre-line;
+    font-weight: 500;
+    font-size: 0.95em;
+}
+
+.user-message .message-content {
+    background-color: var(--msg-user-bg);
+    color: var(--msg-user-text);
+}
+
+.bot-message .message-content {
+    background-color: var(--msg-bot-bg);
+    color: var(--msg-bot-text);
+}
+
+/* In-answer document reference (e.g. "Section 4.1"): jumps the document tab to
+   that passage. Dotted underline distinguishes it from an external hyperlink. */
+.doc-ref-link {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.doc-ref-link:hover {
+    text-decoration-style: solid;
+}
+
+.doc-ref-link:focus-visible {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 1px;
+    border-radius: 2px;
+}
+
+/* ================================================================== */
+/*  Input area                                                         */
+/* ================================================================== */
+
+.input-container {
+    border-top: 1px solid var(--border);
+    padding: 1rem;
+    background-color: var(--bg-surface);
+    border-radius: 0;
+    flex-shrink: 0;
+    min-height: 80px;
+}
+
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+}
+
+.button-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.user-input {
+    flex: 1;
+    padding: 0.75rem 3rem 0.75rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    outline: none;
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 500;
+    resize: none;
+    overflow-y: hidden;
+    min-height: 20px;
+    max-height: 120px;
+    line-height: 1.4;
+    box-sizing: border-box;
+    transition: height 0.2s ease, border-color 0.2s;
+    background: var(--bg-input);
+    color: var(--text-heading);
+}
+
+.user-input::placeholder {
+    color: var(--text-placeholder);
+    font-weight: 500;
+}
+
+.user-input:focus {
+    border-color: var(--accent-focus);
+}
+
+/* Add scrollbar styling for when content exceeds max-height */
+.user-input::-webkit-scrollbar {
+    width: 4px;
+}
+
+.user-input::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 2px;
+}
+
+.user-input::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 2px;
+}
+
+.user-input::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+}
+
+/* ================================================================== */
+/*  Buttons                                                            */
+/* ================================================================== */
+
+.send-button {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    outline: none;
+}
+
+.send-button:hover {
+    background-color: var(--accent-hover);
+}
+
+.send-button:disabled {
+    background: none;
+    color: white;
+    cursor: default;
+    opacity: 0.3;
+}
+
+.send-button svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.clear-button {
+    padding: 0.75rem 1.5rem;
+    background-color: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.clear-button:hover {
+    background-color: var(--danger-hover);
+}
+
+.clear-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.complete-button {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 8px;
+    background-color: var(--success);
+    color: white;
+    border: none;
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.complete-button:hover {
+    background-color: var(--success-hover);
+}
+
+.complete-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* ================================================================== */
+/*  Misc indicators                                                    */
+/* ================================================================== */
+
+.loading-indicator {
+    text-align: center;
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 14px;
+}
+
+.welcome-message {
+    margin-bottom: 0;
+    min-height: 60px;
+}
+
+.is-read-only .chatbot-container {
+    background-color: rgba(0,0,0,.07);
+    border: 1px solid rgba(0,0,0,.3);
+}
+
+.is-read-only .conversation-display {
+    background-color: rgba(0,0,0,.03);
+}
+
+.suggested-prompts {
+    margin: 0.5rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.suggested-prompts button {
+    padding: 0.5rem 1rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-body);
+    transition: background-color 0.2s;
+}
+
+.suggested-prompts button:hover {
+    background-color: var(--bg-deep);
+}
+
+.typing-indicator {
+    animation: blink 1s infinite;
+    color: var(--accent-focus);
+    font-weight: bold;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Ensure the entire plugin doesn't expand */
+.field-container {
+    max-height: 600px;
+    overflow: hidden;
+}
+
+/* Ensure the plugin container behaves properly */
+.plugin-container {
+    overflow: hidden;
+    position: relative;
+}
+
+/* ================================================================== */
+/*  Layout: main container & panels                                    */
+/* ================================================================== */
+
+.main-container {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    height: 100dvh;
+    width: 100%;
+}
+
+.left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    background-color: var(--bg-panel);
+}
+
+.right-panel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-card);
+}
+
+.left-panel-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--bg-app);
+    margin: 0;
+    padding: 0;
+}
+
+.left-panel-header {
+    padding: 20px 30px 0;
+    flex-shrink: 0;
+    background: var(--bg-app);
+}
+
+.left-panel-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    min-height: 0;
+    background: var(--bg-app);
+}
+
+.chat-header-scrollable {
+    padding: 20px 30px 16px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border);
+}
+
+.chat-header-scrollable h1 {
+    font-size: 1.5em;
+    margin: 0 0 10px 0;
+    color: var(--text-heading);
+    font-weight: 800;
+    text-align: left;
+    letter-spacing: -0.02em;
+}
+
+.chat-header-scrollable p {
+    color: var(--text-secondary);
+    margin-bottom: 0;
+    font-weight: 500;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.messages-container {
+    padding: 0 30px 20px;
+}
+
+/* Tablet responsiveness */
+@media (max-width: 640px) {
+    .message-content {
+        max-width: 85%;
+    }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+    .input-container {
+        padding: 0.75rem;
+        min-height: 70px;
+    }
+
+    .user-input {
+        min-height: 44px;
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px 3rem 12px 12px;
+    }
+
+    .send-button {
+        width: 32px;
+        height: 32px;
+        padding: 6px;
+        right: 6px;
+        bottom: 6px;
+    }
+
+    .send-button svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .message-content {
+        max-width: 90%;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .suggested-prompts {
+        gap: 0.25rem;
+    }
+
+    .suggested-prompts button {
+        font-size: 11px;
+        padding: 0.4rem 0.8rem;
+    }
+
+    .conversation-display-inner {
+        margin-bottom: 0;
+    }
+
+    .input-container-inner {
+        padding: 5px;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 360px) {
+    .send-button {
+        width: 28px;
+        height: 28px;
+        padding: 4px;
+    }
+
+    .send-button svg {
+        width: 16px;
+        height: 16px;
+    }
+}
+
+/* High DPI display adjustments */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+    .conversation-display::-webkit-scrollbar {
+        width: 8px;
+    }
+}
+
+/* Focus states for accessibility */
+.user-input:focus {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 2px;
+}
+
+.send-button:focus-visible {
+    outline: none;
+}
+
+.clear-button:focus,
+.complete-button:focus {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 2px;
+}
+
+.suggested-prompts button:focus {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 2px;
+}
+
+/* Animation for message appearance */
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-content.animate {
+    animation: messageSlideIn 0.3s ease-out;
+}
+
+/* Loading animation */
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+.loading-indicator span {
+    animation: pulse 1.5s infinite;
+}
+
+/* ================================================================== */
+/*  Tab System                                                         */
+/* ================================================================== */
+
+/* Desktop tab bar (inside right panel) */
+.tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+
+.tab-bar-button {
+    flex-shrink: 0;
+    padding: 12px 20px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.tab-bar-button.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-bar-button:hover:not(.active) {
+    color: var(--text-body);
+}
+
+.tab-bar-icon {
+    margin-right: 6px;
+}
+
+/* Tab panel container */
+.tab-panel-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.tab-panel {
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* Document tab: a long reference document with a find bar */
+.document-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* PDF tab: our own pdf.js-based viewer (PdfJsViewer). Rendered rather than the
+   browser's built-in viewer so in-PDF links become real <a target="_blank">
+   elements and there is no outline sidebar consuming panel width. */
+.pdfjs-viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.pdfjs-toolbar {
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 1rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.pdfjs-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pdfjs-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.pdfjs-btn:hover { color: var(--accent); border-color: var(--accent-focus); }
+
+.pdfjs-zoom {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 2.6rem;
+    text-align: center;
+}
+
+.pdfjs-pagecount { font-size: 0.8rem; color: var(--text-muted); }
+
+.pdfjs-open-external {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+}
+.pdfjs-open-external:hover { text-decoration: underline; }
+
+.pdfjs-note { padding: 1.25rem; color: var(--text-muted); }
+
+.pdfjs-pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0 3rem;
+}
+
+.pdfjs-page {
+    position: relative;
+    box-shadow: var(--shadow-md);
+    background: #fff;
+    max-width: 100%;
+}
+
+.pdfjs-page-canvas { display: block; }
+
+/* Transparent hit-targets over the page's link annotations. */
+.pdfjs-link-layer { position: absolute; inset: 0; }
+
+.pdfjs-link {
+    position: absolute;
+    display: block;
+    /* invisible but clickable; a faint highlight on hover confirms it's a link */
+    background: transparent;
+    border-radius: 2px;
+}
+.pdfjs-link:hover { background: rgba(74, 159, 212, 0.25); }
+
+/* Sticks to .tab-panel, which is the scrolling container. */
+.document-search {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1.25rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.document-search-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-muted);
+}
+
+.document-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--text-body);
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.document-search-input::placeholder { color: var(--text-placeholder); }
+
+.document-search-input:focus {
+    outline: none;
+    border-color: var(--accent-focus);
+}
+
+.document-search-count {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.document-search-nav {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.document-search-nav:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent-focus);
+}
+
+.document-search-nav:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.document-panel-body {
+    padding: 1rem 1.25rem 3rem;
+    color: var(--text-body);
+    line-height: 1.6;
+    overflow-wrap: break-word;
+}
+
+.document-panel-body h1,
+.document-panel-body h2,
+.document-panel-body h3,
+.document-panel-body h4 {
+    color: var(--text-heading);
+    line-height: 1.3;
+    margin: 1.5rem 0 0.5rem;
+    /* Clears the sticky find bar when a contents link scrolls to a heading. */
+    scroll-margin-top: 3.5rem;
+}
+
+.document-panel-body h1 { font-size: 1.35rem; }
+.document-panel-body h2 { font-size: 1.15rem; }
+.document-panel-body h3 { font-size: 1rem; }
+.document-panel-body h4 { font-size: 0.95rem; }
+
+.document-panel-body p,
+.document-panel-body ul,
+.document-panel-body ol { margin: 0 0 0.75rem; }
+
+.document-panel-body ul,
+.document-panel-body ol { padding-left: 1.25rem; }
+
+.document-panel-body li { margin-bottom: 0.35rem; }
+
+.document-panel-body a { color: var(--accent); }
+
+.document-panel-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75em 0;
+    font-size: 0.85rem;
+    display: block;
+    overflow-x: auto;
+}
+
+.document-panel-body th,
+.document-panel-body td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.document-panel-body th {
+    background: var(--bg-card);
+    font-weight: 600;
+    color: var(--text-heading);
+}
+
+.document-search-hit {
+    background: var(--accent-glow);
+    color: #ffffff;
+    border-radius: 2px;
+    scroll-margin-top: 4rem;
+}
+
+.document-search-hit.is-active {
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-focus);
+}
+
+.document-panel-empty {
+    padding: 1.5rem 1.25rem;
+    color: var(--text-muted);
+}
+
+/* Legal Library tab: document picker + metadata card + reused DocumentPanel.
+   The picker is intentionally NOT sticky, so it can scroll away and leave the
+   reused DocumentPanel find bar as the only element pinned to the panel top. */
+.legal-library {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.legal-library-picker {
+    padding: 0.85rem 1.25rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.legal-library-intro {
+    margin: 0 0 0.65rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.legal-library-select-label {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+
+.legal-library-select {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--text-body);
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.legal-library-select:focus {
+    outline: none;
+    border-color: var(--accent-focus);
+}
+
+.legal-library-meta {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.legal-library-disclaimer {
+    margin: 0.6rem 0 0;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bg-deep);
+    border-left: 3px solid var(--border-strong);
+    border-radius: 4px;
+}
+
+.legal-library-number {
+    display: block;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-heading);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.25rem;
+}
+
+.legal-library-title {
+    margin: 0.1rem 0 0.2rem;
+    font-size: 1.05rem;
+    color: var(--text-heading);
+    line-height: 1.35;
+}
+
+.legal-library-type {
+    margin: 0 0 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.legal-library-fields {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.2rem 0.75rem;
+    margin: 0.5rem 0;
+    font-size: 0.85rem;
+}
+
+.legal-library-fields dt { color: var(--text-muted); }
+.legal-library-fields dd { margin: 0; color: var(--text-body); }
+
+.legal-library-scope {
+    font-size: 0.88rem;
+    color: var(--text-body);
+    line-height: 1.5;
+    margin: 0.5rem 0;
+}
+
+.legal-library-source { margin: 0.5rem 0; font-size: 0.88rem; }
+.legal-library-source a { color: var(--accent); font-weight: 600; }
+
+.legal-library-evidence {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0.5rem 0 0;
+}
+
+.legal-library-evidence-label { font-weight: 600; }
+
+.legal-library-note {
+    padding: 1rem 1.25rem;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+}
+
+/* Jump-to-top button in the find bar: a small icon after the match-nav, set off
+   by a divider. Reuses .document-search-nav; disabled (dimmed) when already at top. */
+.document-search-top {
+    margin-left: 0.15rem;
+    padding-left: 0.4rem;
+    border-left: 1px solid var(--border-strong);
+    border-radius: 0 6px 6px 0;
+}
+
+.document-search-top svg {
+    width: 0.95rem;
+    height: 0.95rem;
+}
+
+/* Mobile tab strip (replaces toggle bar when tabs configured) */
+.mobile-tab-strip {
+    display: none;
+}
+
+/* Desktop: hide the mobile strip, show the desktop tab bar */
+.desktop-tab-bar {
+    display: flex;
+}
+
+/* Scrollable overflow fade */
+.tab-bar-scrollable {
+    position: relative;
+}
+.tab-bar-scrollable.has-overflow::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 32px;
+    background: linear-gradient(to right, transparent, var(--bg-app));
+    pointer-events: none;
+}
+
+/* Content panel */
+.content-panel {
+    padding: 20px 24px;
+    overflow-y: auto;
+    height: 100%;
+    background: var(--bg-app);
+}
+
+.content-section {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-card);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.content-section h3 {
+    font-size: 1rem;
+    color: var(--text-heading);
+    margin: 0 0 8px;
+    font-weight: 700;
+}
+
+.content-section-body {
+    color: var(--text-body);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.content-section-body p {
+    margin: 0 0 8px;
+}
+
+.content-section-body p:last-child {
+    margin-bottom: 0;
+}
+
+.content-section-body ol,
+.content-section-body ul {
+    margin: 4px 0 8px;
+    padding-left: 24px;
+}
+
+.content-section-body li {
+    margin-bottom: 4px;
+}
+
+.content-section-body strong {
+    color: var(--text-heading);
+}
+
+.content-section-body blockquote {
+    border-left: 3px solid var(--border);
+    margin: 8px 0;
+    padding: 8px 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.content-section-image {
+    max-width: 100%;
+    border-radius: 6px;
+    margin: 8px 0 12px;
+    display: block;
+    border: 1px solid var(--border);
+}
+
+.scene-section {
+    border-left: 3px solid var(--accent);
+}
+
+.content-panel-action {
+    padding: 16px 0 24px;
+    text-align: center;
+}
+
+.content-panel-action-btn {
+    display: inline-block;
+    padding: 14px 32px;
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.content-panel-action-btn:hover {
+    background-color: var(--accent-hover);
+}
+
+.content-panel-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+}
+
+/* Suggestions tab (formless mode clickable question outline) */
+.suggestions-panel {
+    padding: 20px 24px;
+    overflow-y: auto;
+    height: 100%;
+    background: var(--bg-app);
+}
+
+.suggestions-intro {
+    margin: 0 0 20px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.suggestions-section {
+    margin-bottom: 20px;
+}
+
+.suggestions-heading {
+    font-size: 0.95rem;
+    color: var(--text-heading);
+    margin: 0 0 10px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.suggestions-questions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.suggestions-question {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-body);
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, transform 0.05s;
+}
+
+.suggestions-question:hover {
+    background: var(--bg-hover, rgba(0, 0, 0, 0.02));
+    border-color: var(--accent);
+}
+
+.suggestions-question:active {
+    transform: scale(0.995);
+}
+
+.suggestions-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+}
+
+/* Document tab (raw markdown rendering) — scrolling handled by parent .tab-panel.
+   No horizontal padding here: the sticky find bar spans the full pane width, and
+   the body (.document-panel-body) carries its own reading padding. */
+.document-panel {
+    padding: 0;
+    background: var(--bg-app);
+}
+
+.document-panel-body {
+    color: var(--text-body);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    max-width: 100%;
+}
+
+.document-panel-body h1,
+.document-panel-body h2,
+.document-panel-body h3,
+.document-panel-body h4 {
+    color: var(--text-heading);
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 600;
+    margin: 1.2em 0 0.5em;
+    line-height: 1.3;
+}
+
+.document-panel-body h1 { font-size: 1.4rem; }
+.document-panel-body h2 { font-size: 1.2rem; }
+.document-panel-body h3 { font-size: 1.05rem; }
+.document-panel-body h4 { font-size: 0.95rem; }
+
+.document-panel-body h1:first-child,
+.document-panel-body h2:first-child {
+    margin-top: 0;
+}
+
+.document-panel-body p {
+    margin: 0 0 0.75em;
+}
+
+.document-panel-body strong { color: var(--text-heading); font-weight: 600; }
+.document-panel-body em { font-style: italic; }
+
+.document-panel-body ul,
+.document-panel-body ol {
+    margin: 0.5em 0 0.75em;
+    padding-left: 1.5em;
+}
+
+.document-panel-body li {
+    margin-bottom: 0.25em;
+}
+
+.document-panel-body blockquote {
+    border-left: 3px solid var(--border);
+    margin: 0.5em 0;
+    padding: 0.5em 1em;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.document-panel-body code {
+    background: var(--bg-card);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+}
+
+.document-panel-body a {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.document-panel-body hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1.5em 0;
+}
+
+.document-panel-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+.document-panel-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    padding: 20px;
+}
+
+/* Inline follow-up chips — sticky overlay at the bottom of the conversation area.
+   Messages scroll behind it with a frosted-glass backdrop-filter (iOS material look).
+   Higher opacity at bottom prevents message-card edges from showing through the transition. */
+.followups-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 10px 30px 8px;
+    background:
+        linear-gradient(to bottom,
+            color-mix(in srgb, var(--bg-app) 60%, transparent) 0%,
+            color-mix(in srgb, var(--bg-app) 88%, transparent) 70%,
+            var(--bg-app) 100%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+
+.followup-chip {
+    display: inline-block;
+    padding: 5px 11px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text-muted);
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+    white-space: normal;
+    text-align: right;
+    max-width: 100%;
+}
+
+.followup-chip:hover {
+    color: var(--text-body);
+    border-color: var(--accent);
+    background: var(--bg-card);
+}
+
+.followup-chip:active {
+    transform: scale(0.98);
+}
+
+/* ================================================================== */
+/*  Mobile Toggle Bar                                                  */
+/* ================================================================== */
+
+.mobile-toggle-bar {
+    display: none;
+}
+
+.mobile-toggle-button {
+    flex: 1;
+    padding: 12px 16px;
+    margin: 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-shadow: none;
+}
+
+.mobile-toggle-button:hover {
+    background-color: var(--bg-card);
+    border-color: var(--border-strong);
+}
+
+.mobile-toggle-button.active {
+    background-color: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.mobile-toggle-button.active:hover {
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.mobile-toggle-button:active {
+    transform: none;
+}
+
+/* Mobile responsive layout - Single panel view with toggle */
+@media (max-width: 768px) {
+    /* Show the mobile toggle bar (legacy, no tabs) */
+    .mobile-toggle-bar {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background-color: var(--bg-app);
+        border-bottom: 1px solid var(--border);
+        box-shadow: none;
+    }
+
+    /* Tab strip (shown instead of toggle bar when tabs configured) */
+    .mobile-tab-strip {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background-color: var(--bg-app);
+        border-bottom: 1px solid var(--border);
+    }
+    .mobile-tab-strip .tab-bar-button {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+    /* Let the tab bar shrink to the strip's width so its own overflow-x: auto
+       engages and the strip side-scrolls. The desktop .tab-bar rule sets
+       flex-shrink: 0 (correct for its role as a row inside the right-panel
+       column), which here — combined with the default min-width: auto — pinned
+       the bar at its full content width and clipped trailing tabs off-screen. */
+    .mobile-tab-strip .tab-bar {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+        -webkit-overflow-scrolling: touch; /* momentum scroll on older iOS */
+    }
+
+    /* Hide desktop tab bar on mobile (tabs show in the strip instead) */
+    .desktop-tab-bar {
+        display: none !important;
+    }
+
+    /* iOS zooms the page when a focused input's font-size is under 16px;
+       the chat input already carries the same guard. */
+    .document-search-input,
+    .legal-library-select {
+        font-size: 16px;
+    }
+
+    /* Adjust main container for toggle bar / tab strip */
+    .main-container {
+        --mobile-strip-height: 48px; /* single source for the fixed top-bar offset */
+        flex-direction: row !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        padding-top: var(--mobile-strip-height);
+    }
+
+    /* Make panels take full width and height */
+    .left-panel {
+        flex: 1 !important;
+        width: 100% !important;
+        height: calc(100vh - var(--mobile-strip-height)) !important;
+        height: calc(100dvh - var(--mobile-strip-height)) !important;
+        border-right: none !important;
+    }
+
+    .left-panel-inner {
+        margin: 20px 20px 0 20px !important;
+        padding: 20px 0 0 !important;
+        height: calc(100% - 20px) !important;
+    }
+
+    .right-panel {
+        flex: 1 !important;
+        width: 100% !important;
+        height: calc(100vh - var(--mobile-strip-height)) !important;
+        height: calc(100dvh - var(--mobile-strip-height)) !important;
+    }
+
+    /* Hide panels when not active */
+    .left-panel.mobile-hidden,
+    .right-panel.mobile-hidden {
+        display: none !important;
+    }
+
+    .chat-header-scrollable h1 {
+        font-size: 1.5em !important;
+    }
+
+    .chat-header-scrollable p {
+        font-size: 0.9em !important;
+    }
+
+    .chat-header-scrollable {
+        padding: 15px 20px 10px;
+    }
+
+    .messages-container {
+        padding: 0 20px 15px;
+    }
+}
+
+/* Smaller mobile screens */
+@media (max-width: 480px) {
+    .left-panel-inner {
+        margin: 0px !important;
+        padding: 4px 0 0 !important;
+        height: 100% !important;
+    }
+
+    .chat-header-scrollable h1 {
+        font-size: 1.3em !important;
+        margin: 0 0 10px 0 !important;
+    }
+
+    .chat-header-scrollable p {
+        font-size: 0.85em !important;
+        margin-bottom: 15px !important;
+    }
+
+    .mobile-toggle-button {
+        font-size: 13px;
+        padding: 10px 12px;
+    }
+
+    .chat-header-scrollable {
+        padding: 10px 15px 8px;
+    }
+
+    .messages-container {
+        padding: 0 15px 10px;
+    }
+}
+
+/* Welcome screen responsive adjustments */
+@media (max-width: 768px) {
+    .welcome-screen {
+        padding: 20px 10px !important;
+    }
+
+    .welcome-content {
+        padding: 20px !important;
+        max-width: 100% !important;
+    }
+
+    .welcome-content h1 {
+        font-size: 1.8em !important;
+    }
+
+    .video-container {
+        margin: 15px 0 !important;
+    }
+
+    .instructions {
+        margin: 20px 0 !important;
+        padding: 20px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .welcome-content h1 {
+        font-size: 1.5em !important;
+        margin-bottom: 15px !important;
+    }
+
+    .welcome-content p {
+        font-size: 1em !important;
+        margin-bottom: 20px !important;
+    }
+
+    .instructions {
+        padding: 15px !important;
+    }
+
+    .instructions li {
+        padding: 8px 0 !important;
+        padding-left: 25px !important;
+        font-size: 0.9em !important;
+    }
+}
+
+/* ================================================================== */
+/*  Transition Screen (between scenarios)                               */
+/* ================================================================== */
+
+.transition-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg-app);
+    animation: fadeIn 0.3s ease-out;
+}
+
+.transition-content {
+    text-align: center;
+    padding: 40px;
+}
+
+.transition-check {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--success);
+    color: #fff;
+    font-size: 32px;
+    line-height: 64px;
+    margin: 0 auto 20px;
+}
+
+.transition-content h2 {
+    font-size: 1.5em;
+    color: var(--text-heading);
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.transition-content p {
+    font-size: 1.1em;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+.transition-continue-btn {
+    margin-top: 24px;
+    padding: 12px 40px;
+    font-size: 1.1em;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    background: var(--primary, #0066cc);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.transition-continue-btn:hover {
+    background: var(--primary-hover, #0056b3);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* ================================================================== */
+/*  End Screen                                                         */
+/* ================================================================== */
+
+.end-screen {
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
+    background: var(--bg-app);
+    overflow-y: auto;
+    padding: 48px 16px;
+    box-sizing: border-box;
+}
+
+.end-content {
+    text-align: center;
+    width: 100%;
+    max-width: 960px;
+    padding: 40px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+    box-shadow: var(--shadow-md);
+}
+
+.end-content h1 {
+    font-size: 2.0em;
+    color: var(--text-heading);
+    margin-bottom: 20px;
+    font-weight: 700;
+}
+
+.end-content p {
+    font-size: 1.1em;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* ================================================================== */
+/*  Welcome Screen                                                     */
+/* ================================================================== */
+
+.welcome-screen {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
+    background: var(--bg-app);
+    overflow-y: auto;
+    padding: 48px 16px;
+    box-sizing: border-box;
+}
+
+.welcome-content {
+    text-align: center;
+    width: 100%;
+    max-width: 960px;
+    padding: 40px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+    box-shadow: var(--shadow-md);
+}
+
+.welcome-content h1 {
+    font-size: 2.2em;
+    color: var(--text-heading);
+    margin-bottom: 20px;
+    font-weight: 700;
+}
+
+.welcome-content > p {
+    font-size: 1.1em;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 30px;
+    font-weight: 400;
+}
+
+.language-selector-wrapper {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.language-selector-wrapper label {
+    color: var(--lang-label);
+}
+
+.language-selector-wrapper select {
+    padding: 8px 10px;
+    border: 1px solid var(--lang-select-border);
+    border-radius: 4px;
+    background: var(--lang-select-bg);
+    color: var(--lang-select-text);
+}
+
+.instructions {
+    text-align: left;
+    margin: 30px 0;
+    padding: 25px;
+    background: var(--bg-deep);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.instructions h3 {
+    color: var(--text-heading);
+    margin-bottom: 15px;
+    font-size: 1.2em;
+    font-weight: 700;
+}
+
+.instructions ul {
+    list-style: none;
+    padding: 0;
+}
+
+.instructions li {
+    padding: 10px 0;
+    padding-left: 30px;
+    position: relative;
+    color: var(--text-body);
+    line-height: 1.5;
+}
+
+.instructions li span {
+    content: "\2713";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.disclaimer-text {
+    color: var(--text-muted);
+    font-size: 1em;
+    font-weight: 400;
+}
+
+.consent-box {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px 20px;
+    background: var(--bg-deep);
+    font-size: 0.9em;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    text-align: left;
+    width: 100%;
+    margin: 0;
+}
+
+.consent-box p {
+    margin: 0 0 10px 0;
+}
+
+.consent-box p:last-child {
+    margin-bottom: 0;
+}
+
+.get-started-btn {
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 40px;
+    font-size: 1.1em;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    box-shadow: var(--shadow-sm);
+    font-family: 'Libre Franklin', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.get-started-btn:hover {
+    background-color: var(--accent-hover);
+}
+
+/* Left Panel Header Buttons */
+.left-panel-header .save-transcript-btn {
+    background-color: var(--bg-card);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-strong);
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.left-panel-header .save-transcript-btn:hover {
+    background-color: var(--bg-deep);
+    color: var(--text-body);
+}
+
+.left-panel-header .save-transcript-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Chatbot container specific inline override */
+.chatbot-container-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Conversation display specific */
+.conversation-display-inner {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    margin-bottom: 15px;
+    padding: 0;
+}
+
+/* Input container specific */
+.input-container-inner {
+    flex-shrink: 0;
+    padding: 20px 13px;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+}
+
+/* ================================================================== */
+/*  Typing dots animation                                              */
+/* ================================================================== */
+
+.typing-dots {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.typing-dots .dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--typing-dot);
+    border-radius: 50%;
+    animation: typing-dot 1.4s infinite;
+    display: inline-block;
+}
+
+.typing-dots .dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-dots .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing-dot {
+    0%, 60%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    30% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ================================================================== */
+/*  Post-submission / loading states                                   */
+/* ================================================================== */
+
+.post-submission-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-app);
+}
+
+.post-submission-content {
+    text-align: center;
+    padding: 24px;
+}
+
+.post-submission-content h2 {
+    color: var(--text-heading);
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.post-submission-content button {
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.post-submission-content button:hover {
+    background-color: var(--accent-hover);
+}
+
+/* Loading form message */
+.loading-form-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-app);
+}
+
+.loading-form-wrapper p {
+    color: var(--text-secondary);
+}
+
+/* Native enketo form styles are in EnketoForm.css */
+
+
+/* ================================================================== */
+/*  Welcome Screen — .wa-* variant                                     */
+/* ================================================================== */
+
+.wa-content {
+  text-align: left;
+  padding: 48px 56px;
+  max-width: 720px;
+  border-radius: 4px;
+  background: var(--wa-bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.wa-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.wa-header h1 {
+  font-size: 1.8em;
+  color: var(--wa-heading);
+  margin-bottom: 12px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.wa-subtitle {
+  font-size: 1.05em;
+  color: var(--wa-subtitle);
+  line-height: 1.6;
+  margin: 0;
+  font-weight: 500;
+}
+
+.wa-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.wa-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--wa-step-bg);
+  border-radius: 4px;
+  border: 1px solid var(--wa-border);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.wa-step:hover {
+  border-color: var(--wa-border-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.wa-step-icon {
+  flex-shrink: 0;
+  font-size: 1.4em;
+  line-height: 1;
+  min-width: 32px;
+  text-align: center;
+}
+
+.wa-step-text {
+  margin: 0;
+  font-size: 0.95em;
+  line-height: 1.5;
+  color: var(--wa-step-text);
+  font-weight: 600;
+}
+
+.wa-consent-section {
+  margin-bottom: 32px;
+}
+
+.wa-consent-heading {
+  font-size: 0.95em;
+  font-weight: 800;
+  color: var(--wa-heading);
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wa-consent-body {
+  padding: 16px 20px;
+  background: var(--wa-step-bg);
+  border-radius: 4px;
+  border: 1px solid var(--wa-border);
+  font-size: 0.85em;
+  line-height: 1.65;
+  color: var(--wa-consent-text);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wa-consent-body p {
+  margin: 0 0 10px;
+}
+
+.wa-consent-body p:last-child {
+  margin-bottom: 0;
+}
+
+.wa-start-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 16px 32px;
+  background: var(--wa-start-bg);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1.1em;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, transform 0.1s;
+  box-shadow: var(--shadow-md);
+}
+
+.wa-start-btn:hover {
+  background: var(--wa-start-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+.wa-start-btn:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 768px) {
+  .wa-content {
+    padding: 28px 24px;
+  }
+}
+
+/* ================================================================== */
+/*  Print styles                                                       */
+/* ================================================================== */
+
+@media print {
+    .chatbot-container {
+        border: 1px solid #000;
+        background-color: #fff;
+        height: auto;
+        max-height: none;
+        min-height: auto;
+    }
+
+    .input-container {
+        display: none;
+    }
+
+    .conversation-display {
+        overflow: visible;
+        max-height: none;
+    }
+
+    .clear-button,
+    .complete-button {
+        display: none;
+    }
+}

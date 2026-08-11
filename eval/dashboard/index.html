@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluation Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Libre+Franklin:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <a href="../" class="back-link">&larr; Back to Project</a>
+        <h1 id="dashboard-title">Evaluation Dashboard</h1>
+        <p class="subtitle">Age-Friendly 4Ms Framework Assessment</p>
+    </header>
+
+    <main>
+        <section id="summary" class="card">
+            <h2>Summary</h2>
+            <div id="summary-stats"></div>
+        </section>
+
+        <!-- Global Search -->
+        <section id="global-search" class="card">
+            <div class="global-search-container">
+                <input type="text" id="global-search-input" placeholder="Search by UID, scenario, or profile...">
+                <button id="global-search-clear" class="btn-small">Clear</button>
+                <span id="global-search-count"></span>
+            </div>
+        </section>
+
+        <!-- Global Statistics View -->
+        <section id="global-stats" class="card hidden">
+            <div class="global-stats-header">
+                <h2 id="global-stats-title">Measure Statistics</h2>
+                <button id="close-global-stats" class="btn-secondary">Close</button>
+            </div>
+            <div id="global-stats-content"></div>
+        </section>
+
+        <section id="submissions" class="card">
+            <div class="submissions-header">
+                <h2>Submissions</h2>
+                <div class="view-toggle" id="view-toggle">
+                    <button id="view-submissions" class="toggle-btn active">Submissions</button>
+                    <!-- Dynamic rubric overview tabs inserted here by JS -->
+                    <button id="view-psychometrics" class="toggle-btn">Psychometrics</button>
+                    <button id="view-comparisons" class="toggle-btn">Comparisons</button>
+                </div>
+            </div>
+            <div id="submissions-view">
+                <div class="table-container">
+                    <table id="submissions-table">
+                        <thead>
+                            <tr id="submissions-thead-row">
+                                <!-- Dynamic columns inserted by JS -->
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Dynamic overview sections inserted by JS -->
+            <div id="dynamic-overviews"></div>
+
+            <!-- Psychometrics Overview -->
+            <div id="psychometrics-overview" class="overview-section hidden">
+                <div class="overview-controls">
+                    <label for="psychometrics-scenario-filter">Filter by scenario:</label>
+                    <select id="psychometrics-scenario-filter">
+                        <option value="all">All Scenarios</option>
+                    </select>
+                    <label for="psychometrics-scale-filter">Scale:</label>
+                    <select id="psychometrics-scale-filter">
+                        <!-- Dynamic options from rubrics -->
+                    </select>
+                </div>
+                <div class="psychometrics-warning">
+                    <strong>Note:</strong> Sample size is small. Statistics shown for exploration; interpret with caution.
+                </div>
+                <div id="reliability-summary"></div>
+                <div id="pca-analysis"></div>
+                <div id="score-distributions"></div>
+                <div id="problematic-items"></div>
+                <div id="item-analysis-content"></div>
+            </div>
+
+            <!-- Comparisons -->
+            <div id="comparisons-overview" class="overview-section hidden">
+                <div class="overview-controls">
+                    <label for="comparisons-dimension-filter">Group by:</label>
+                    <select id="comparisons-dimension-filter">
+                        <!-- Populated dynamically from profile keys -->
+                    </select>
+                    <label for="comparisons-scale-filter">Scale:</label>
+                    <select id="comparisons-scale-filter">
+                        <!-- Dynamic options from rubrics -->
+                    </select>
+                </div>
+                <div class="psychometrics-warning">
+                    <strong>Note:</strong> Small samples per group. Statistical tests shown for exploration; interpret with caution.
+                </div>
+                <div id="score-comparison"></div>
+                <div id="category-comparison"></div>
+                <div id="dif-analysis"></div>
+            </div>
+        </section>
+
+        <section id="detail-view" class="card hidden">
+            <div class="detail-top-bar">
+                <h2>Submission Detail</h2>
+                <div class="detail-nav-buttons">
+                    <button id="prev-detail" class="btn-secondary">&larr; Previous</button>
+                    <button id="next-detail" class="btn-secondary">Next &rarr;</button>
+                    <button id="close-detail" class="btn-secondary">Close</button>
+                </div>
+            </div>
+
+            <div id="detail-header"></div>
+
+            <div class="scores-section">
+                <h3>Scores</h3>
+                <div id="category-scores" class="score-cards"></div>
+            </div>
+
+            <div class="notes-section">
+                <h3>AI Assessment Notes</h3>
+                <div id="ai-notes"></div>
+            </div>
+
+            <!-- Transcript and Rubric/Checklist -->
+            <div class="split-view">
+                <!-- Left: Transcript with search -->
+                <div class="transcript-panel">
+                    <div class="panel-header">
+                        <h3>Transcript</h3>
+                        <div class="search-box">
+                            <input type="text" id="transcript-search" placeholder="Search transcript...">
+                            <span id="search-results-count"></span>
+                            <button id="search-prev" class="btn-small" disabled>&uarr;</button>
+                            <button id="search-next" class="btn-small" disabled>&darr;</button>
+                            <button id="search-clear" class="btn-small">Clear</button>
+                        </div>
+                    </div>
+                    <div id="transcript-content" class="transcript-box"></div>
+                </div>
+
+                <!-- Right: Dynamic rubric tabs -->
+                <div class="scoring-panel">
+                    <div class="panel-header">
+                        <div class="tab-buttons" id="detail-tab-buttons">
+                            <!-- Dynamic tabs inserted by JS -->
+                        </div>
+                        <p class="hint" id="tab-hint">Click evidence to jump to transcript location</p>
+                    </div>
+                    <div id="detail-rubric-panels">
+                        <!-- Dynamic panels inserted by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Source data display (e.g., written assessment) -->
+            <div id="source-data-section" class="hidden">
+                <!-- Dynamic source data panels inserted by JS -->
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>AI-MED - Accelerating Improvement in Medical Education and Delivery</p>
+    </footer>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

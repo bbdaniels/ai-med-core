@@ -1,0 +1,200 @@
+{
+  "name": "Assessment & Plan Checklist",
+  "version": "1.0",
+  "source": "field:diagnosis",
+  "description": "Feature extraction checklist for student assessment and plan documentation",
+  "sections": [
+    {
+      "name": "Diagnoses & Problem Recognition",
+      "description": "Key diagnoses and problems that should be identified",
+      "items": [
+        {
+          "id": "dx_fall_risk",
+          "item_number": 1,
+          "criterion": "Identified fall risk or fall-related diagnosis",
+          "look_for": "Fall risk, mechanical fall, gait instability, or unsteady gait mentioned as a diagnosis or problem"
+        },
+        {
+          "id": "dx_orthostatic",
+          "item_number": 2,
+          "criterion": "Considered orthostatic hypotension",
+          "look_for": "Orthostatic hypotension, positional dizziness, or lightheadedness with standing mentioned"
+        },
+        {
+          "id": "dx_cognitive",
+          "item_number": 3,
+          "criterion": "Addressed cognitive status",
+          "look_for": "Cognitive impairment, delirium, dementia, MCI, memory issues, or confusion mentioned"
+        },
+        {
+          "id": "dx_deconditioning",
+          "item_number": 4,
+          "criterion": "Recognized deconditioning or weakness",
+          "look_for": "Deconditioning, weakness, frailty, or debility mentioned"
+        },
+        {
+          "id": "dx_polypharmacy",
+          "item_number": 5,
+          "criterion": "Identified medication-related issues",
+          "look_for": "Polypharmacy, medication side effects, or high-risk medications mentioned as contributing factor"
+        }
+      ]
+    },
+    {
+      "name": "Diagnostic Workup",
+      "description": "Appropriate tests and evaluations ordered",
+      "items": [
+        {
+          "id": "workup_basic_labs",
+          "item_number": 6,
+          "criterion": "Ordered basic labs",
+          "look_for": "CBC, CMP, BMP, or basic metabolic labs mentioned"
+        },
+        {
+          "id": "workup_glucose",
+          "item_number": 7,
+          "criterion": "Addressed glucose monitoring",
+          "look_for": "A1c, blood glucose monitoring, fingersticks, or CGM mentioned"
+        },
+        {
+          "id": "workup_anemia",
+          "item_number": 8,
+          "criterion": "Workup for anemia",
+          "look_for": "Iron studies, B12, folate, ferritin, or anemia workup mentioned"
+        },
+        {
+          "id": "workup_thyroid",
+          "item_number": 9,
+          "criterion": "Thyroid evaluation",
+          "look_for": "TSH, thyroid panel, or thyroid testing mentioned"
+        },
+        {
+          "id": "workup_cardiac",
+          "item_number": 10,
+          "criterion": "Cardiac workup",
+          "look_for": "EKG, ECG, echo, holter monitor, or cardiac testing mentioned"
+        },
+        {
+          "id": "workup_cognitive_test",
+          "item_number": 11,
+          "criterion": "Cognitive testing ordered",
+          "look_for": "MMSE, MoCA, mini-mental, or formal cognitive testing mentioned"
+        }
+      ]
+    },
+    {
+      "name": "Medication Management",
+      "description": "Addressing high-risk medications and polypharmacy",
+      "items": [
+        {
+          "id": "med_glyburide",
+          "item_number": 12,
+          "criterion": "Addressed glyburide (high-risk sulfonylurea)",
+          "look_for": "Glyburide mentioned for discontinuation, dose change, or switching to safer alternative"
+        },
+        {
+          "id": "med_oxybutynin",
+          "item_number": 13,
+          "criterion": "Addressed oxybutynin (anticholinergic)",
+          "look_for": "Oxybutynin mentioned for discontinuation or switching due to anticholinergic/cognitive effects"
+        },
+        {
+          "id": "med_reconciliation",
+          "item_number": 14,
+          "criterion": "Medication reconciliation or review planned",
+          "look_for": "Medication review, reconciliation, pharmacy consult, or med list review mentioned"
+        },
+        {
+          "id": "med_deprescribing",
+          "item_number": 15,
+          "criterion": "Deprescribing or simplification mentioned",
+          "look_for": "Stopping, reducing, or simplifying medications mentioned"
+        }
+      ]
+    },
+    {
+      "name": "Referrals & Services",
+      "description": "Appropriate referrals and support services",
+      "items": [
+        {
+          "id": "ref_pt",
+          "item_number": 16,
+          "criterion": "Physical therapy referral",
+          "look_for": "Physical therapy, PT, gait training, balance training, or strengthening referral mentioned"
+        },
+        {
+          "id": "ref_home_health",
+          "item_number": 17,
+          "criterion": "Home health services",
+          "look_for": "Home health, visiting nurse, home-based services, or VNA mentioned"
+        },
+        {
+          "id": "ref_specialty",
+          "item_number": 18,
+          "criterion": "Specialty referral",
+          "look_for": "Cardiology, neurology, psychiatry, geriatrics, or other specialty referral mentioned"
+        },
+        {
+          "id": "ref_social_services",
+          "item_number": 19,
+          "criterion": "Social services or community resources",
+          "look_for": "Social work, community health worker, senior services, area agency on aging, or similar resources mentioned"
+        }
+      ]
+    },
+    {
+      "name": "Safety Planning",
+      "description": "Fall prevention and safety measures",
+      "items": [
+        {
+          "id": "safety_home_mods",
+          "item_number": 20,
+          "criterion": "Home safety modifications discussed",
+          "look_for": "Home modifications like removing rugs, improving lighting, grab bars, clearing pathways mentioned"
+        },
+        {
+          "id": "safety_assistive_device",
+          "item_number": 21,
+          "criterion": "Assistive device recommended",
+          "look_for": "Cane, walker, or other assistive device recommended or use reinforced"
+        },
+        {
+          "id": "safety_family_involvement",
+          "item_number": 22,
+          "criterion": "Family/caregiver involvement in plan",
+          "look_for": "Family member, daughter, son, caregiver involvement mentioned in the plan"
+        },
+        {
+          "id": "safety_emergency_plan",
+          "item_number": 23,
+          "criterion": "Emergency plan or alert system",
+          "look_for": "Emergency plan, life alert, fall detection, medical alert, or when to seek care discussed"
+        }
+      ]
+    },
+    {
+      "name": "Follow-up & Continuity",
+      "description": "Ensuring appropriate follow-up care",
+      "items": [
+        {
+          "id": "followup_timeline",
+          "item_number": 24,
+          "criterion": "Specific follow-up timeline given",
+          "look_for": "Specific follow-up timeframe mentioned (e.g., 2 weeks, 1 month, return in X days)"
+        },
+        {
+          "id": "followup_monitoring",
+          "item_number": 25,
+          "criterion": "Home monitoring plan",
+          "look_for": "Home monitoring of blood pressure, glucose, weight, or symptoms with logging mentioned"
+        },
+        {
+          "id": "followup_contingency",
+          "item_number": 26,
+          "criterion": "Return precautions or red flags discussed",
+          "look_for": "Return precautions, warning signs, red flags, or when to come back/call discussed"
+        }
+      ]
+    }
+  ]
+}

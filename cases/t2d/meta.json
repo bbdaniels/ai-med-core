@@ -1,0 +1,16 @@
+{
+  "name": "t2d",
+  "title": "Outpatient Management of Type 2 Diabetes",
+  "templateType": "general-diagnosis",
+  "description": "Older adult with previously controlled type 2 diabetes presents with worsening glycemic control, progressive complications, and caregiver burden. Covers diabetes management, complication screening, lifestyle counseling, and psychosocial assessment.",
+  "clinicalInvariants": [
+    "Chief complaint: progressive fatigue and polydipsia over past 4-6 weeks in known T2D patient",
+    "Conditions: T2D (8 years, HbA1c rising from 7.1% to 8.2%), HTN (controlled), peripheral neuropathy, background retinopathy",
+    "Medications: metformin 1000mg BID, amlodipine 5mg daily, paracetamol PRN",
+    "Family history: mother with T2D and stroke, father with CAD, sister with T2D",
+    "Clinical findings: BP 138/82, BMI 27.8, dry mucous membranes, reduced monofilament sensation feet, diminished pedal pulses",
+    "Assessment: uncontrolled T2D, progressive neuropathy, background retinopathy, caregiver stress",
+    "Management: labs, consider GLP-1/SGLT2 add-on, glucometer provision, foot care, ophthalmology referral, depression screening, social work referral",
+    "Provider questions and SP responses remain substantively identical across all variants"
+  ]
+}

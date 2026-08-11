@@ -1,0 +1,14 @@
+{
+  "name": "ltbi_primary_care",
+  "title": "Adult Primary Care Preventive and Risk-Assessment Encounter",
+  "templateType": "general-diagnosis",
+  "description": "Adult patient presents for a routine primary care encounter (annual wellness visit, establishing care, or urgent visit) at a California clinic. Covers history-taking, risk assessment, preventive care, diagnostic test ordering, follow-up, and referral decisions. Project case files are hand-written from The KNOW Study (UCSF) survey instrument (Module B vignettes); this base template documents structure and conventions only.",
+  "clinicalInvariants": [
+    "Scripted verbatim opening message: the patient introduces first name and age, then states the case's exact reason-for-visit quote, and nothing more",
+    "Standardized history responses are revealed only when the provider asks, organized by topic group (TB risk and medical history; chronic conditions and medications; housing and social context; substance use; case-specific groups such as reproductive/preventive care, occupation, or insurance; safety; family history)",
+    "The patient never volunteers unrequested information and never mentions tuberculosis, TB testing, testing history, or screening unless the provider raises the topic first",
+    "Examination and test results follow the case's exact scripts; anything unspecified is normal / unremarkable per platform convention",
+    "The patient uses lay vocabulary only and provides no clinical advice, feedback, or recommendations",
+    "Scripted responses remain substantively identical across all encounters of a case (standardized-patient design for The KNOW Study)"
+  ]
+}

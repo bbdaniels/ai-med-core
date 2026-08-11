@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI-MED Project Definition",
+  "description": "Defines a project: cases + frontend + Kobo form + deployment config",
+  "type": "object",
+  "required": ["name", "displayName", "frontend", "cases", "kobo", "languages", "deployment"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "URL-safe project identifier (lowercase, hyphens only)"
+    },
+    "displayName": {
+      "type": "string",
+      "description": "Human-readable project name"
+    },
+    "frontend": {
+      "type": "string",
+      "enum": ["chat", "voice", "avatar"],
+      "description": "Which frontend package to use"
+    },
+    "cases": {
+      "type": "object",
+      "required": ["systemPrompt", "vignettes"],
+      "properties": {
+        "systemPrompt": {
+          "type": "string",
+          "description": "Path to system prompt file (relative to repo root)"
+        },
+        "vignettes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "template", "file"],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_]+$",
+                "description": "Vignette identifier (alphanumeric + underscores, or hyphen-stripped UUID)"
+              },
+              "template": {
+                "type": "string",
+                "description": "Base case template name (e.g., 'fall_elderly', 'cbs_chv')"
+              },
+              "title": {
+                "type": "string",
+                "description": "Human-readable case title"
+              },
+              "file": {
+                "type": "string",
+                "description": "Path to vignette content file (relative to repo root)"
+              },
+              "profileId": {
+                "type": ["string", "null"],
+                "description": "Demographic profile ID from the template's profiles.json. Null if hand-written."
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "kobo": {
+      "type": "object",
+      "required": ["template", "formUid", "formUrl"],
+      "properties": {
+        "template": {
+          "type": "string",
+          "description": "Path to XLSForm template file"
+        },
+        "formUid": {
+          "type": ["string", "null"],
+          "description": "Deployed Kobo form UID (null until deployed)"
+        },
+        "formUrl": {
+          "type": ["string", "null"],
+          "description": "Deployed Kobo form URL (null until deployed)"
+        }
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Language codes supported by this project"
+    },
+    "deployment": {
+      "type": "object",
+      "required": ["tablePrefix"],
+      "properties": {
+        "tablePrefix": {
+          "type": "string",
+          "description": "Database table prefix for multi-tenancy"
+        }
+      }
+    }
+  }
+}

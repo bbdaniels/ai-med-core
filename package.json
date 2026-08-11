@@ -1,0 +1,31 @@
+{
+  "name": "ai-med-core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-MED platform — medical vignette training with AI-powered patient simulation",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "//overrides": "enketo-core pins leaflet-draw to git+ssh://github.com/enketo/Leaflet.draw#ff73078. That git dependency needs a GitHub SSH key, and npm runs its prepare script, which pulls phantomjs-prebuilt and fails. Either one breaks `npm install` on a clean clone. The fork self-reports version 1.0.4, so we resolve to the registry build of 1.0.4 instead.",
+  "overrides": {
+    "leaflet-draw": "1.0.4"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:frontend\"",
+    "dev:api": "npm -w @ai-med/api run dev",
+    "dev:frontend": "VITE_PROJECT=demo npm -w @ai-med/frontend-chat run dev",
+    "build": "npm run build:api && npm run build:frontend",
+    "build:api": "npm -w @ai-med/api run build",
+    "build:frontend": "npm -w @ai-med/frontend-chat run build",
+    "start": "npm -w @ai-med/api run start",
+    "type-check": "npm -w @ai-med/frontend-chat run type-check"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

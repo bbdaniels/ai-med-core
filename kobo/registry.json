@@ -1,0 +1,14 @@
+{
+  "forms": {
+    "example-assessment": {
+      "template": "kobo/templates/diagnosis.json",
+      "deployments": {
+        "demo": {
+          "uid": "aFAKEuid00000000000000000",
+          "name": "Example: Patient Assessment Form",
+          "owner": "example-user"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "fall_elderly",
+  "title": "Evaluation After a Recent Fall in an Older Adult",
+  "templateType": "4ms-geriatric",
+  "description": "Older adult presents for evaluation after a fall at home. Covers fall risk assessment using the 4Ms Age-Friendly Health Systems framework, polypharmacy review, orthostatic hypotension, and mild cognitive impairment.",
+  "clinicalInvariants": [
+    "Conditions: hypertension, type 2 DM, osteoarthritis (knees, hands), mild cognitive impairment",
+    "Core medications: lisinopril 10mg daily, metformin 500mg BID, acetaminophen PRN, oxybutynin 5mg daily, glyburide 2.5mg daily, omeprazole 20mg daily",
+    "Chief complaint: fall ~5 days ago reaching for item in kitchen, landed on right knee",
+    "Clinical findings: MOCA 22/30, TUG 14 seconds (needs arms to arise), mild orthostatic drop (~14/6 mmHg)",
+    "Assessment: fall from imbalance + orthostatic changes, OA affecting gait, MCI contributing to safety concerns, polypharmacy",
+    "Management: consistent cane use, PT referral, medication review, safety evaluation, ACP documentation, 4-week follow-up",
+    "4Ms framework provider questions remain verbatim across all variants",
+    "SP responses to 4Ms questions remain substantively identical across variants"
+  ]
+}

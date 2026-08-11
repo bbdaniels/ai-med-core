@@ -1,0 +1,16 @@
+{
+  "name": "hypertension",
+  "title": "Outpatient Evaluation of Hypertension",
+  "templateType": "general-diagnosis",
+  "description": "Adult patient presents to primary care with newly discovered elevated blood pressure readings. Covers hypertension diagnosis, initial workup, lifestyle counseling, cardiovascular risk assessment, and medication discussion.",
+  "clinicalInvariants": [
+    "Chief complaint: persistent headaches over the past two weeks, with elevated home blood pressure readings (150-160/90-98)",
+    "Conditions: pre-diabetes (HbA1c 6.0%), mild hyperlipidemia (TC 228, LDL 148), overweight (BMI 29.2)",
+    "Medications: ibuprofen PRN 2-3x/week (contributing to elevated BP), fish oil occasional",
+    "Family history: father with HTN and MI at 62, mother with HTN and T2DM, brother with HTN",
+    "Clinical findings: BP 156/94 right arm, 152/92 left arm, HR 78, no end-organ damage signs",
+    "Assessment: Stage 2 hypertension (newly diagnosed), pre-diabetes, hyperlipidemia, NSAID contribution",
+    "Management: home BP monitoring, baseline labs, lifestyle modifications (DASH diet, exercise, sodium reduction, weight loss), NSAID cessation, consider ACE/ARB if BP remains elevated",
+    "Provider questions and SP responses remain substantively identical across all variants"
+  ]
+}

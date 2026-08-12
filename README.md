@@ -1,5 +1,7 @@
 # AI-MED Core
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21895858.svg)](https://doi.org/10.5281/zenodo.21895858)
+
 Open-source platform for AI-powered medical training simulations. Students chat with an AI playing pre-written clinical scenarios ("vignettes"), then complete structured assessment forms via KoboToolbox.
 
 This repo contains the **platform code only**. Clinical content (vignettes, rubrics, forms) lives in separate project directories that you create and manage independently.
@@ -112,6 +114,12 @@ credit-redemption proxy rejects those models. Leave `OPENAI_BASE_URL` unset and 
 whole gateway path stays dormant. Any OpenAI-compatible gateway can be substituted
 by pointing `OPENAI_BASE_URL` at it, though the credit-balance fields are specific
 to the Harvard gateway's response format.
+
+## Cite this
+
+Daniels, Benjamin B. *AI-MED Core: digital standardized patient research platform*. Zenodo. `https://doi.org/10.5281/zenodo.21895858`
+
+That DOI is the concept DOI, so it always resolves to the most recent release; each release also gets its own version DOI on the Zenodo record. [`CITATION.cff`](CITATION.cff) carries the same metadata in machine-readable form, which is what GitHub's "Cite this repository" button reads.
 
 ## Attribution
 

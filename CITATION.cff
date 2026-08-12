@@ -8,3 +8,6 @@ authors:
     orcid: "https://orcid.org/0000-0001-9652-6653"
 license: MIT
 repository-code: "https://github.com/bbdaniels/ai-med-core"
+# Concept DOI. It resolves to the most recent release, so it never goes stale
+# the way a pinned version DOI would.
+doi: "10.5281/zenodo.21895858"

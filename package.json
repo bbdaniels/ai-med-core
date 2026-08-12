@@ -1,5 +1,5 @@
 {
-  "name": "ai-med",
+  "name": "ai-med-core",
   "version": "1.0.0",
   "private": true,
   "description": "AI-MED platform — medical vignette training with AI-powered patient simulation",

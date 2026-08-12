@@ -18,10 +18,10 @@ service variable, the `ADMIN_PASSPHRASE_PROD` key in the untracked root `.env`, 
 
 ```bash
 # Push to a deployed backend (URL from DEPLOY_URL in .env, or pass --url)
-ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/push-content.ts --project demo
+ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/push-content.ts demo
 
 # Push to local dev
-ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts --project demo --local
+ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts demo --local
 ```
 
 Requires `ADMIN_PASSPHRASE` to match the target deployment's configured value.

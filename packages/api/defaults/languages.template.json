@@ -8,11 +8,11 @@
     "en": {
       "welcome": {
         "title": "Accelerating Improvement in Medical Education and Delivery (AI-MED)",
-        "subtitle": "Practice your diagnostic skills with digital standardized patient (DSP) interviews",
+        "subtitle": "Practice your diagnostic skills with AI-simulated patient interviews",
         "instructionsLead": "Please read the following instructions before you begin:",
         "howItWorks": "How it works:",
         "bullets": [
-          "You will interview a digital standardized patient (DSP)",
+          "You will interview a simulated patient",
           "Ask questions to gather information about symptoms, history, and exposure",
           "Request clinical examinations and tests as needed from your nursing team",
           "Complete the diagnostic assessment form based on your findings",

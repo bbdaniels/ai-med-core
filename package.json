@@ -1,5 +1,5 @@
 {
-  "name": "ai-med-core",
+  "name": "ai-med",
   "version": "1.0.0",
   "private": true,
   "description": "AI-MED platform — medical vignette training with AI-powered patient simulation",
@@ -11,7 +11,7 @@
   "workspaces": [
     "packages/*"
   ],
-  "//overrides": "enketo-core pins leaflet-draw to git+ssh://github.com/enketo/Leaflet.draw#ff73078. That git dependency needs a GitHub SSH key, and npm runs its prepare script, which pulls phantomjs-prebuilt and fails. Either one breaks `npm install` on a clean clone. The fork self-reports version 1.0.4, so we resolve to the registry build of 1.0.4 instead.",
+  "//overrides": "enketo-core pins leaflet-draw to a git ref (github:enketo/Leaflet.draw#ff73078). npm resolved that to git+ssh in package-lock.json WITH NO integrity FIELD, so `npm ci` could not verify what it fetched — that is the reason for this override. Re-resolving it also ran the dependency's install scripts, which pull phantomjs-prebuilt and fail. The fork self-reports version 1.0.4, so we resolve to the registry build of 1.0.4, which locks with a sha512. The frontend aliases leaflet-draw to a stub in vite.config.ts, so nothing ships either way.",
   "overrides": {
     "leaflet-draw": "1.0.4"
   },

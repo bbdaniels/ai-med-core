@@ -364,7 +364,7 @@ export default function RealtimeVoice() {
           <button onClick={backToText} style={backLinkStyle}>&larr; Back to text chat</button>
           <h1>Voice conversation</h1>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-            Talk through the case out loud with the digital standardized patient (DSP). When you click Start,
+            Talk through the case out loud with the simulated patient. When you click Start,
             your browser will ask for microphone permission. End the conversation when you are
             done, then complete the assessment form.
           </p>

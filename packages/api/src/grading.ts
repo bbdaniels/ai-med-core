@@ -183,7 +183,7 @@ function buildScoringRubricPrompt(
     ? `\n\nCRITICAL: You MUST write ALL text (including overall_notes) in the language with ISO 639-1 code: ${language}. Do NOT use English.`
     : '';
 
-  return `You are grading a medical student's interaction with a digital standardized patient (DSP).${languageInstruction}
+  return `You are grading a medical student's interaction with a simulated patient.${languageInstruction}
 
 ## ${textDesc}:
 ${textContent}

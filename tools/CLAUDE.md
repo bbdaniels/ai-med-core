@@ -6,16 +6,22 @@ CLI utilities for content management. All run via `npx tsx tools/<script>.ts`.
 
 Push all content from a project's `project.json` to a deployment: system prompt, vignettes, Kobo config, languages, case template, and **vignette assignments** (if `projects/<name>/assignments.json` exists).
 
-`push-content.ts` reads `ADMIN_PASSPHRASE` from the environment. Keep the value in
-an untracked `.env` or export it in your shell. Never write a passphrase into a
-tracked file, a command example, or a commit message.
+`push-content.ts` reads `ADMIN_PASSPHRASE` and `DEPLOY_URL` from the environment.
+Keep both in the untracked root `.env` (or export them in your shell). **Never write a
+passphrase into a tracked file, a command example, a log, or a commit message** -- a
+passphrase committed once is compromised for good, and this repo syncs to a public
+mirror.
+
+The production passphrase lives in exactly three places: Railway's `ADMIN_PASSPHRASE`
+service variable, the `ADMIN_PASSPHRASE_PROD` key in the untracked root `.env`, and the
+`ADMIN_PASSPHRASE` GitHub Actions secret. Reference it, never transcribe it.
 
 ```bash
-# Push to a deployed backend
-ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE" npx tsx tools/push-content.ts --project demo --url https://your-api-host.example.com
+# Push to a deployed backend (URL from DEPLOY_URL in .env, or pass --url)
+ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/push-content.ts --project demo
 
 # Push to local dev
-ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE" npx tsx tools/push-content.ts --project demo --local
+ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts --project demo --local
 ```
 
 Requires `ADMIN_PASSPHRASE` to match the target deployment's configured value.

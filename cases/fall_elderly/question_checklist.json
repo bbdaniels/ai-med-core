@@ -2,7 +2,7 @@
   "name": "Case Script Question Checklist",
   "version": "1.0",
   "source": "transcript",
-  "description": "Specific questions from the digital standardized patient (DSP) case scripts that providers should ask",
+  "description": "Specific questions from the standardized patient case scripts that providers should ask",
   "sections": [
     {
       "name": "General Provider Questions",

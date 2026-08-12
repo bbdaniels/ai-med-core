@@ -2,10 +2,17 @@
 node_modules/
 dist/
 
-# Environment variables
+# Environment variables. The glob is deliberate: an enumerated list let
+# .env.staging, .env.prod, and .env.bak be tracked by accident. env.example has
+# no leading dot and stays tracked.
 .env
-.env.local
-.env.production
+.env.*
+
+# Credentials of any kind, never tracked.
+*.pem
+*.key
+*.p12
+service-account*.json
 
 # Logs
 *.log
@@ -60,6 +67,10 @@ transcripts/
 # Deployment-specific configuration
 **/languages.json
 !projects/**/languages.json
+# core/ holds the public mirror's overrides, which are source, not generated
+# output. Without this the demo project's languages.json is silently untracked
+# and the mirror publishes an incomplete demo.
+!core/**/languages.json
 local-dev.db
 
 # Datbase backups

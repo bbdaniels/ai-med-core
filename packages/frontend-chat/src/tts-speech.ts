@@ -6,7 +6,7 @@
 // Kept free of React/DOM so the logic is unit-testable in plain Node.
 
 export interface TtsSegment {
-  /** 'patient' for the default speaker (the digital standardized patient, or DSP), 'other' for anyone else (e.g. the nurse). */
+  /** 'patient' for the default speaker (the simulated patient), 'other' for anyone else (e.g. the nurse). */
   role: 'patient' | 'other';
   /** The literal prefix name that opened this segment (e.g. "Nurse", "Bệnh nhân"), or null for unprefixed patient speech. */
   speaker: string | null;

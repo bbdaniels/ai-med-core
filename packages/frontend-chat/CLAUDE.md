@@ -111,7 +111,7 @@ Structural change to remember: to convert a multi-select checklist into forced-c
 ```typescript
 interface LanguageUISection {
   welcome: { title, subtitle, instructionsLead, howItWorks, bullets, getStarted, languageLabel }
-  chat: { headerTitle, scenarioDescription, inputPlaceholder, send, loadingForm, thanksTitle, nextCase, patientMode, diagnosis, submitForm, submittingForm, formTitle }
+  chat: { headerTitle, scenarioDescription, inputPlaceholder, send, loadingForm, thanksTitle, nextCase, patientMode, diagnosis, submitForm, submittingForm, formTitle, noticeLine?, noticeDetails? }
   feedback?: { loading, loadingDetail, explored, opportunities, complete, error, continue }
 }
 ```
@@ -133,8 +133,9 @@ function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullabl
 - `t('feedback', 'explored')` → "Topics you explored well:" or "Sujets que vous avez bien explorés :"
 
 **Language State:**
-- Selected language code stored in localStorage (`lang_code`)
+- Selected language code stored in localStorage (`lang_code`); initial value resolves `?lang=` URL param → saved → browser locale → `en` (`src/lang-boot.ts`), validated against the project's languages by the auto-correct effect
 - Language selector on welcome screen (only shown if >1 language available)
+- `skipWelcome` projects (haivn_eip) have no welcome page: `src/ChatNoticeBar.tsx` renders a slim line under the chat input (current language flag + short consent notice) whose popover carries the language switcher and the full `consentParagraphs` — rendered only when the project supplies real consent text
 - Language name passed to backend as `language` parameter in `/api/chat` and `/api/grade-session`
 - Form reloads when language changes (triggers Enketo re-init with new UI language)
 

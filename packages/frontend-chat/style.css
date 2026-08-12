@@ -2301,3 +2301,68 @@ body {
         display: none;
     }
 }
+
+/* Chat notice bar (skipWelcome projects): slim consent/language line under the
+   input, with a popover carrying the language switcher + full notice text. */
+.chat-notice-bar {
+  position: relative;
+  padding: 4px 16px 8px;
+}
+.chat-notice-line {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 0;
+}
+.chat-notice-line:hover .chat-notice-details { text-decoration: underline; }
+.chat-notice-details { color: var(--accent); white-space: nowrap; }
+.chat-notice-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 16px;
+  right: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 14px 16px;
+  z-index: 60;
+  /* .chatbot-container clips its overflow, so a long consent text would be cut
+     off with no scrollbar and no indication anything was missing. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.chat-notice-langs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chat-notice-lang-option {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+.chat-notice-lang-option.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+.chat-notice-paragraph {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+}

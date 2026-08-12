@@ -9,6 +9,8 @@ import ContentPanel from './components/ContentPanel';
 import SuggestedQuestions, { type SuggestionsContent } from './components/SuggestedQuestions';
 import DocumentPanel from './components/DocumentPanel';
 import LegalLibraryPanel, { type LegalLibraryContent } from './components/LegalLibraryPanel';
+import ChatNoticeBar from './ChatNoticeBar';
+import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
 
@@ -62,7 +64,7 @@ function playClip(audio: HTMLAudioElement, url: string): Promise<void> {
 }
 
 // Language types
-interface LanguageDef { code: string; name: string }
+interface LanguageDef { code: string; name: string; flag?: string }
 interface LanguageUISection {
   welcome: {
     title: string
@@ -92,6 +94,8 @@ interface LanguageUISection {
     submitForm?: string
     submittingForm?: string
     formTitle?: string
+    noticeLine?: string
+    noticeDetails?: string
   }
   feedback?: {
     loading: string
@@ -237,7 +241,13 @@ function ChatInterface() {
   const [showGradingScreen, setShowGradingScreen] = useState(false);
   const [langs, setLangs] = useState<LanguagesJson | null>(null);
   const [selectedLanguageCode, setSelectedLanguageCode] = useState<string>(() => {
-    try { return localStorage.getItem('lang_code') || 'en' } catch { return 'en' }
+    try {
+      return resolveInitialLanguage(
+        window.location.search,
+        localStorage.getItem('lang_code'),
+        navigator.languages ?? [navigator.language],
+      );
+    } catch { return 'en' }
   });
   const [hasStarted, setHasStarted] = useState(false);
   const [caseTemplate, setCaseTemplate] = useState<string | null>(null);
@@ -256,6 +266,13 @@ function ChatInterface() {
   const [apiTabs, setApiTabs] = useState<TabDefinition[] | null>(null);
   // Formless mode: project has no Kobo form; we skip the auto-added form tab.
   const [formless, setFormless] = useState(false);
+  // skipWelcome: the project boots straight into chat; the welcome page's two
+  // jobs (language choice, consent notice) move into ChatNoticeBar. configLoaded
+  // gates the welcome renders so a slow /api/config can't flash the welcome page
+  // on a skipWelcome project — and a FAILED /api/config still degrades to the
+  // normal welcome rather than a blank screen.
+  const [skipWelcome, setSkipWelcome] = useState(false);
+  const [configLoaded, setConfigLoaded] = useState(false);
   // Document-reference linking: when a project declares `docRefs`, references in
   // an assistant answer ("Section 4.1", "Phụ lục 7.1") become clickable and jump
   // the document tab to that passage. Absent this config the feature is off and
@@ -447,14 +464,27 @@ function ChatInterface() {
         if (data.enableVoice) setVoiceEnabled(true);
         if (data.enableRealtime) setRealtimeEnabled(true);
         if (data.formless) setFormless(true);
+        if (data.skipWelcome) setSkipWelcome(true);
         if (data.dragDropAllocation) setDragDropAllocation(true);
         if (data.enableFeedback === false) setFeedbackEnabled(false);
         if (data.docRefs && typeof data.docRefs === 'object' && typeof data.docRefs.tabId === 'string') {
           setDocRefs(data.docRefs as DocRefsConfig);
         }
+        setConfigLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setConfigLoaded(true); });
   }, []);
+
+  // skipWelcome projects boot straight into chat once languages are loaded —
+  // the welcome page's two jobs (language choice, consent notice) live in
+  // ChatNoticeBar instead. Mirrors onStart minus the audio unlock (which
+  // needs a user gesture and only matters for voice projects).
+  useEffect(() => {
+    if (!skipWelcome || hasStarted || !langs) return;
+    sessionStorage.removeItem('sessionTokens');
+    setSessionTokens([]);
+    setHasStarted(true);
+  }, [skipWelcome, hasStarted, langs]);
 
   // Fetch tabs from /api/tabs (new pattern). Falls through to legacy langs.tabs if empty.
   // Re-fetched on language change: a tab's contentFile may be declared per language
@@ -1010,14 +1040,14 @@ function ChatInterface() {
         <p>{t('chat','endThankYouMessage') || 'You have completed all scenarios. Thank you for your participation. You may now close this page.'}</p>
       </div>
     </div>
-    {!hasStarted && !langs && (
+    {!hasStarted && (!langs || !configLoaded) && (
       <div className="welcome-screen">
         <div className="welcome-content" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
           <p>Loading...</p>
         </div>
       </div>
     )}
-    {!hasStarted && langs && (() => {
+    {!hasStarted && langs && configLoaded && !skipWelcome && (() => {
       const code = selectedLanguageCode || 'en';
       const consentParagraphs: string[] = (langs?.ui?.[code]?.welcome?.consentParagraphs || langs?.ui?.['en']?.welcome?.consentParagraphs || DEFAULT_CONSENT_PARAGRAPHS) as string[];
       const bullets = (langs?.ui?.[code]?.welcome?.bullets || langs?.ui?.['en']?.welcome?.bullets || []) as string[];
@@ -1056,7 +1086,7 @@ function ChatInterface() {
     
     {/* Opt-in entry to live voice mode, shown on the welcome screen when the
         project enables realtime. Navigates to ?mode=voice (preserving ?values=). */}
-    {!hasStarted && langs && realtimeEnabled && (
+    {!hasStarted && langs && configLoaded && !skipWelcome && realtimeEnabled && (
       <button
         onClick={() => {
           const u = new URL(window.location.href);
@@ -1285,6 +1315,34 @@ function ChatInterface() {
                   </button>
                 </div>
               </div>
+
+              {/* skipWelcome projects carry the welcome page's language selector and
+                  consent notice here instead. Deliberately NO DEFAULT_CONSENT_PARAGRAPHS
+                  fallback: that constant is a bracketed placeholder, so a project
+                  without its own consent text gets no bar rather than fake text. */}
+              {skipWelcome && (() => {
+                const code = selectedLanguageCode || 'en';
+                const noticeParagraphs = (langs?.ui?.[code]?.welcome?.consentParagraphs
+                  || langs?.ui?.['en']?.welcome?.consentParagraphs) as string[] | undefined;
+                // Spec, "Edge handling": consentParagraphs missing → the bar still
+                // renders as flag + language only. It carries the ONLY language
+                // switcher a skipWelcome project has, so dropping it for want of
+                // consent text would strand a multilingual project in one language.
+                // Null only when there is nothing to disclose AND nothing to switch.
+                const hasNotice = (noticeParagraphs?.length ?? 0) > 0;
+                const hasChoice = (langs?.languages?.length ?? 0) > 1;
+                if (!hasNotice && !hasChoice) return null;
+                return (
+                  <ChatNoticeBar
+                    languages={langs?.languages || []}
+                    selectedCode={code}
+                    onSelect={setSelectedLanguageCode}
+                    noticeLine={t('chat', 'noticeLine')}
+                    detailsLabel={t('chat', 'noticeDetails') || 'Details'}
+                    consentParagraphs={noticeParagraphs || []}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -2283,6 +2283,7 @@ app.get('/api/config', async (_req, res) => {
     let enableRealtime = false;
     let formless = false;
     let enableFollowups = false;
+    let skipWelcome = false;
     let dragDropAllocation = false;
     // Optional document-reference linking config (see doc-refs.ts on the frontend).
     // Passed through verbatim when present; absent for projects that don't opt in.
@@ -2295,6 +2296,7 @@ app.get('/api/config', async (_req, res) => {
       enableRealtime = projectConfig.enableRealtime || false;
       formless = projectConfig.formless || false;
       enableFollowups = projectConfig.enableFollowups || false;
+      skipWelcome = projectConfig.skipWelcome || false;
       dragDropAllocation = projectConfig.dragDropAllocation || false;
       if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
         docRefs = projectConfig.docRefs;
@@ -2313,6 +2315,7 @@ app.get('/api/config', async (_req, res) => {
       enableRealtime,
       formless,
       enableFollowups,
+      skipWelcome,
       dragDropAllocation,
       docRefs,
     });

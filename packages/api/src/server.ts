@@ -482,7 +482,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
     } catch { /* no legal corpus for this project */ }
 
     const followupsInstruction = enableFollowups
-      ? '\n\nYou will respond as a JSON object with {answer, followups}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer.'
+      ? '\n\nYou will respond as a JSON object with {answer, followups}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation.'
       : '';
 
     const completeSystemPrompt =

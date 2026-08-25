@@ -172,9 +172,13 @@ Legacy projects (e.g. CBS) still embed `tabs` inside `languages.json` — this i
 
 ## Inline Follow-up Suggestions
 
-When `"enableFollowups": true`, the backend switches `/api/chat` to JSON mode and the model returns `{answer, followups[]}`. The frontend renders 2-3 clickable chips above the input box. Clicking a chip auto-sends it as the next user message.
+When `"enableFollowups": true`, the backend switches `/api/chat` to JSON mode and the model returns `{answer, followups[], beyondScope}`. The frontend renders 2-3 clickable chips above the input box. Clicking a chip auto-sends it as the next user message.
 
 Best for: open-ended Q&A tools where users explore a topic by drilling into related questions. Not well-suited to structured clinical simulations.
+
+## Beyond-Scope Disclosure
+
+The same JSON channel carries `beyondScope`: the model sets it true when the answer says anything the project's reference content does not itself cover (declined, out of scope, partially covered, or general framing added around the content). The frontend renders a quiet marker under that answer, using `chat.beyondScopeNotice` from `languages.json`, plus a standing line under the input from `chat.groundingNote`. Both are opt-in by translation: a project that supplies neither string shows neither element, so this costs nothing to projects that do not want it. A project that wants the per-answer marker should also spell out in its `system-prompt.md` what counts as beyond its own scope (see `projects/haivn_eip/system-prompt.md`, COVERAGE RULE).
 
 ## Vignette Keys
 

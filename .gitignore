@@ -64,6 +64,10 @@ Thumbs.db
 # Chat transcripts
 transcripts/
 
+# Conversation-log exports (tools/export-conversations.ts). These hold what users
+# actually typed; they are a project-team review artifact, never repository content.
+exports/
+
 # Deployment-specific configuration
 **/languages.json
 !projects/**/languages.json
@@ -85,3 +89,7 @@ projects/**/forms/*.xlsx
 # Claude Code local config
 .claude/
 .gstack/
+
+# Python bytecode
+__pycache__/
+*.pyc

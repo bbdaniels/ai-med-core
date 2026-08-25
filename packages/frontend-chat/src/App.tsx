@@ -10,6 +10,7 @@ import SuggestedQuestions, { type SuggestionsContent } from './components/Sugges
 import DocumentPanel from './components/DocumentPanel';
 import LegalLibraryPanel, { type LegalLibraryContent } from './components/LegalLibraryPanel';
 import ChatNoticeBar from './ChatNoticeBar';
+import LanguageSwitcher from './LanguageSwitcher';
 import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
@@ -30,6 +31,9 @@ const PdfJsViewer = lazy(() => import('./components/PdfJsViewer'));
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  // Set by /api/chat when the answer states anything the project's reference
+  // content does not itself cover; drives the per-answer disclosure marker.
+  beyondScope?: boolean;
 }
 
 // Play one TTS clip on a (reused) audio element; resolves when the clip ends,
@@ -96,6 +100,10 @@ interface LanguageUISection {
     formTitle?: string
     noticeLine?: string
     noticeDetails?: string
+    // Standing disclosure under the chat input: what answers are grounded in.
+    groundingNote?: string
+    // Per-answer marker shown on a reply that goes beyond the grounding source.
+    beyondScopeNotice?: string
   }
   feedback?: {
     loading: string
@@ -196,6 +204,7 @@ const fetchVignettes = async (uid?: string | null): Promise<string[]> => {
 interface ChatResponse {
   message: string;
   followups?: string[];
+  beyondScope?: boolean;
   caseTemplate?: string | null;
   usage?: unknown;
 }
@@ -259,7 +268,9 @@ function ChatInterface() {
   const [selectedVoice, setSelectedVoice] = useState('nova');
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
-  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<string | null>(null);
+  // Holds the whole assistant Message (not just its text) so per-message flags
+  // such as beyondScope survive the voice path and land on the flushed bubble.
+  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<Message | null>(null);
   const [awaitingTTS, setAwaitingTTS] = useState(false);
   // Tabs fetched from /api/tabs (new pattern: tab structure in project.json, content in separate files).
   // When null, falls back to legacy langs.tabs pattern.
@@ -524,7 +535,7 @@ function ChatInterface() {
 
     // If muted or voice not active, flush text immediately
     if (voiceMuted || !currentVignetteVoice) {
-      setMessages(prev => [...prev, { role: 'assistant', content: pendingAssistantMessage }]);
+      setMessages(prev => [...prev, pendingAssistantMessage]);
       setPendingAssistantMessage(null);
       setAwaitingTTS(false);
       setIsLoading(false);
@@ -552,12 +563,12 @@ function ChatInterface() {
         const patientVoice = assignedVoice || selectedVoiceRef.current;
         const speakerVoices = currentVignetteInfo?.speakerVoices;
         const segments = splitRoleSegments(
-          pendingAssistantMessage,
+          pendingAssistantMessage.content,
           speakerVoices ? Object.keys(speakerVoices) : [],
         );
         if (segments.length === 0) {
           // Nothing speakable — flush the text without audio.
-          setMessages(prev => [...prev, { role: 'assistant', content: pendingAssistantMessage }]);
+          setMessages(prev => [...prev, pendingAssistantMessage]);
           setPendingAssistantMessage(null);
           setAwaitingTTS(false);
           setIsLoading(false);
@@ -595,7 +606,7 @@ function ChatInterface() {
         audioRef.current = audio;
 
         // Reveal text + start audio simultaneously
-        setMessages(prev => [...prev, { role: 'assistant', content: pendingAssistantMessage }]);
+        setMessages(prev => [...prev, pendingAssistantMessage]);
         setPendingAssistantMessage(null);
         setAwaitingTTS(false);
         setIsLoading(false);
@@ -622,7 +633,7 @@ function ChatInterface() {
         console.error('TTS error:', err);
         if (!cancelled) {
           // Graceful fallback: show text without audio
-          setMessages(prev => [...prev, { role: 'assistant', content: pendingAssistantMessage }]);
+          setMessages(prev => [...prev, pendingAssistantMessage]);
           setPendingAssistantMessage(null);
           setAwaitingTTS(false);
           setIsLoading(false);
@@ -741,7 +752,7 @@ function ChatInterface() {
     if (hardcodedOpening) {
       if (currentVignetteVoice && !voiceMuted) {
         setIsLoading(true);
-        setPendingAssistantMessage(hardcodedOpening);
+        setPendingAssistantMessage({ role: 'assistant', content: hardcodedOpening });
       } else {
         setMessages([{ role: 'assistant', content: hardcodedOpening }]);
       }
@@ -759,11 +770,14 @@ function ChatInterface() {
         sessionToken: transcriptToken,
       });
 
+      // The greeting turn is generated from the project's own prompt, so it is
+      // never marked as going beyond the reference content.
+      const opening: Message = { role: 'assistant', content: response.message };
       if (currentVignetteVoice && !voiceMuted) {
-        setPendingAssistantMessage(response.message);
+        setPendingAssistantMessage(opening);
         // isLoading stays true; TTS useEffect will clear it
       } else {
-        setMessages([{ role: 'assistant', content: response.message }]);
+        setMessages([opening]);
         setIsLoading(false);
       }
       if (response.caseTemplate) {
@@ -834,11 +848,16 @@ function ChatInterface() {
         sessionToken: transcriptToken,
       });
 
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: response.message,
+        beyondScope: response.beyondScope === true,
+      };
       if (currentVignetteVoice && !voiceMuted) {
-        setPendingAssistantMessage(response.message);
+        setPendingAssistantMessage(assistantMessage);
         // isLoading stays true; TTS useEffect will clear it + sendInFlightRef
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: response.message }]);
+        setMessages(prev => [...prev, assistantMessage]);
         setIsLoading(false);
         sendInFlightRef.current = false;
       }
@@ -940,7 +959,7 @@ function ChatInterface() {
     // Include any pending assistant message that hasn't been flushed to messages yet
     // (voice-enabled flow holds text until TTS audio is ready)
     const allMessages = pendingAssistantMessage
-      ? [...messages, { role: 'assistant' as const, content: pendingAssistantMessage }]
+      ? [...messages, pendingAssistantMessage]
       : messages;
     const body = allMessages
       .map((m: { role: string; content: string }) => {
@@ -1126,6 +1145,18 @@ function ChatInterface() {
           }}
           scrollable
         />
+        {/* Mobile copy of the chat top bar's switcher: the strip is fixed to the
+            top of the viewport, so the control stays reachable while the reader is
+            in the document or library panel. Desktop hides the whole strip. */}
+        {skipWelcome && (langs?.languages?.length ?? 0) > 1 && (
+          <LanguageSwitcher
+            languages={langs?.languages || []}
+            selectedCode={selectedLanguageCode || 'en'}
+            onSelect={setSelectedLanguageCode}
+            label={t('welcome', 'languageLabel') || 'Language'}
+            className="lang-switcher-strip"
+          />
+        )}
       </div>
     ) : (
       <div className="mobile-toggle-bar">
@@ -1148,6 +1179,21 @@ function ChatInterface() {
       {/* Left Panel: Chatbot */}
       <div className={`left-panel ${mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
         <div className="left-panel-inner">
+          {/* skipWelcome projects never see the welcome screen's language selector,
+              so the switcher lives here, in the chat's top bar. On mobile with tabs
+              it is hidden by CSS in favour of the copy in the fixed tab strip, which
+              stays reachable from every panel. Projects that show the welcome screen
+              render nothing here and are untouched. */}
+          {skipWelcome && (langs?.languages?.length ?? 0) > 1 && (
+            <div className="chat-topbar">
+              <LanguageSwitcher
+                languages={langs?.languages || []}
+                selectedCode={selectedLanguageCode || 'en'}
+                onSelect={setSelectedLanguageCode}
+                label={t('welcome', 'languageLabel') || 'Language'}
+              />
+            </div>
+          )}
           {wipEnabled && (
             <div className="left-panel-header">
               <button
@@ -1251,6 +1297,16 @@ function ChatInterface() {
                     <div key={index} className={`message ${message.role === 'user' ? 'user-message' : 'bot-message'}`}>
                       <div className="message-content">
                         {message.role === 'assistant' ? renderAssistantContent(message.content) : message.content}
+                        {/* Per-answer disclosure: this reply said something the
+                            project's reference content does not itself cover.
+                            Shown only when the project supplies the localized
+                            string, so other projects are unaffected; when the
+                            model omits the flag the standing note still applies. */}
+                        {message.role === 'assistant' && message.beyondScope && t('chat', 'beyondScopeNotice') && (
+                          <div className="beyond-scope-note">
+                            <span aria-hidden="true">⚠</span> {t('chat', 'beyondScopeNotice')}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1316,27 +1372,20 @@ function ChatInterface() {
                 </div>
               </div>
 
-              {/* skipWelcome projects carry the welcome page's language selector and
-                  consent notice here instead. Deliberately NO DEFAULT_CONSENT_PARAGRAPHS
-                  fallback: that constant is a bracketed placeholder, so a project
-                  without its own consent text gets no bar rather than fake text. */}
+              {/* skipWelcome projects carry the welcome page's consent notice here
+                  instead, alongside the standing grounding disclaimer. Deliberately
+                  NO DEFAULT_CONSENT_PARAGRAPHS fallback: that constant is a bracketed
+                  placeholder, so a project without its own consent text gets no
+                  consent line rather than fake text. The language switcher used to
+                  live here; it is now in the chat top bar, so the bar renders nothing
+                  when the project has neither a standing note nor consent text. */}
               {skipWelcome && (() => {
                 const code = selectedLanguageCode || 'en';
                 const noticeParagraphs = (langs?.ui?.[code]?.welcome?.consentParagraphs
                   || langs?.ui?.['en']?.welcome?.consentParagraphs) as string[] | undefined;
-                // Spec, "Edge handling": consentParagraphs missing → the bar still
-                // renders as flag + language only. It carries the ONLY language
-                // switcher a skipWelcome project has, so dropping it for want of
-                // consent text would strand a multilingual project in one language.
-                // Null only when there is nothing to disclose AND nothing to switch.
-                const hasNotice = (noticeParagraphs?.length ?? 0) > 0;
-                const hasChoice = (langs?.languages?.length ?? 0) > 1;
-                if (!hasNotice && !hasChoice) return null;
                 return (
                   <ChatNoticeBar
-                    languages={langs?.languages || []}
-                    selectedCode={code}
-                    onSelect={setSelectedLanguageCode}
+                    standingNote={t('chat', 'groundingNote')}
                     noticeLine={t('chat', 'noticeLine')}
                     detailsLabel={t('chat', 'noticeDetails') || 'Details'}
                     consentParagraphs={noticeParagraphs || []}

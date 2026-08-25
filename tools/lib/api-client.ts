@@ -16,6 +16,31 @@ export interface Vignette {
   content: string;
 }
 
+/** One logged chat turn from the durable qa_log table (GET /api/admin/qa-log). */
+export interface QaLogRow {
+  id: number;
+  session_token: string | null;
+  vignette_key: string | null;
+  language: string | null;
+  question: string;
+  answer: string;
+  /** ISO-8601 UTC */
+  created_at: string;
+}
+
+export interface QaLogPage {
+  project: string;
+  days: number | null;
+  since: string | null;
+  until: string | null;
+  limit: number;
+  offset: number;
+  total: number;
+  returned: number;
+  hasMore: boolean;
+  rows: QaLogRow[];
+}
+
 export class AdminApiClient {
   private baseUrl: string;
   private token: string | null = null;
@@ -174,6 +199,24 @@ export class AdminApiClient {
       method: 'POST',
       body: JSON.stringify({ assignments: assignments.map(a => ({ uid: a.uid, case: a.vignetteKey })) }),
     });
+  }
+
+  // --- Conversation log endpoints ---
+
+  async getQaLog(params: {
+    days?: number;
+    since?: string;
+    until?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<QaLogPage> {
+    const qs = new URLSearchParams();
+    if (params.since) qs.set('since', params.since);
+    else if (params.days !== undefined) qs.set('days', String(params.days));
+    if (params.until) qs.set('until', params.until);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    return this.request(`/api/admin/qa-log?${qs.toString()}`);
   }
 
   // --- Public endpoints ---

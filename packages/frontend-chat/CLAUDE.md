@@ -111,7 +111,7 @@ Structural change to remember: to convert a multi-select checklist into forced-c
 ```typescript
 interface LanguageUISection {
   welcome: { title, subtitle, instructionsLead, howItWorks, bullets, getStarted, languageLabel }
-  chat: { headerTitle, scenarioDescription, inputPlaceholder, send, loadingForm, thanksTitle, nextCase, patientMode, diagnosis, submitForm, submittingForm, formTitle, noticeLine?, noticeDetails? }
+  chat: { headerTitle, scenarioDescription, inputPlaceholder, send, loadingForm, thanksTitle, nextCase, patientMode, diagnosis, submitForm, submittingForm, formTitle, noticeLine?, noticeDetails?, groundingNote?, beyondScopeNotice? }
   feedback?: { loading, loadingDetail, explored, opportunities, complete, error, continue }
 }
 ```
@@ -135,7 +135,10 @@ function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullabl
 **Language State:**
 - Selected language code stored in localStorage (`lang_code`); initial value resolves `?lang=` URL param → saved → browser locale → `en` (`src/lang-boot.ts`), validated against the project's languages by the auto-correct effect
 - Language selector on welcome screen (only shown if >1 language available)
-- `skipWelcome` projects (haivn_eip) have no welcome page: `src/ChatNoticeBar.tsx` renders a slim line under the chat input (current language flag + short consent notice) whose popover carries the language switcher and the full `consentParagraphs` — rendered only when the project supplies real consent text
+- `skipWelcome` projects (haivn_eip) have no welcome page, so the two jobs the welcome screen does are split:
+  - **Language**: `src/LanguageSwitcher.tsx` renders a real control (flag + language name + caret, opening a listbox) in the chat top bar — `.chat-topbar` on desktop, and a second mount inside the fixed `.mobile-tab-strip` on mobile so it stays reachable from the document and library panels. CSS hides the top-bar copy at ≤768px when the project has tabs (`.main-container.has-tabs .chat-topbar`), so exactly one switcher is ever on screen. Gated on `skipWelcome`: projects that show the welcome screen render nothing here and are byte-identical to before.
+  - **Notice**: `src/ChatNoticeBar.tsx` renders, under the input, the standing `chat.groundingNote` disclaimer plus a slim consent line whose popover carries the full `consentParagraphs` (the consent line appears only when the project supplies real consent text; the bar renders nothing when it has neither string). It no longer carries a language control.
+  - Both popovers dismiss through the shared `useDismiss(ref, open, onDismiss)` hook in `src/use-dismiss.ts` (outside pointer press + Escape)
 - Language name passed to backend as `language` parameter in `/api/chat` and `/api/grade-session`
 - Form reloads when language changes (triggers Enketo re-init with new UI language)
 
@@ -196,6 +199,14 @@ When `/api/config` returns `formless: true`, App.tsx skips auto-adding a form ta
 When `/api/chat` returns a non-empty `followups` array (only when the project has `enableFollowups: true` in `project.json`), the frontend renders 2-3 clickable chips above the input textbox. Clicking a chip calls `handleQuestionClick(text)` → `handleSendMessage(text)` → auto-sends to chat. Follow-ups are cleared at the start of the next user turn.
 
 CSS: `.followups-bar` + `.followup-chip` in `style.css`.
+
+## Beyond-Scope Disclosure
+
+`/api/chat` returns `beyondScope: true` on an answer that says anything the project's reference content does not itself cover (see `packages/api/CLAUDE.md`). The flag is stored on the `Message` — which is also why `pendingAssistantMessage` holds a whole `Message` rather than a bare string, so a voice project's TTS path carries per-message flags to the flushed bubble instead of dropping them.
+
+Rendering is translation-gated, never hardcoded English: the marker under a flagged answer uses `t('chat', 'beyondScopeNotice')` and the standing line under the input uses `t('chat', 'groundingNote')`. A project whose `languages.json` omits a string renders that element not at all, so nothing changes for other projects. When the model omits the flag it degrades to no marker, and the standing line still discloses the grounding.
+
+CSS: `.beyond-scope-note`, `.chat-standing-note` in `style.css`.
 
 ## i18n Helper for Tab Content
 

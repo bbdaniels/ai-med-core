@@ -55,6 +55,8 @@ import {
   logSessionTranscriptSaved,
   getSessionStats,
   logQaTurn,
+  getQaLog,
+  QA_LOG_MAX_LIMIT,
 } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -459,7 +461,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
 
     // Check if this project opts into inline follow-up suggestions and/or durable
     // conversation logging. When follow-ups are enabled, the model returns JSON:
-    // {answer, followups} via response_format. logConversations gates qa_log writes
+    // {answer, followups, beyondScope} via response_format. logConversations gates qa_log writes
     // (formless Q&A advisors like haivn_eip whose consent states turns are logged).
     let enableFollowups = false;
     let logConversations = false;
@@ -481,8 +483,8 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       legalGrounding = await fs.readFile(groundingPath, 'utf-8');
     } catch { /* no legal corpus for this project */ }
 
-    const followupsInstruction = enableFollowups
-      ? '\n\nYou will respond as a JSON object with {answer, followups}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover.'
+    const structuredInstruction = enableFollowups
+      ? '\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.'
       : '';
 
     const completeSystemPrompt =
@@ -490,7 +492,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       `\n\n${dateRef}` +
       `\n\n${vignette.content}` +
       (legalGrounding ? `\n\n${legalGrounding}` : '') +
-      followupsInstruction +
+      structuredInstruction +
       (language ? `\n\nSPEAK ONLY IN ${language}` : '');
 
     // If this is the initial request (first user message), write RAW system instructions
@@ -550,7 +552,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
           schema: {
             type: 'object',
             additionalProperties: false,
-            required: ['answer', 'followups'],
+            required: ['answer', 'followups', 'beyondScope'],
             properties: {
               answer: {
                 type: 'string',
@@ -562,6 +564,10 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
                 minItems: 2,
                 maxItems: 3,
                 description: '2-3 short specific follow-up questions the user might naturally ask next, each under 12 words.',
+              },
+              beyondScope: {
+                type: 'boolean',
+                description: 'True when the answer states anything the reference content does not itself cover (declined, out-of-scope, partially covered, or general framing added around the reference content). False only when every statement is drawn from the reference content.',
               },
             },
           },
@@ -629,10 +635,14 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       );
     }
 
-    // When follow-ups are enabled, parse the JSON response and split into {message, followups}.
-    // If parsing fails, fall back to returning the raw content with empty followups.
+    // When follow-ups are enabled, parse the JSON response and split into
+    // {message, followups, beyondScope}. If parsing fails, fall back to returning
+    // the raw content with empty followups and beyondScope unset (false) — the
+    // frontend's standing disclaimer covers the answer either way, so a missing
+    // flag degrades to "no per-answer marker", never to a wrong claim of coverage.
     let messageText = response.choices[0]?.message?.content || 'No response generated';
     let followups: string[] = [];
+    let beyondScope = false;
     if (enableFollowups) {
       // Even with strict json_schema, the model has been observed to occasionally
       // emit a valid JSON object followed by whitespace padding. Brace-match the
@@ -671,6 +681,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
                 .filter((f: unknown) => typeof f === 'string' && f.trim().length > 0)
                 .slice(0, 3);
             }
+            beyondScope = parsed.beyondScope === true || parsed.beyondScope === 'true';
           }
         } catch (e) {
           console.warn('Follow-ups JSON parse failed on extracted object; returning raw content:', e);
@@ -682,6 +693,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       if (!messageText || messageText.trim().length === 0) {
         messageText = 'Sorry, I had trouble generating a response. Please try rephrasing your question.';
         followups = [];
+        beyondScope = false;
       }
     }
 
@@ -706,6 +718,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
     res.json({
       message: messageText,
       followups,
+      beyondScope,
       usage: response.usage,
       caseTemplate: templateName
     });
@@ -2211,6 +2224,55 @@ app.get('/api/admin/session-stats', authenticateAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching session stats:', error);
     return res.status(500).json({ error: 'Failed to fetch session stats' });
+  }
+});
+
+// Admin conversation log endpoint.
+//
+// Reads back the durable qa_log rows written by /api/chat for projects that set
+// `logConversations: true` in project.json (formless advisors like haivn_eip,
+// whose consent text tells users their questions and answers are logged so the
+// project team can improve the tool). This is that read path: the project team's
+// own review tool, behind the same admin auth as every other /api/admin route,
+// scoped to the project in the X-Project header. Paired CLI:
+// tools/export-conversations.ts.
+//
+// Filters: ?days=N (relative, default 30) or ?since=YYYY-MM-DD[&until=YYYY-MM-DD]
+// (absolute, `since` wins over `days`). Paginate with ?limit &?offset; `total`
+// counts the whole filtered set so a caller knows when to stop.
+app.get('/api/admin/qa-log', authenticateAdmin, async (req, res) => {
+  try {
+    const project = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
+
+    const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const since = isDate(req.query.since) ? req.query.since : undefined;
+    const until = isDate(req.query.until) ? req.query.until : undefined;
+    if ((req.query.since && !since) || (req.query.until && !until)) {
+      return res.status(400).json({ error: 'since/until must be YYYY-MM-DD' });
+    }
+
+    const days = since ? undefined : (parseInt(req.query.days as string) || 30);
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 500, QA_LOG_MAX_LIMIT));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const { rows, total } = await getQaLog(project, { days, since, until, limit, offset });
+
+    return res.json({
+      project,
+      days: days ?? null,
+      since: since ?? null,
+      until: until ?? null,
+      limit,
+      offset,
+      total,
+      returned: rows.length,
+      hasMore: offset + rows.length < total,
+      rows,
+    });
+  } catch (error) {
+    // Never echo row content into logs — this endpoint carries conversation text.
+    console.error('Error fetching conversation log:', error);
+    return res.status(500).json({ error: 'Failed to fetch conversation log' });
   }
 });
 

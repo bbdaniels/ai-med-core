@@ -1601,7 +1601,9 @@ export async function getTokenUsageSummary(options?: { days?: number; project?: 
 
 // ── Q&A Log (global, not project-scoped) ───────────────────────────────
 // One row per chat turn (question + answer). Written only for projects that set
-// `logConversations` in project.json. Read back by the admin Conversations view.
+// `logConversations` in project.json. This is the DURABLE conversation store —
+// unlike the transcripts/ filesystem path, it survives a redeploy. Read back
+// through GET /api/admin/qa-log (admin auth) and tools/export-conversations.ts.
 
 export async function logQaTurn(
   project: string,
@@ -1622,6 +1624,121 @@ export async function logQaTurn(
       VALUES ($1, $2, $3, $4, $5, $6, NOW())
     `, [project, sessionToken, vignetteKey, language, question, answer]);
   }
+}
+
+export interface QaLogRow {
+  id: number;
+  session_token: string | null;
+  vignette_key: string | null;
+  language: string | null;
+  question: string;
+  answer: string;
+  /** ISO-8601 UTC, normalized identically on SQLite and Postgres */
+  created_at: string;
+}
+
+export interface QaLogQuery {
+  /** Relative window in days. Ignored when `since` is given. */
+  days?: number;
+  /** Inclusive lower bound, YYYY-MM-DD (UTC). */
+  since?: string;
+  /** Inclusive upper bound, YYYY-MM-DD (UTC) — covers the whole day. */
+  until?: string;
+  limit: number;
+  offset: number;
+}
+
+export const QA_LOG_MAX_LIMIT = 2000;
+
+/**
+ * Read one project's logged chat turns, oldest first.
+ *
+ * Ordered by (created_at, id) so pagination is stable and an exported page
+ * sequence reads chronologically. `total` counts every row matching the filter,
+ * not just the returned page, so a caller can page to the end.
+ */
+export async function getQaLog(
+  project: string,
+  query: QaLogQuery,
+): Promise<{ rows: QaLogRow[]; total: number }> {
+  const limit = Math.max(1, Math.min(query.limit, QA_LOG_MAX_LIMIT));
+  const offset = Math.max(0, query.offset);
+
+  if (dbType === 'sqlite' && db) {
+    const where: string[] = ['project = ?'];
+    const params: any[] = [project];
+
+    if (query.since) {
+      where.push(`created_at >= ?`);
+      params.push(`${query.since} 00:00:00`);
+    } else if (query.days !== undefined) {
+      where.push(`created_at >= datetime('now', '-' || ? || ' days')`);
+      params.push(query.days);
+    }
+    if (query.until) {
+      where.push(`created_at <= ?`);
+      params.push(`${query.until} 23:59:59`);
+    }
+    const clause = where.join(' AND ');
+
+    const totalRow = db.prepare(`SELECT COUNT(*) as total FROM qa_log WHERE ${clause}`)
+      .get(...params) as any;
+
+    const rows = db.prepare(`
+      SELECT id,
+             session_token,
+             vignette_key,
+             language,
+             question,
+             answer,
+             strftime('%Y-%m-%dT%H:%M:%SZ', created_at) as created_at
+      FROM qa_log
+      WHERE ${clause}
+      ORDER BY created_at ASC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as QaLogRow[];
+
+    return { rows, total: Number(totalRow?.total) || 0 };
+  } else if (dbType === 'postgres' && pgPool) {
+    const where: string[] = ['project = $1'];
+    const params: any[] = [project];
+
+    if (query.since) {
+      params.push(query.since);
+      where.push(`created_at >= $${params.length}::date`);
+    } else if (query.days !== undefined) {
+      params.push(query.days);
+      where.push(`created_at >= NOW() - ($${params.length} || ' days')::interval`);
+    }
+    if (query.until) {
+      params.push(query.until);
+      where.push(`created_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
+    const clause = where.join(' AND ');
+
+    const totalRes = await pgPool.query(
+      `SELECT COUNT(*)::int as total FROM qa_log WHERE ${clause}`,
+      params,
+    );
+
+    const rowsRes = await pgPool.query(`
+      SELECT id,
+             session_token,
+             vignette_key,
+             language,
+             question,
+             answer,
+             TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+      FROM qa_log
+      WHERE ${clause}
+      ORDER BY created_at ASC, id ASC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, [...params, limit, offset]);
+
+    return { rows: rowsRes.rows as QaLogRow[], total: totalRes.rows[0]?.total || 0 };
+  }
+
+  return { rows: [], total: 0 };
 }
 
 // ── Session Log (global, not project-scoped) ───────────────────────────

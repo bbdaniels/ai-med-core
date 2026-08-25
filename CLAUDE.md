@@ -66,12 +66,35 @@ Backend proxies both: `/api/enketo-xform` (15-min cache) and `/api/enketo-submit
 
 ### Transcript Storage Architecture
 
-**Flow: Chat → Filesystem + Kobo**
+There are **two** conversation stores, and they are not interchangeable. Which one holds a project's conversations depends on whether the project has a Kobo form.
+
+| | `qa_log` (Postgres/SQLite) | Kobo `chat_transcript` | `transcripts/` filesystem |
+|---|---|---|---|
+| Holds | one row per chat turn | full transcript per submission | full transcript per token |
+| Durable? | **yes** | **yes** | **no** -- wiped on every redeploy |
+| Written for | projects with `logConversations: true` | form-based projects, after submit | any project, only when `?wip` is on |
+| Read back by | `GET /api/admin/qa-log`, `tools/export-conversations.ts` | Kobo UI/API, eval pipeline | `GET /t/:token` |
+
+**`qa_log` is the durable conversation store for formless advisors**, which have no Kobo form and therefore no Kobo transcript. It is a **global** table (not project-prefixed) with a `project` column; the write is in `POST /api/chat`, gated on `logConversations: true` in `project.json`, and it is non-blocking (a logging failure never breaks a reply). Columns: `id, project, session_token, vignette_key, language, question, answer, created_at`.
+
+Read it back through the admin API -- on a typical managed-Postgres deployment there is no public database URL, so the API is the only route in:
+
+```bash
+ADMIN_PASSPHRASE="..." npx tsx tools/export-conversations.ts <project> --days 14 --url <base-url>
+```
+
+If a project's consent text tells users their conversations are logged so the project team can improve the tool, keep exports on that footing: admin auth only, untracked output (`exports/` is gitignored), never committed.
+
+**`transcripts/` is a dev-only QA aid, not storage.** `POST /api/transcripts/:token` writes to the API container's local filesystem. Container filesystems are ephemeral -- **every redeploy destroys it** -- and the only frontend caller sits behind `wipEnabled`, which requires a `?wip` URL parameter, so real user sessions never touch it. Never treat it as a record of anything.
+
+**Kobo remains the canonical store for form-based projects:**
+
+**Flow: Chat → Kobo (form-based projects)**
 1. Frontend generates 32-char random token at session start
 2. Token prefilled into Kobo form hidden field:
    - Newer forms: `transcriptToken` (dedicated field)
    - Older forms: `chat_transcript` (stores token, later replaced with full transcript)
-3. During chat: `POST /api/transcripts/:token` saves to `transcripts/<timestamp>_<token>.txt`
+3. During chat: with `?wip` on, `POST /api/transcripts/:token` also saves `transcripts/<timestamp>_<token>.txt` (dev-only, ephemeral -- see above; skipped in every normal session)
 4. After form submit: `POST /api/kobo-transcript` bulk-updates Kobo submission (replaces token → full transcript)
    - Backend searches for submission using `transcriptToken` first, falls back to `chat_transcript`
    - Updates `chat_transcript` field with full transcript (regardless of which field contained the token)

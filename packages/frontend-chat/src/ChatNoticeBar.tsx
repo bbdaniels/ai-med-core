@@ -1,76 +1,57 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDismiss } from './use-dismiss';
 
-// Slim permanent line under the chat input for skipWelcome projects: shows the
-// current language (flag + name) and an abbreviated consent notice; tapping it
-// opens a popover that is both the language switcher and the full notice text.
-// This replaces the welcome page's two jobs (selector + consent) in one control.
+// Slim permanent line under the chat input for skipWelcome projects, which have
+// no welcome page to carry this: a standing disclaimer (always visible) plus an
+// abbreviated consent notice whose "Details" opens the full consent text.
+//
+// The language switcher used to live here too. It moved to <LanguageSwitcher /> in
+// the chat top bar (client feedback, 2026-08-21: the control was too hard to find
+// at the bottom of the dialog box). There is exactly one in-chat switcher; this
+// bar is now notice-only.
 interface ChatNoticeBarProps {
-  languages: Array<{ code: string; name: string; flag?: string }>;
-  selectedCode: string;
-  onSelect: (code: string) => void;
+  /** Always-visible disclaimer line, e.g. what the answers are grounded in. */
+  standingNote?: string;
   noticeLine: string;
   detailsLabel: string;
   consentParagraphs: string[];
 }
 
 export default function ChatNoticeBar({
-  languages, selectedCode, onSelect, noticeLine, detailsLabel, consentParagraphs,
+  standingNote, noticeLine, detailsLabel, consentParagraphs,
 }: ChatNoticeBarProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss(rootRef, open, () => setOpen(false));
 
-  const current = languages.find(l => l.code === selectedCode) || languages[0];
-
-  // Close on outside tap / Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('touchstart', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('touchstart', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  if (!current) return null;
+  const hasConsent = consentParagraphs.length > 0;
+  if (!standingNote && !hasConsent) return null;
 
   return (
     <div className="chat-notice-bar" ref={rootRef}>
-      {open && (
+      {open && hasConsent && (
         <div className="chat-notice-popover">
-          <div className="chat-notice-langs">
-            {languages.map(l => (
-              <button
-                key={l.code}
-                type="button"
-                className={`chat-notice-lang-option${l.code === selectedCode ? ' active' : ''}`}
-                onClick={() => { onSelect(l.code); setOpen(false); }}
-              >
-                <span aria-hidden="true">{l.flag || '🌐'}</span> {l.name}
-              </button>
-            ))}
-          </div>
           {consentParagraphs.map((p, i) => (
             <p key={i} className="chat-notice-paragraph">{p}</p>
           ))}
         </div>
       )}
-      <button
-        type="button"
-        className="chat-notice-line"
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-      >
-        <span aria-hidden="true">{current.flag || '🌐'}</span> {current.name}
-        {noticeLine ? <span className="chat-notice-text"> · {noticeLine}</span> : null}
-        <span className="chat-notice-details"> — {detailsLabel}</span>
-      </button>
+      {standingNote && (
+        <p className="chat-standing-note">
+          <span className="chat-standing-note-icon" aria-hidden="true">ⓘ</span> {standingNote}
+        </p>
+      )}
+      {hasConsent && (
+        <button
+          type="button"
+          className="chat-notice-line"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+        >
+          {noticeLine ? <span className="chat-notice-text">{noticeLine}</span> : null}
+          <span className="chat-notice-details"> · {detailsLabel}</span>
+        </button>
+      )}
     </div>
   );
 }

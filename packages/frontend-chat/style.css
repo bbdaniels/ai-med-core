@@ -1588,6 +1588,28 @@ body {
         -webkit-overflow-scrolling: touch; /* momentum scroll on older iOS */
     }
 
+    /* Language switcher in the fixed tab strip: pinned to the right of the
+       scrolling tabs so it stays visible from every panel. The chat top bar's
+       copy is hidden here to avoid two switchers on one screen; a skipWelcome
+       project WITHOUT tabs has no strip, so its top bar stays visible. */
+    .lang-switcher-strip {
+        margin-right: 8px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border);
+        align-self: center;
+    }
+    .lang-switcher-strip .lang-switcher-button {
+        padding: 5px 9px;
+        font-size: 13px;
+        gap: 6px;
+    }
+    .main-container.has-tabs .chat-topbar {
+        display: none;
+    }
+    .chat-topbar {
+        padding: 0 0 8px;
+    }
+
     /* Hide desktop tab bar on mobile (tabs show in the strip instead) */
     .desktop-tab-bar {
         display: none !important;
@@ -2302,8 +2324,106 @@ body {
     }
 }
 
-/* Chat notice bar (skipWelcome projects): slim consent/language line under the
-   input, with a popover carrying the language switcher + full notice text. */
+/* Chat top bar (skipWelcome projects): carries the language switcher, which has
+   no welcome screen to live on. Sits above the conversation, not under it. */
+.chat-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 10px 30px 0;
+}
+
+/* Language switcher: a real control (flag + name + caret), not a line of small
+   print. Used in .chat-topbar on desktop and in .mobile-tab-strip on mobile. */
+.lang-switcher {
+  position: relative;
+  flex-shrink: 0;
+}
+.lang-switcher-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.lang-switcher-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.lang-switcher-button:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
+}
+.lang-switcher-flag { font-size: 16px; line-height: 1; }
+.lang-switcher-caret { flex-shrink: 0; opacity: 0.7; }
+.lang-switcher-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  z-index: 1100; /* above the fixed mobile tab strip (z-index: 1000) */
+}
+.lang-switcher-option {
+  text-align: left;
+  white-space: nowrap;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+.lang-switcher-option:hover { background: var(--bg-panel); }
+.lang-switcher-option.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  color: #ffffff; /* same pairing as .document-search-hit: white on accent-glow */
+  font-weight: 600;
+}
+
+/* Chat notice bar (skipWelcome projects): standing disclaimer plus a slim
+   consent line under the input, whose popover carries the full notice text. */
+.chat-standing-note {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: normal;
+}
+.chat-standing-note-icon { color: var(--accent); font-weight: 700; }
+
+/* Per-answer disclosure on a reply that goes beyond the grounding source. */
+.beyond-scope-note {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8em;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
 .chat-notice-bar {
   position: relative;
   padding: 4px 16px 8px;
@@ -2339,26 +2459,6 @@ body {
      off with no scrollbar and no indication anything was missing. */
   max-height: 60vh;
   overflow-y: auto;
-}
-.chat-notice-langs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.chat-notice-lang-option {
-  flex: 1 1 auto;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  font-size: 14px;
-  cursor: pointer;
-}
-.chat-notice-lang-option.active {
-  border-color: var(--accent);
-  background: var(--accent-glow);
-  font-weight: 600;
 }
 .chat-notice-paragraph {
   font-size: 12.5px;

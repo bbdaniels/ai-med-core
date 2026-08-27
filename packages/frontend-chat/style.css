@@ -867,7 +867,8 @@ body {
 
 .pdfjs-page-canvas { display: block; }
 
-/* Transparent hit-targets over the page's link annotations. */
+/* Transparent hit-targets over the page's link annotations. External links are
+   anchors, internal goto-links are buttons that scroll the viewer. */
 .pdfjs-link-layer { position: absolute; inset: 0; }
 
 .pdfjs-link {
@@ -875,7 +876,10 @@ body {
     display: block;
     /* invisible but clickable; a faint highlight on hover confirms it's a link */
     background: transparent;
+    border: 0;
+    padding: 0;
     border-radius: 2px;
+    cursor: pointer;
 }
 .pdfjs-link:hover { background: rgba(74, 159, 212, 0.25); }
 

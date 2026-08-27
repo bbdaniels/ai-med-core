@@ -25,17 +25,29 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-interface LinkBox { left: number; top: number; width: number; height: number; url: string }
+// Where an internal GoTo link lands: a page, and (when the destination carries one)
+// a vertical position in that page's user space.
+interface DestTarget { pageNumber: number; y: number | null }
+
+interface LinkBox {
+  left: number; top: number; width: number; height: number;
+  url?: string;
+  dest?: DestTarget;
+}
 
 // One page: a fixed-aspect placeholder until it nears the viewport, then a rendered
 // canvas plus a link overlay. External links are real <a target="_blank"> elements —
 // this is the whole point of bundling pdf.js: full control over link targets, which
-// the browser's built-in PDF viewer never gives an embedder.
-function PdfPage({ pdf, pageNumber, scale, root }: {
+// the browser's built-in PDF viewer never gives an embedder. Internal links become
+// buttons that drive the viewer's own scroll.
+function PdfPage({ pdf, pageNumber, scale, root, registerPage, resolveDest, onNavigate }: {
   pdf: pdfjsLib.PDFDocumentProxy;
   pageNumber: number;
   scale: number;
   root: HTMLElement | null;
+  registerPage: (pageNumber: number, el: HTMLDivElement | null) => void;
+  resolveDest: (dest: unknown) => Promise<DestTarget | null>;
+  onNavigate: (target: DestTarget) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,6 +55,12 @@ function PdfPage({ pdf, pageNumber, scale, root }: {
   const [visible, setVisible] = useState(false);
   const [links, setLinks] = useState<LinkBox[]>([]);
   const renderedForRef = useRef<string>('');
+
+  // Let the viewer address this page by number so a link can scroll to it.
+  useEffect(() => {
+    registerPage(pageNumber, wrapRef.current);
+    return () => registerPage(pageNumber, null);
+  }, [registerPage, pageNumber]);
 
   // Page dimensions (for the placeholder height) — cheap metadata, fetched once.
   useEffect(() => {
@@ -106,16 +124,25 @@ function PdfPage({ pdf, pageNumber, scale, root }: {
         const annots = await page.getAnnotations();
         const boxes: LinkBox[] = [];
         for (const a of annots) {
-          // Only external URL links get an overlay anchor. Internal goto-links (the
-          // document's own table of contents) have no `.url` and are skipped.
-          if (a.subtype !== 'Link' || !a.url || !a.rect) continue;
+          if (a.subtype !== 'Link' || !a.rect) continue;
+          // External URL links become anchors; internal goto-links (the document's own
+          // table of contents, the per-page mark) are resolved to a page here so a dead
+          // destination — one the file references but never defines — leaves no hit-target.
+          let dest: DestTarget | undefined;
+          if (!a.url) {
+            if (a.dest == null) continue;
+            const resolved = await resolveDest(a.dest);
+            if (!resolved) continue;
+            dest = resolved;
+          }
           const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(a.rect);
           boxes.push({
             left: Math.min(x1, x2),
             top: Math.min(y1, y2),
             width: Math.abs(x2 - x1),
             height: Math.abs(y2 - y1),
-            url: a.url,
+            url: a.url || undefined,
+            dest,
           });
         }
         if (!cancelled) setLinks(boxes);
@@ -123,7 +150,7 @@ function PdfPage({ pdf, pageNumber, scale, root }: {
     }).catch(() => {});
 
     return () => { cancelled = true; task?.cancel(); };
-  }, [visible, pdf, pageNumber, scale]);
+  }, [visible, pdf, pageNumber, scale, resolveDest]);
 
   // Placeholder keeps layout stable (and scrollbar honest) before the canvas exists.
   const ph = dims ? { width: dims.w * scale, height: dims.h * scale } : { width: '100%', height: 700 };
@@ -133,15 +160,26 @@ function PdfPage({ pdf, pageNumber, scale, root }: {
       <canvas ref={canvasRef} className="pdfjs-page-canvas" />
       <div className="pdfjs-link-layer">
         {links.map((l, i) => (
-          <a
-            key={i}
-            href={l.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="pdfjs-link"
-            style={{ left: l.left, top: l.top, width: l.width, height: l.height }}
-            aria-label={l.url}
-          />
+          l.url ? (
+            <a
+              key={i}
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pdfjs-link"
+              style={{ left: l.left, top: l.top, width: l.width, height: l.height }}
+              aria-label={l.url}
+            />
+          ) : (
+            <button
+              key={i}
+              type="button"
+              className="pdfjs-link"
+              style={{ left: l.left, top: l.top, width: l.width, height: l.height }}
+              onClick={() => l.dest && onNavigate(l.dest)}
+              aria-label={`Go to page ${l.dest?.pageNumber}`}
+            />
+          )
         ))}
       </div>
     </div>
@@ -157,11 +195,67 @@ export default function PdfJsViewer({ src, title, openLabel }: PdfJsViewerProps)
   const [zoom, setZoom] = useState(1); // user zoom multiplier on top of fit-width
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
   const baseWidthRef = useRef<number>(0);
+  const pageElsRef = useRef(new Map<number, HTMLDivElement>());
+  const destCacheRef = useRef(new Map<string, DestTarget | null>());
+
+  const registerPage = useCallback((pageNumber: number, el: HTMLDivElement | null) => {
+    if (el) pageElsRef.current.set(pageNumber, el);
+    else pageElsRef.current.delete(pageNumber);
+  }, []);
+
+  // A link's destination is either a named one (looked up in the document's name tree)
+  // or an explicit array. Either way it resolves to a page reference plus, for the
+  // position-carrying destination types, a y coordinate in that page's user space.
+  const resolveDest = useCallback(async (dest: unknown): Promise<DestTarget | null> => {
+    if (!pdf || dest == null) return null;
+    const key = typeof dest === 'string' ? dest : null;
+    if (key !== null && destCacheRef.current.has(key)) return destCacheRef.current.get(key) ?? null;
+
+    let target: DestTarget | null = null;
+    try {
+      const explicit = typeof dest === 'string' ? await pdf.getDestination(dest) : dest;
+      if (Array.isArray(explicit) && explicit.length) {
+        const ref = explicit[0];
+        const pageIndex = typeof ref === 'number'
+          ? ref
+          : await pdf.getPageIndex(ref as { num: number; gen: number });
+        const kind = (explicit[1] as { name?: string } | undefined)?.name;
+        const y = kind === 'XYZ' ? explicit[3]
+          : (kind === 'FitH' || kind === 'FitBH') ? explicit[2]
+          : null;
+        target = { pageNumber: pageIndex + 1, y: typeof y === 'number' ? y : null };
+      }
+    } catch {
+      // A destination the document references but never defines — treat as no target.
+      target = null;
+    }
+    if (key !== null) destCacheRef.current.set(key, target);
+    return target;
+  }, [pdf]);
+
+  // Scroll the tab panel so the destination's page (and, where known, the exact line
+  // within it) comes into view. Falls back to scrollIntoView if the scroll ancestor
+  // could not be resolved.
+  const goToDest = useCallback(async (target: DestTarget) => {
+    const el = pageElsRef.current.get(target.pageNumber);
+    if (!el) return;
+    let offset = 0;
+    if (pdf && target.y != null) {
+      try {
+        const page = await pdf.getPage(target.pageNumber);
+        offset = page.getViewport({ scale }).convertToViewportPoint(0, target.y)[1];
+      } catch { /* keep the page top */ }
+    }
+    if (!scrollParent) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const delta = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top;
+    scrollParent.scrollTo({ top: scrollParent.scrollTop + delta + offset - 8, behavior: 'smooth' });
+  }, [pdf, scale, scrollParent]);
 
   // Load the document.
   useEffect(() => {
     let cancelled = false;
     setStatus('loading'); setPdf(null); setNumPages(0);
+    destCacheRef.current.clear();
     const task = pdfjsLib.getDocument({ url: src });
     task.promise
       .then((doc) => { if (!cancelled) { setPdf(doc); setNumPages(doc.numPages); setStatus('ready'); } })
@@ -222,7 +316,16 @@ export default function PdfJsViewer({ src, title, openLabel }: PdfJsViewerProps)
       {status === 'ready' && pdf && (
         <div className="pdfjs-pages" title={title}>
           {Array.from({ length: numPages }, (_, i) => (
-            <PdfPage key={i} pdf={pdf} pageNumber={i + 1} scale={scale} root={scrollParent} />
+            <PdfPage
+              key={i}
+              pdf={pdf}
+              pageNumber={i + 1}
+              scale={scale}
+              root={scrollParent}
+              registerPage={registerPage}
+              resolveDest={resolveDest}
+              onNavigate={goToDest}
+            />
           ))}
         </div>
       )}

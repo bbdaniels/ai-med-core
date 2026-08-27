@@ -124,3 +124,30 @@ generated, which is two implementations of one job and is how the reader tab and
 the model's grounding ended up as separate things to keep in sync. Change the
 Google Doc, bump `DOC_IDS` / `EIP_VERSION` at the top of the script if HAIVN cut
 a new document rather than revising the old one, and re-run.
+
+The build refuses to write a reader text whose own links dangle: every
+`href="#x"` and `](#x)` it emits must resolve to a `{#x}` anchor in the same
+file, or the run exits. The document cross-references itself in both syntaxes --
+markdown in prose, raw `<a href="#...">` inside tables and list items -- and a
+rewriter that only knew the first shipped eight dead links per language.
+
+## fetch-legal-docs.py
+
+Sources the Legal Library tab: downloads each registry document's official
+government PDF, extracts it to `content/legal/text/<id>.md`, and regenerates
+`content/legal/grounding.md` from `registry.json`.
+
+```bash
+python3 tools/fetch-legal-docs.py            # fetch PDFs + rebuild grounding
+python3 tools/fetch-legal-docs.py --index    # only rebuild grounding.md
+python3 tools/fetch-legal-docs.py --only qd-1740-2026
+```
+
+Needs **PyMuPDF >= 1.23** (`pip install 'pymupdf>=1.23'`) and nothing else
+beyond the standard library; the floor is where `Page.find_tables()` arrives,
+and the script checks for it up front rather than letting a missing install
+surface as a per-document `extract-failed`. The pin is a comment at the top of
+the script rather than a `tools/requirements.txt`, because no workflow runs this
+script and the public-mirror build excludes the file itself -- see the docstring.
+`registry.json` is hand-curated; `grounding.md` and everything under
+`content/legal/text/` are generated, so do not hand-edit them.

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -153,6 +153,19 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
     setActiveMatch(0);
   }, [html, debouncedQuery]);
 
+  // The single way this panel moves to an anchor — used both by a link inside the
+  // document and by a reference clicked in the chat. Resolution is scoped to this
+  // panel's own body rather than the whole document: more than one DocumentPanel
+  // can be mounted at once (the legal library renders one too, hidden with
+  // display:none rather than unmounted), so a global lookup could land on a
+  // heading in a panel nobody is looking at.
+  const scrollToAnchor = useCallback((anchor: string) => {
+    // A bare `href="#"` yields an empty anchor, and `querySelector('#')` throws.
+    if (!anchor) return;
+    const target = bodyRef.current?.querySelector(`#${CSS.escape(anchor)}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   // Jump to a heading anchor asked for from outside (a document reference clicked
   // in the chat). The anchor ids are laid down by the render effect above, so they
   // are present even while this tab is hidden; the switch that reveals the tab and
@@ -161,12 +174,8 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
   // scrolls again.
   useEffect(() => {
     if (!scrollTarget) return;
-    const el = bodyRef.current;
-    if (!el) return;
-    const raf = requestAnimationFrame(() => {
-      const target = el.querySelector(`#${CSS.escape(scrollTarget.anchor)}`);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    const { anchor } = scrollTarget;
+    const raf = requestAnimationFrame(() => scrollToAnchor(anchor));
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollTarget?.nonce]);
@@ -217,12 +226,12 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
     const link = target.closest('a') as HTMLAnchorElement | null;
     if (!link) return;
     const href = link.getAttribute('href');
-    if (href && href.startsWith('#')) {
-      e.preventDefault();
-      const id = decodeURIComponent(href.slice(1));
-      const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (!href || !href.startsWith('#')) return;
+    // Always swallow the click: a bare fragment would otherwise be pushed onto the
+    // SPA's own URL, which navigates nothing and survives in the address bar even
+    // when the anchor does not exist in the document.
+    e.preventDefault();
+    scrollToAnchor(decodeURIComponent(href.slice(1)));
   };
 
   if (!html) {

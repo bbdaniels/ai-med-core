@@ -1146,6 +1146,58 @@ body {
 
 .legal-library-evidence-label { font-weight: 600; }
 
+/* Text | PDF segmented control, shown only for documents that ship a saved PDF.
+   Wraps rather than overflows on a 390px panel. */
+.legal-doc-view-toggle {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.75rem;
+    padding: 0.2rem;
+    max-width: 100%;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.legal-doc-view-btn {
+    flex: 0 1 auto;
+    min-width: 4.5rem;
+    padding: 0.35rem 0.75rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.legal-doc-view-btn:hover { color: var(--text-body); }
+
+.legal-doc-view-btn.is-active {
+    color: var(--text-heading);
+    background: var(--bg-card);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.legal-doc-view-btn:focus-visible {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 1px;
+}
+
+/* The viewer measures its own container, so it just needs room to grow inside
+   the library column without forcing horizontal scroll. */
+.legal-library-pdf {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
 .legal-library-note {
     padding: 1rem 1.25rem;
     font-size: 0.88rem;

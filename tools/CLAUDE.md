@@ -134,8 +134,13 @@ rewriter that only knew the first shipped eight dead links per language.
 ## fetch-legal-docs.py
 
 Sources the Legal Library tab: downloads each registry document's official
-government PDF, extracts it to `content/legal/text/<id>.md`, and regenerates
-`content/legal/grounding.md` from `registry.json`.
+government PDF, keeps it at `content/legal/pdf/<id>.pdf`, extracts it to
+`content/legal/text/<id>.md`, and regenerates `content/legal/grounding.md` from
+`registry.json`. A multi-part gazette document is merged into one PDF in
+`sourcePdfs` order; the merge is compared against what is already on disk by
+page content, so a re-run that changes nothing rewrites nothing (PyMuPDF stamps
+a fresh trailer /ID on every save, which would otherwise drop megabytes of
+identical blob into git history).
 
 ```bash
 python3 tools/fetch-legal-docs.py            # fetch PDFs + rebuild grounding
@@ -149,5 +154,35 @@ and the script checks for it up front rather than letting a missing install
 surface as a per-document `extract-failed`. The pin is a comment at the top of
 the script rather than a `tools/requirements.txt`, because no workflow runs this
 script and the public-mirror build excludes the file itself -- see the docstring.
-`registry.json` is hand-curated; `grounding.md` and everything under
-`content/legal/text/` are generated, so do not hand-edit them.
+`registry.json` is hand-curated with exactly one exception: the script writes
+each document's `pdfFile` path (and removes one whose file is no longer on
+disk -- a failed download alone never removes it, because one gazette host drops
+the connection on most runs). It touches no other field, and only documents the
+run actually attempted, so `--only` leaves the rest alone. `grounding.md` and
+everything under `content/legal/text/` and `content/legal/pdf/` are generated,
+so do not hand-edit them.
+
+Three behaviours worth knowing before you point a registry entry at a new PDF:
+
+- **`textFile: null` is honoured, not ignored.** Every entry carries the field;
+  `null` says the document ships as metadata plus its PDF with no full text, and
+  is set where the only official copy is a scan whose OCR cannot be trusted for
+  what the document is *for* (the drug tables in 20/2022/TT-BYT extract
+  "Lamivudin + tenofovir" as "Lami\,「adia + tenofovir"). The run saves the PDF
+  and writes no text. To turn full text on, put the path in `textFile` and
+  re-run.
+- **An existing text file is never overwritten by a degraded extraction.** The
+  documents whose text was ingested from an official HTML full text are exactly
+  the ones whose signed original turns out to be a scan, so the run that adopts
+  the authoritative PDF is the run that would destroy the readable copy. A new
+  extraction is refused when it is under 40% of the size already on disk, or
+  when its Vietnamese diacritic density falls below half the existing file's --
+  real Vietnamese runs 0.19-0.30 across this corpus, a scanner's OCR layer comes
+  back at 0.00 while being the same length, so length alone does not catch it.
+  Either way the PDF is still saved and the run says which document it spared.
+- **A document's `officialUrl` is fetched before its PDFs when both are on the
+  same host.** Some government systems (syt.gialai.gov.vn) hand the file over
+  only to a client that has opened the record page first, keying the download to
+  a session cookie set there and to that page as `Referer`; a cold request gets
+  the nine bytes `Wrong URL`. The Referer otherwise defaults to the file's own
+  origin.

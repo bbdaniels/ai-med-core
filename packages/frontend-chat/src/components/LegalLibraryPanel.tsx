@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api, apiFetch } from '../api-base';
 import DocumentPanel from './DocumentPanel';
+
+// Same code-split chunk App.tsx uses for the EIP PDF tab: pointing a second
+// lazy() at the same module path shares the chunk rather than duplicating it,
+// so pdfjs-dist (library + worker) still stays out of the entry bundle and is
+// fetched only when a reader actually switches a document to its PDF view.
+const PdfJsViewer = lazy(() => import('./PdfJsViewer'));
 
 // A language-keyed string, e.g. {en: "...", vi: "..."}. Registry values use this
 // shape throughout; plain strings are tolerated for forward-compatibility.
@@ -24,6 +30,9 @@ interface LegalDocument {
   // link when officialUrl is missing or only a gazette homepage.
   eipUrl?: string;
   textFile?: string | null;
+  // Repo-relative path to the document's saved source PDF, written into the
+  // registry only when the fetch succeeded. Absent → no PDF view is offered.
+  pdfFile?: string | null;
 }
 
 // The best human-facing source link: a specific official-document URL when we
@@ -67,7 +76,8 @@ function resolveI18n(val: I18n | undefined, lang: string): string {
 const UI: Record<string, {
   choose: string; empty: string; issued: string; effective: string;
   agency: string; openSource: string; scope: string;
-  noText: string; loading: string; loadFailed: string; disclaimer: string;
+  noText: string; noTextPdf: string; loading: string; loadFailed: string; disclaimer: string;
+  viewText: string; viewPdf: string; viewLabel: string; openInNewTab: string;
 }> = {
   en: {
     choose: 'Choose a document',
@@ -78,8 +88,13 @@ const UI: Record<string, {
     openSource: 'Open official source',
     scope: 'Scope',
     noText: 'Full text is not embedded for this document. Use the official source above to read it.',
+    noTextPdf: 'Extracted text is not available for this document. Use the PDF view above to read it.',
     loading: 'Loading full text…',
     loadFailed: 'Could not load the full text. Use the official source above.',
+    viewText: 'Text',
+    viewPdf: 'PDF',
+    viewLabel: 'View',
+    openInNewTab: 'Open in new tab',
     disclaimer: 'You are responsible for ensuring you rely on the most up-to-date legal documents. Documents, or portions of documents, shown here may be superseded.',
   },
   vi: {
@@ -91,8 +106,13 @@ const UI: Record<string, {
     openSource: 'Mở nguồn chính thức',
     scope: 'Phạm vi',
     noText: 'Văn bản này chưa đính kèm toàn văn. Vui lòng dùng nguồn chính thức ở trên để đọc.',
+    noTextPdf: 'Văn bản này không có bản trích xuất chữ. Vui lòng dùng chế độ xem PDF ở trên để đọc.',
     loading: 'Đang tải toàn văn…',
     loadFailed: 'Không tải được toàn văn. Vui lòng dùng nguồn chính thức ở trên.',
+    viewText: 'Văn bản',
+    viewPdf: 'PDF',
+    viewLabel: 'Xem',
+    openInNewTab: 'Mở trong tab mới',
     disclaimer: 'Bạn có trách nhiệm bảo đảm sử dụng các văn bản pháp luật cập nhật mới nhất. Các văn bản, hoặc một phần của văn bản, hiển thị ở đây có thể đã bị thay thế.',
   },
 };
@@ -103,6 +123,10 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   const [selectedId, setSelectedId] = useState<string>('');
   const [docText, setDocText] = useState<string | null>(null);
   const [textState, setTextState] = useState<'idle' | 'loading' | 'error'>('idle');
+  // Which rendering of the selected document is on screen. Text is the default
+  // wherever a document ships one, so the PDF machinery is not pulled in by
+  // merely browsing the library; a document that has only a PDF opens on it.
+  const [view, setView] = useState<'text' | 'pdf'>('text');
 
   // Default to the first document so the panel opens on something, and reset the
   // selection if the document set changes underneath us (e.g. language switch).
@@ -122,6 +146,15 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   }, [selectTarget?.nonce]);
 
   const selected = documents.find(d => d.id === selectedId) ?? null;
+  const pdfSrc = selected?.pdfFile ? api(`/api/project-content/${selected.pdfFile}`) : '';
+
+  // A new document opens on its text -- unless it has none, in which case the
+  // saved PDF is the whole document and opening on "Text" would show a Text
+  // button styled active above a message saying there is no text, with the only
+  // readable copy hidden one click away.
+  useEffect(() => {
+    setView(!selected?.textFile && selected?.pdfFile ? 'pdf' : 'text');
+  }, [selectedId, selected?.textFile, selected?.pdfFile]);
 
   // Fetch the full text only for documents that ship one. The file is served by
   // the existing /api/project-content route (path-guarded to projects/).
@@ -201,10 +234,43 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
               </a>
             </p>
           )}
+
+          {/* Only documents whose source PDF was actually saved offer the choice;
+              everything else is byte-identical to the text-only panel. */}
+          {pdfSrc && (
+            <div className="legal-doc-view-toggle" role="group" aria-label={t.viewLabel}>
+              <button
+                type="button"
+                className={`legal-doc-view-btn${view === 'text' ? ' is-active' : ''}`}
+                aria-pressed={view === 'text'}
+                onClick={() => setView('text')}
+              >
+                {t.viewText}
+              </button>
+              <button
+                type="button"
+                className={`legal-doc-view-btn${view === 'pdf' ? ' is-active' : ''}`}
+                aria-pressed={view === 'pdf'}
+                onClick={() => setView('pdf')}
+              >
+                {t.viewPdf}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {selected?.textFile ? (
+      {pdfSrc && view === 'pdf' ? (
+        <div className="legal-library-pdf">
+          <Suspense fallback={<p className="legal-library-note">{t.loading}</p>}>
+            <PdfJsViewer
+              src={pdfSrc}
+              title={resolveI18n(selected?.title, lang || 'en')}
+              openLabel={t.openInNewTab}
+            />
+          </Suspense>
+        </div>
+      ) : selected?.textFile ? (
         textState === 'loading' ? (
           <p className="legal-library-note">{t.loading}</p>
         ) : textState === 'error' ? (
@@ -214,7 +280,7 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
           <DocumentPanel content={{ markdown: docText || '' }} lang={lang} />
         )
       ) : (
-        <p className="legal-library-note">{t.noText}</p>
+        <p className="legal-library-note">{pdfSrc ? t.noTextPdf : t.noText}</p>
       )}
     </div>
   );

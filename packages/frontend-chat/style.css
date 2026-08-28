@@ -791,7 +791,13 @@ body {
    browser's built-in viewer so in-PDF links become real <a target="_blank">
    elements and there is no outline sidebar consuming panel width. */
 .pdfjs-viewer {
-    flex: 1;
+    /* `1 0 auto`, not `1`: a zero flex-basis clamps this box to the panel's own
+       height while the pages inside overflow it, and a sticky header can only
+       stick within its containing block -- so the toolbar and find bar came
+       unstuck the moment the reader scrolled past one screenful. Sizing to
+       content instead lets them stay pinned for the whole document, at either
+       call site (the EIP PDF tab and the Legal Library). */
+    flex: 1 0 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -872,8 +878,11 @@ body {
 .pdfjs-page-canvas { display: block; }
 
 /* Transparent hit-targets over the page's link annotations. External links are
-   anchors, internal goto-links are buttons that scroll the viewer. */
-.pdfjs-link-layer { position: absolute; inset: 0; }
+   anchors, internal goto-links are buttons that scroll the viewer. The layer
+   spans the whole page, so it must not take pointer events itself: it sits above
+   the text layer, and a reader dragging across a paragraph has to reach the text
+   spans underneath. Only the hit-targets themselves are clickable. */
+.pdfjs-link-layer { position: absolute; inset: 0; pointer-events: none; }
 
 .pdfjs-link {
     position: absolute;
@@ -884,8 +893,163 @@ body {
     padding: 0;
     border-radius: 2px;
     cursor: pointer;
+    pointer-events: auto;
 }
 .pdfjs-link:hover { background: rgba(74, 159, 212, 0.25); }
+
+/* pdf.js's own text layer: transparent, absolutely positioned spans laid over the
+   canvas glyphs. It is what makes a rendered page selectable and copyable -- a
+   canvas on its own is a picture -- and it is also the surface search hits are
+   painted on, so there is one text surface rather than two that can drift apart.
+   Rules are lifted from pdfjs-dist/web/pdf_viewer.css and scoped to our own class
+   so nothing else in the app inherits them. Position comes from the spans' inline
+   styles, which are written as calc(var(--scale-factor) * Npx); the page wrapper
+   carries that variable, so the layer tracks zoom and container resize for free. */
+.pdfjs-text-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    text-align: initial;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    -webkit-text-size-adjust: none;
+    -moz-text-size-adjust: none;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+}
+
+.pdfjs-text-layer :is(span, br) {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+
+.pdfjs-text-layer > :not(.markedContent),
+.pdfjs-text-layer .markedContent span:not(.markedContent) { z-index: 1; }
+
+.pdfjs-text-layer span.markedContent { top: 0; height: 0; }
+
+.pdfjs-text-layer span[role="img"] {
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+}
+
+/* The glyphs are transparent, so the selection band is the only thing the reader
+   sees; it has to be strong enough to read against the rendered page beneath it. */
+.pdfjs-text-layer ::selection { background: rgba(74, 159, 212, 0.4); }
+.pdfjs-text-layer br::selection { background: transparent; }
+
+/* A find-bar hit, painted into the text layer's own spans. Scoped past
+   `.pdfjs-text-layer :is(span, br)` above, which would otherwise position these
+   absolutely and tear them out of their line. */
+.pdfjs-text-layer .pdfjs-find-hit {
+    position: static;
+    background: rgba(74, 159, 212, 0.42);
+    border-radius: 2px;
+}
+
+.pdfjs-text-layer .pdfjs-find-hit.is-active {
+    background: rgba(240, 173, 78, 0.78);
+    box-shadow: 0 0 0 1px rgba(176, 110, 0, 0.9);
+}
+
+/* Toolbar and find bar travel together as one sticky header, so the find bar
+   stays reachable however far down the document the reader has scrolled.
+   goToDest measures this element to keep a jump target clear of it. */
+.pdfjs-headbar {
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background: var(--bg-card);
+}
+
+/* The PDF find bar. Deliberately the same shape as .document-search so the Text
+   and PDF views of one legal document read as the same tool. */
+.pdfjs-find {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+.pdfjs-find-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-muted);
+}
+
+.pdfjs-find-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--text-body);
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.pdfjs-find-input::placeholder { color: var(--text-placeholder); }
+
+.pdfjs-find-input:focus {
+    outline: none;
+    border-color: var(--accent-focus);
+}
+
+.pdfjs-find-count {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.pdfjs-find-nav {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.pdfjs-find-nav:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent-focus);
+}
+
+.pdfjs-find-nav:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Status line under the input (reading the document, or a scan with no text at
+   all). Takes its own row so it never squeezes the input on a narrow screen. */
+.pdfjs-find-note {
+    flex-basis: 100%;
+    margin: 0.15rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--text-muted);
+}
 
 /* Sticks to .tab-panel, which is the scrolling container. */
 .document-search {
@@ -1192,14 +1356,22 @@ body {
 }
 
 /* The viewer measures its own container, so it just needs room to grow inside
-   the library column without forcing horizontal scroll. */
+   the library column without forcing horizontal scroll.
+
+   `clip` rather than `hidden`, and the difference is load-bearing: an element with
+   `overflow-x: hidden` has its overflow-y computed to `auto`, which makes it a
+   scroll container -- and the nearest scroll container is what `position: sticky`
+   sticks to. This element never scrolls, so a sticky header inside it had nothing
+   to stick to and simply scrolled away with the document. `overflow-x: clip` leaves
+   overflow-y `visible`, so the viewer's toolbar and find bar stick to the tab panel
+   that actually scrolls, while horizontal overflow is still cut off. */
 .legal-library-pdf {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
-    overflow-x: hidden;
+    overflow-x: clip;
 }
 
 .legal-library-note {
@@ -1677,6 +1849,7 @@ body {
     /* iOS zooms the page when a focused input's font-size is under 16px;
        the chat input already carries the same guard. */
     .document-search-input,
+    .pdfjs-find-input,
     .legal-library-select {
         font-size: 16px;
     }

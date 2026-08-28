@@ -1681,6 +1681,7 @@ function ChatInterface() {
                             src={pdfSrc}
                             title={pdfLabel}
                             openLabel={openLabel}
+                            lang={selectedLanguageCode}
                             jumpTarget={pdfScrollTarget?.tabId === tab.id ? pdfScrollTarget : null}
                           />
                         </Suspense>

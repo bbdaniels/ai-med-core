@@ -358,6 +358,7 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
               src={pdfSrc}
               title={resolveI18n(selected?.title, lang || 'en')}
               openLabel={t.openInNewTab}
+              lang={lang}
               jumpTarget={pdfJump}
             />
           </Suspense>

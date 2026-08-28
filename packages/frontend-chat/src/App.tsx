@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import './App.css';
-import { api, apiFetch } from './api-base';
+import { api, apiFetch, getAccessToken, setAccessToken, readAccessCodeFromUrl, scrubAccessCodeFromUrl } from './api-base';
+import AccessGate from './components/AccessGate';
 import AdminLogin from './components/AdminLogin';
 import WelcomeScreen from './WelcomeVariants';
 import TabBar from './components/TabBar';
@@ -78,10 +79,14 @@ interface LanguageUISection {
     bullets: string[]
     disclaimer?: string | string[]
     consentParagraphs?: string[]
+    /** Shown on the access gate, for projects that set requireAccessCode. */
+    accessHint?: string
     getStarted: string
     languageLabel: string
   }
   chat: {
+    /** Optional starter questions shown on an untouched conversation. */
+    starterQuestions?: string[]
     headerTitle: string
     scenarioDescription: string
     inputPlaceholder: string
@@ -284,6 +289,28 @@ function ChatInterface() {
   // normal welcome rather than a blank screen.
   const [skipWelcome, setSkipWelcome] = useState(false);
   const [configLoaded, setConfigLoaded] = useState(false);
+  // Course access gate. `requireAccessCode` comes from /api/config; `unlocked`
+  // starts true when a token is already held, so a returning student never sees
+  // the gate. A token the server has since rejected surfaces as a 401 on the
+  // first content request, which flips this back to false.
+  const [requireAccessCode, setRequireAccessCode] = useState(false);
+  // chatOnly: the project has no second panel at all — no tabs, no form, no
+  // document view. The chat becomes a single centered column at every width.
+  // ppol5013 is chat-only because its corpus is copyrighted: there is no
+  // reading text to put in a side panel, and an empty pane is worse than none.
+  const [chatOnly, setChatOnly] = useState(false);
+  const [unlocked, setUnlocked] = useState<boolean>(() => !!getAccessToken());
+  // Whether the gated endpoints (/api/tabs, /api/vignettes, /api/project-content)
+  // will answer us. Every fetch of one must wait on this. React runs a component's
+  // effects even when it early-returns the gate instead of the app, so without
+  // this the tab fetch fires behind the gate, takes a 401, and never retries --
+  // which is exactly how the form panel ended up rendering for a formless project.
+  // A code supplied in the URL fragment is redeemed before the gate is ever
+  // shown. Held in state rather than read on each render, because the redemption
+  // effect scrubs the fragment and a re-read after that would find nothing.
+  const [urlAccessCode, setUrlAccessCode] = useState<string | null>(() => readAccessCodeFromUrl());
+  const [redeemingUrlCode, setRedeemingUrlCode] = useState<boolean>(() => !!urlAccessCode);
+  const accessReady = configLoaded && (!requireAccessCode || unlocked);
   // Document-reference linking: when a project declares `docRefs`, references in
   // an assistant answer ("Section 4.1", "Phụ lục 7.1") become clickable and jump
   // the document tab to that passage. Absent this config the feature is off and
@@ -333,6 +360,14 @@ function ChatInterface() {
     return tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }, [langs, apiTabs, formless, selectedVignetteKey]);
   const hasTabs = resolvedTabs !== null;
+  // Starter questions come from languages.json (chat.starterQuestions), so they
+  // localize with everything else and need no extra endpoint.
+  const starterQuestions = useMemo<string[]>(() => {
+    const code = selectedLanguageCode || 'en';
+    const raw = (langs?.ui?.[code]?.chat as { starterQuestions?: unknown } | undefined)?.starterQuestions
+      ?? (langs?.ui?.['en']?.chat as { starterQuestions?: unknown } | undefined)?.starterQuestions;
+    return Array.isArray(raw) ? raw.filter((q): q is string => typeof q === 'string') : [];
+  }, [langs, selectedLanguageCode]);
   // Which tabs exist — not their contents. Switching vignette changes the set
   // (TEECH reveals its Physical Exams tab that way, and relies on the reselect
   // below to bring it forward); switching language only swaps each tab's content,
@@ -477,6 +512,8 @@ function ChatInterface() {
         if (data.formless) setFormless(true);
         if (data.skipWelcome) setSkipWelcome(true);
         if (data.dragDropAllocation) setDragDropAllocation(true);
+        if (data.requireAccessCode) setRequireAccessCode(true);
+        if (data.chatOnly) setChatOnly(true);
         if (data.enableFeedback === false) setFeedbackEnabled(false);
         if (data.docRefs && typeof data.docRefs === 'object' && typeof data.docRefs.tabId === 'string') {
           setDocRefs(data.docRefs as DocRefsConfig);
@@ -485,6 +522,60 @@ function ChatInterface() {
       })
       .catch(() => { setConfigLoaded(true); });
   }, []);
+
+  // Changing only the fragment is a same-document navigation: the SPA does not
+  // reload and nothing remounts. A student already on the page who follows a
+  // coded Canvas link would otherwise never have it redeemed.
+  useEffect(() => {
+    const onHashChange = () => {
+      const code = readAccessCodeFromUrl();
+      if (!code) return;
+      setUrlAccessCode(code);
+      setRedeemingUrlCode(true);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Redeem a URL-supplied access code. Runs before the gate can render, and
+  // scrubs the fragment either way — a code left in the address bar is
+  // shoulder-surfable and would be re-submitted on every reload.
+  //
+  // It runs even when a token is already held, which is the point: in a
+  // third-party iframe Safari may have dropped the stored token since the last
+  // visit, and re-redeeming costs one request and always leaves us with a fresh
+  // one.
+  useEffect(() => {
+    if (!configLoaded) return;
+    if (!urlAccessCode) return;
+    if (!requireAccessCode) {
+      // Nothing to redeem it against; still take it out of the address bar.
+      scrubAccessCodeFromUrl();
+      setRedeemingUrlCode(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(api('/api/access'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: urlAccessCode }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && data?.token) {
+          setAccessToken(data.token);
+          setUnlocked(true);
+        }
+      } catch {
+        /* fall through to the manual gate */
+      } finally {
+        scrubAccessCodeFromUrl();
+        if (!cancelled) setRedeemingUrlCode(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [configLoaded, requireAccessCode, urlAccessCode]);
 
   // skipWelcome projects boot straight into chat once languages are loaded —
   // the welcome page's two jobs (language choice, consent notice) live in
@@ -502,6 +593,7 @@ function ChatInterface() {
   // (haivn_eip serves the EIP document and its text in both English and Vietnamese),
   // and the backend resolves which file to send from ?lang.
   useEffect(() => {
+    if (!accessReady) return;
     let cancelled = false;
     apiFetch(api(`/api/tabs?lang=${encodeURIComponent(selectedLanguageCode || 'en')}`))
       .then(res => res.json())
@@ -512,7 +604,7 @@ function ChatInterface() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [selectedLanguageCode]);
+  }, [selectedLanguageCode, accessReady]);
 
   // Keep voice refs in sync
   useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
@@ -657,7 +749,7 @@ function ChatInterface() {
 
   // Load vignettes only after the user starts (filtered by uid if present)
   useEffect(() => {
-    if (!hasStarted) return;
+    if (!hasStarted || !accessReady) return;
     fetchVignettes(userUid)
       .then(keys => {
         setVignetteKeys(keys);
@@ -670,7 +762,7 @@ function ChatInterface() {
       .catch(error => {
         console.error('Error loading vignette keys:', error);
       });
-  }, [hasStarted, userUid]);
+  }, [hasStarted, userUid, accessReady]);
 
   // Initialize conversation when vignette keys are loaded (only after start)
   useEffect(() => {
@@ -1010,6 +1102,21 @@ function ChatInterface() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Access gate. Rendered instead of the app, after every hook above has run, so
+  // the hook order is identical whether or not the gate is showing. It waits for
+  // /api/config: gating on a flag we have not loaded yet would flash the gate at
+  // every visitor of every ungated project.
+  if (configLoaded && requireAccessCode && !unlocked && !redeemingUrlCode) {
+    return (
+      <AccessGate
+        title={t('welcome', 'title') || 'Course access'}
+        hint={t('welcome', 'accessHint')
+          || 'Enter the access code from the course Canvas page.'}
+        onUnlocked={() => setUnlocked(true)}
+      />
+    );
+  }
   
 
   return (
@@ -1126,8 +1233,10 @@ function ChatInterface() {
 
     {hasStarted && (
     <>
-    {/* Mobile Toggle/Tab Bar - Only visible on screens < 768px */}
-    {hasTabs ? (
+    {/* Mobile Toggle/Tab Bar - Only visible on screens < 768px.
+        A chat-only project has no second panel, so there is nothing to toggle
+        between and the strip would just eat vertical space on a phone. */}
+    {chatOnly ? null : hasTabs ? (
       <div className="mobile-tab-strip">
         <TabBar
           tabs={[
@@ -1175,9 +1284,9 @@ function ChatInterface() {
       </div>
     )}
     
-    <div className={`main-container ${hasTabs ? 'has-tabs' : ''}`}>
+    <div className={`main-container ${hasTabs ? 'has-tabs' : ''} ${chatOnly ? 'chat-only' : ''}`}>
       {/* Left Panel: Chatbot */}
-      <div className={`left-panel ${mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
+      <div className={`left-panel ${!chatOnly && mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
         <div className="left-panel-inner">
           {/* skipWelcome projects never see the welcome screen's language selector,
               so the switcher lives here, in the chat's top bar. On mobile with tabs
@@ -1328,6 +1437,25 @@ function ChatInterface() {
                 {/* Inline follow-up suggestions (opt-in per project via enableFollowups).
                     Rendered INSIDE the scrollable conversation-display as a sticky overlay
                     so messages scroll behind the chips with a frosted-glass effect. */}
+                {/* Starter questions, shown only on an untouched conversation and
+                    only when the project supplies them. A chat-only project has
+                    no panel to put suggestions in, and a blank chat gives a
+                    student no idea what this thing can actually answer. They
+                    disappear as soon as the conversation starts, where the
+                    per-answer follow-up chips take over. */}
+                {starterQuestions.length > 0 && messages.length <= 1 && !isLoading && (
+                  <div className="suggested-prompts">
+                    {starterQuestions.map((q, i) => (
+                      <button
+                        key={`starter-${i}`}
+                        type="button"
+                        onClick={() => handleQuestionClick(q)}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {followups.length > 0 && !isLoading && (
                   <div className="followups-bar">
                     {followups.map((q, i) => (
@@ -1397,7 +1525,11 @@ function ChatInterface() {
         </div>
       </div>
 
-      {/* Right Panel: Tabbed content or legacy form */}
+      {/* Right Panel: Tabbed content or legacy form. Omitted entirely for a
+          chat-only project — rendering it and hiding it with CSS would still
+          mount the panel, and for a formless project that means mounting the
+          legacy Kobo form and firing its fetch. */}
+      {!chatOnly && (
       <div className={`right-panel ${mobileActivePanel === 'chat' ? 'mobile-hidden' : ''}`}>
         {hasTabs ? (
           <>
@@ -1583,6 +1715,7 @@ function ChatInterface() {
           )
         )}
       </div>
+      )}
     </div>
     </>
     )}

@@ -26,7 +26,88 @@ export function api(path: string): string {
 }
 
 /**
- * Headers to include with every API request for project routing.
+ * Course access token for projects that set `requireAccessCode` in project.json.
+ *
+ * Held in localStorage so a student enters the shared code once, with an
+ * in-memory copy behind it. The in-memory copy is not a nicety: this app is
+ * embedded in an iframe on Canvas, and Safari's tracking prevention can make
+ * localStorage throw or read back empty for a third-party frame. When that
+ * happens the token still works for the current page, and the student is asked
+ * for the code again next visit rather than being locked out.
+ */
+const ACCESS_TOKEN_KEY = `access_token_${PROJECT || 'default'}`;
+let accessTokenMemory: string | null = null;
+
+export function getAccessToken(): string | null {
+  if (accessTokenMemory) return accessTokenMemory;
+  try {
+    accessTokenMemory = localStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    accessTokenMemory = null;
+  }
+  return accessTokenMemory;
+}
+
+/**
+ * A course access code handed to the app in the URL fragment:
+ *
+ *     https://.../ppol5013/#code=smallwins
+ *
+ * This is how every Canvas surface passes the gate without a student typing
+ * anything: the iframe embed, module links, and any future side-nav redirect all
+ * carry the coded URL, and Canvas enrollment is what protects it.
+ *
+ * The fragment, not the query string, deliberately: a fragment is never sent to
+ * the server, so the code stays out of access logs, proxy logs, and Referer
+ * headers.
+ *
+ * It also fixes the Safari ITP problem. In a third-party iframe, storage can be
+ * blocked, so a token saved on one visit may be gone on the next; when the code
+ * arrives with every load, that stops mattering.
+ */
+export function readAccessCodeFromUrl(): string | null {
+  try {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return null;
+    const value = new URLSearchParams(hash).get('code');
+    return value && value.trim() ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove the code from the address bar, keeping everything else in the URL.
+ * Called whether or not the code worked: a wrong code left on display is just as
+ * shoulder-surfable as a right one, and it would be re-submitted on every reload.
+ */
+export function scrubAccessCodeFromUrl(): void {
+  try {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
+    if (!params.has('code')) return;
+    params.delete('code');
+    const rest = params.toString();
+    const url = window.location.pathname + window.location.search + (rest ? `#${rest}` : '');
+    window.history.replaceState(null, '', url);
+  } catch {
+    /* history blocked (sandboxed frame); the code stays visible but still works */
+  }
+}
+
+export function setAccessToken(token: string | null): void {
+  accessTokenMemory = token;
+  try {
+    if (token) localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    else localStorage.removeItem(ACCESS_TOKEN_KEY);
+  } catch {
+    /* storage blocked; the in-memory copy carries this session */
+  }
+}
+
+/**
+ * Headers to include with every API request for project routing and access.
  * Merges with any existing headers the caller provides.
  */
 export function projectHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -34,20 +115,25 @@ export function projectHeaders(extra?: Record<string, string>): Record<string, s
   if (PROJECT) {
     headers['X-Project'] = PROJECT;
   }
+  const token = getAccessToken();
+  if (token) {
+    headers['X-Access-Token'] = token;
+  }
   return headers;
 }
 
 /**
- * Fetch wrapper that automatically includes the X-Project header for multi-tenant routing.
+ * Fetch wrapper that automatically includes the X-Project header for multi-tenant
+ * routing, and the access token when one has been obtained.
  * Drop-in replacement for native fetch() — use for all API calls.
  */
 export function apiFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  if (PROJECT) {
-    const headers = new Headers(init?.headers);
-    headers.set('X-Project', PROJECT);
-    return fetch(input, { ...init, headers });
-  }
-  return fetch(input, init);
+  const token = getAccessToken();
+  if (!PROJECT && !token) return fetch(input, init);
+  const headers = new Headers(init?.headers);
+  if (PROJECT) headers.set('X-Project', PROJECT);
+  if (token) headers.set('X-Access-Token', token);
+  return fetch(input, { ...init, headers });
 }
 
 /**

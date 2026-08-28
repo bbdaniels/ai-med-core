@@ -466,7 +466,10 @@ body {
 }
 
 .suggested-prompts {
+    /* Match .messages-container's 30px inset so the chips line up with the
+       conversation rather than running to the panel edge. */
     margin: 0.5rem 0;
+    padding: 0 30px;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -632,6 +635,7 @@ body {
 
     .suggested-prompts {
         gap: 0.25rem;
+        padding: 0 20px;
     }
 
     .suggested-prompts button {
@@ -2521,4 +2525,138 @@ body {
   line-height: 1.5;
   color: var(--text-secondary);
   margin: 6px 0 0;
+}
+
+/* ── Course access gate (projects with requireAccessCode) ───────────────
+   Narrower than the welcome card it borrows its shell from: this is one
+   field and a button, and a 960px card around them reads as an error. */
+.welcome-content.access-gate {
+  max-width: 460px;
+  padding: 36px 32px;
+}
+
+.access-gate-hint {
+  font-size: 0.95em;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin: 0 0 22px;
+}
+
+.access-gate-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.access-gate-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 11px 12px;
+  font-size: 1em;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.access-gate-form input:focus {
+  outline: 2px solid var(--accent, #4a6fa5);
+  outline-offset: 1px;
+}
+
+.access-gate-form button {
+  flex: 0 0 auto;
+  padding: 11px 20px;
+  font-size: 1em;
+  font-family: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent, #4a6fa5);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.access-gate-form button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.access-gate-error {
+  margin: 14px 0 0;
+  font-size: 0.9em;
+  color: var(--error, #b3261e);
+}
+
+/* ── Chat-only projects ────────────────────────────────────────────────
+   A project with `chatOnly` has no second panel at all: no tabs, no form,
+   no document view. ppol5013 is the first, because its corpus is
+   copyrighted and there is no reading text to put beside the chat.
+
+   The right panel is not rendered (see App.tsx), so the only job here is to
+   stop the chat column behaving like one half of a split. */
+
+.main-container.chat-only .left-panel {
+    /* Nothing sits to the right, so the divider would be a rule down the
+       middle of empty space. */
+    border-right: none;
+}
+
+.main-container.chat-only .left-panel-inner {
+    /* A conversation set the full width of a 27-inch display is unreadable;
+       cap the measure and centre it. Below the cap this is a no-op, so
+       phones and the Canvas iframe are unaffected. */
+    width: 100%;
+    max-width: 860px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+@media (max-width: 768px) {
+    /* No fixed strip on a chat-only project, so reclaim the space the strip
+       would have occupied. The base mobile rules set these with !important
+       (they are overriding the desktop split), so these must match that
+       weight to win. */
+    .main-container.chat-only {
+        padding-top: 0;
+    }
+
+    .main-container.chat-only .left-panel {
+        height: 100vh !important;
+        height: 100dvh !important;
+    }
+
+    .main-container.chat-only .left-panel-inner {
+        /* The side margins here are for a panel that shares the screen; at
+           phone width they cost 40px of an already narrow column. */
+        margin: 0 !important;
+        padding: 8px 0 0 !important;
+        height: 100% !important;
+    }
+
+    /* Starter chips are the main thing a student taps on an empty chat, and
+       the shared mobile rule sizes them for a cramped half-screen panel: 11px
+       text in a 31px box, under the 44px touch minimum and hard to read. A
+       chat-only column has the width to do this properly. */
+    .main-container.chat-only .suggested-prompts button {
+        font-size: 14px;
+        padding: 0.6rem 0.9rem;
+        min-height: 44px;
+        text-align: left;
+    }
+}
+
+/* Touch targets. The send button is drawn at 32px, which reads correctly next
+   to the input but is under the 44px minimum for a reliable tap. Expanding the
+   hit area with a pseudo-element rather than the box keeps the visual size and
+   changes no layout, so this is safe for every project, not just chat-only. */
+.send-button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
 }

@@ -58,6 +58,13 @@ import {
   getQaLog,
   QA_LOG_MAX_LIMIT,
 } from './database.js';
+import {
+  openReadingsIndex,
+  searchReadings,
+  formatSearchResults,
+  SEARCH_READINGS_TOOL,
+  READINGS_MAX_RESULTS,
+} from './readings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,6 +144,11 @@ function estimateCost(model: string, promptTokens: number, completionTokens: num
   return promptTokens * p.input + completionTokens * p.output;
 }
 
+// Chat models a project may select via `chatModel` in project.json. Kept in step
+// with estimateCost's pricing table: a model missing from that table would be
+// billed to the usage log as zero.
+const KNOWN_CHAT_MODELS = new Set(['gpt-4o-mini', 'gpt-4o']);
+
 // JWT Configuration
 // No fallback secret. A default here would let a misconfigured deployment sign
 // admin tokens with a value that is public in this repo's history, so refuse to
@@ -198,7 +210,10 @@ const corsOptions: CorsOptions = {
     return callback(null, isAllowed);
   },
   methods: ['GET', 'POST', 'DELETE', 'PUT', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Project'],
+  // X-Access-Token must be listed or the browser's preflight rejects it and every
+  // gated request fails cross-origin. Local dev cannot catch that: Vite proxies
+  // /api from :3000 to :3001, so development never makes a cross-origin call.
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Project', 'X-Access-Token'],
   credentials: true, // Allow cookies to be sent with requests
   maxAge: 86400, // 24h preflight cache
 };
@@ -399,6 +414,119 @@ const requireContentWrite = (req: express.Request, res: express.Response, next: 
   next();
 };
 
+// ── Course access gate ───────────────────────────────────────────────
+//
+// A project may set `requireAccessCode: true` in project.json. Every content and
+// chat request for that project then needs a valid access token, which a visitor
+// gets by entering a shared code once. This is a speed bump against a link
+// escaping the class, not an authentication system: the code is shared among a
+// cohort and one student can always pass it on. It exists so the deployment is
+// not open to the whole internet, and so it is not a free LLM endpoint.
+//
+// The token travels in an `X-Access-Token` header, deliberately NOT in a cookie.
+// The admin cookie is SameSite=strict, which a browser withholds from an iframe
+// on another origin — and this project's whole delivery is an iframe inside
+// Canvas. A header read from localStorage is the only thing that works there.
+
+const ACCESS_TOKEN_EXPIRY = '30d';
+
+const accessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Too many attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const projectConfigCache = new Map<string, Record<string, any>>();
+
+async function readProjectConfig(slug: string): Promise<Record<string, any>> {
+  const cached = projectConfigCache.get(slug);
+  if (cached) return cached;
+  try {
+    const raw = await fs.readFile(
+      path.join(REPO_ROOT, 'projects', slug, 'project.json'), 'utf-8');
+    const parsed = JSON.parse(raw);
+    projectConfigCache.set(slug, parsed);
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function requestProjectSlug(req: express.Request): string {
+  const header = req.headers['x-project'];
+  const slug = typeof header === 'string' ? header.trim().replace(/_+$/, '') : '';
+  return slug || (activeProjectPrefix() || '').replace(/_+$/, '') || 'demo';
+}
+
+/**
+ * The configured code for a project: a project setting first (so it can be
+ * rotated through the admin API without a redeploy), then an environment
+ * variable. Returns null when neither is set, which leaves the project ungated.
+ */
+async function getAccessCode(slug: string): Promise<string | null> {
+  try {
+    const setting = await getProjectSetting(slug, 'access_code');
+    if (setting && setting.trim()) return setting.trim();
+  } catch { /* fall through to the environment */ }
+  const envKey = `ACCESS_CODE_${slug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+  const fromEnv = process.env[envKey];
+  return fromEnv && fromEnv.trim() ? fromEnv.trim() : null;
+}
+
+const requireAccessCode = async (req: express.Request, res: express.Response,
+                                 next: express.NextFunction) => {
+  const slug = requestProjectSlug(req);
+  const config = await readProjectConfig(slug);
+  if (config.requireAccessCode !== true) return next();
+
+  // A project that asks to be gated but has no code configured must FAIL CLOSED.
+  // Falling through to "no code, so allow everyone" would silently publish it.
+  const configured = await getAccessCode(slug);
+  if (!configured) {
+    console.error(`[access] ${slug} sets requireAccessCode but no code is configured; ` +
+                  'denying every request. Set a project setting "access_code" or the ' +
+                  `ACCESS_CODE_${slug.toUpperCase()} environment variable.`);
+    return res.status(503).json({ error: 'Access is not configured for this course site' });
+  }
+
+  const raw = req.headers['x-access-token'];
+  const token = typeof raw === 'string' ? raw : '';
+  if (!token) return res.status(401).json({ error: 'Access code required', needsAccessCode: true });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { role?: string; project?: string };
+    if (payload.role !== 'course-access' || payload.project !== slug) {
+      return res.status(401).json({ error: 'Access code required', needsAccessCode: true });
+    }
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Access code expired', needsAccessCode: true });
+  }
+};
+
+app.post('/api/access', accessLimiter, async (req, res) => {
+  const slug = requestProjectSlug(req);
+  const config = await readProjectConfig(slug);
+  if (config.requireAccessCode !== true) {
+    return res.json({ success: true, token: null, required: false });
+  }
+  const configured = await getAccessCode(slug);
+  if (!configured) {
+    return res.status(503).json({ error: 'Access is not configured for this course site' });
+  }
+  const supplied = typeof req.body?.code === 'string' ? req.body.code : '';
+  // Compare on a normalized form: the code is a spoken passphrase read off a
+  // Canvas page, so case and stray spaces are the user's typing, not a mismatch.
+  const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!supplied || normalize(supplied) !== normalize(configured)) {
+    return res.status(401).json({ error: 'That code is not right' });
+  }
+  const token = jwt.sign({ role: 'course-access', project: slug }, JWT_SECRET,
+                         { expiresIn: ACCESS_TOKEN_EXPIRY });
+  return res.json({ success: true, token, required: true });
+});
+
 // Serve static files from dist/client in production (unless SERVE_FRONTEND=false)
 const serveFrontend = process.env.SERVE_FRONTEND !== 'false';
 if (process.env.NODE_ENV === 'production' && serveFrontend) {
@@ -407,7 +535,7 @@ if (process.env.NODE_ENV === 'production' && serveFrontend) {
 }
 
 // API Routes
-app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
+app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (req, res) => {
   try {
     const { messages, vignetteKey, language, sessionToken } = req.body as {
       messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -465,23 +593,40 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
     // (formless Q&A advisors like haivn_eip whose consent states turns are logged).
     let enableFollowups = false;
     let logConversations = false;
+    let readingsIndexPath: string | null = null;
+    let projectChatModel: string | null = null;
     try {
       const cfgPath = path.join(REPO_ROOT, 'projects', chatProjectSlug, 'project.json');
       const cfg = JSON.parse(await fs.readFile(cfgPath, 'utf-8'));
       enableFollowups = cfg.enableFollowups === true;
       logConversations = cfg.logConversations === true;
+      readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
+      // Per-project chat model. gpt-4o-mini is the platform default and is right
+      // for the roleplay projects; a grounded advisor that must attribute a year
+      // to the correct paper needs the stronger model. Restricted to models the
+      // cost table knows, so a typo cannot silently log every call as free.
+      if (typeof cfg.chatModel === 'string' && KNOWN_CHAT_MODELS.has(cfg.chatModel)) {
+        projectChatModel = cfg.chatModel;
+      } else if (typeof cfg.chatModel === 'string') {
+        console.warn(`[chat] ${chatProjectSlug}: unknown chatModel "${cfg.chatModel}", using the default`);
+      }
     } catch { /* ignore — default off */ }
 
-    // Legal-corpus grounding: a project may ship a compact index of the legal
-    // instruments it cites at content/legal/grounding.md (authored, or generated
-    // by the project's own tooling). We append that index — not the
-    // full legal text — so the advisor can cite document numbers and flag
-    // superseded instruments without blowing the token budget. Absent file = no-op.
-    let legalGrounding = '';
-    try {
-      const groundingPath = path.join(REPO_ROOT, 'projects', chatProjectSlug, 'content', 'legal', 'grounding.md');
-      legalGrounding = await fs.readFile(groundingPath, 'utf-8');
-    } catch { /* no legal corpus for this project */ }
+    // Corpus grounding: a project may ship a compact index of the corpus it
+    // answers from (authored, or generated by the project's own tooling). We
+    // append that index — never the full corpus text — so the advisor knows what
+    // exists and how to cite it without blowing the token budget. haivn_eip
+    // indexes legal instruments; ppol5013 indexes a course reading schedule.
+    // Absent file = no-op.
+    let corpusGrounding = '';
+    for (const rel of [['content', 'legal', 'grounding.md'],
+                       ['content', 'readings', 'grounding.md']]) {
+      try {
+        corpusGrounding = await fs.readFile(
+          path.join(REPO_ROOT, 'projects', chatProjectSlug, ...rel), 'utf-8');
+        break;
+      } catch { /* try the next candidate */ }
+    }
 
     const structuredInstruction = enableFollowups
       ? '\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.'
@@ -491,7 +636,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       (systemPrompt || '') +
       `\n\n${dateRef}` +
       `\n\n${vignette.content}` +
-      (legalGrounding ? `\n\n${legalGrounding}` : '') +
+      (corpusGrounding ? `\n\n${corpusGrounding}` : '') +
       structuredInstruction +
       (language ? `\n\nSPEAK ONLY IN ${language}` : '');
 
@@ -535,10 +680,14 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
     const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
     const chatClient = (paymentSource === 'direct' && openaiDirect) ? openaiDirect : openai;
 
-    const chatModel = 'gpt-4o-mini';
+    const chatModel = projectChatModel || 'gpt-4o-mini';
+
+    // The conversation the model sees. It grows during the retrieval loop below:
+    // an assistant turn holding tool calls, then one tool result per call.
+    const convo: any[] = [...finalMessages];
+
     const baseChatRequest = {
       model: chatModel,
-      messages: finalMessages,
       max_tokens: 1000,
       temperature: 0.7,
     };
@@ -574,32 +723,102 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
         },
       },
     };
-    let response;
-    if (enableFollowups) {
+    // Issue one completion over the conversation so far, keeping the existing
+    // response_format fallback ladder: a gateway that rejects json_schema drops to
+    // json_object, and one that rejects that drops to plain text. `tools` is
+    // omitted entirely when the project has no corpus, so nothing changes for the
+    // projects that came before this one.
+    const issue = async (tools: unknown[] | null) => {
+      const withTools = (req: Record<string, unknown>) =>
+        (tools && tools.length ? { ...req, tools, tool_choice: 'auto' } : req);
+      const request = { ...baseChatRequest, messages: convo };
+      if (!enableFollowups) {
+        return chatClient.chat.completions.create(withTools(request) as any);
+      }
       try {
-        response = await chatClient.chat.completions.create(schemaRequest);
+        return await chatClient.chat.completions.create(
+          withTools({ ...schemaRequest, messages: convo }) as any);
       } catch (e) {
-        // Gateway or model rejected the json_schema response_format — fall back to
-        // json_object mode (the prompt already instructs JSON shape in followupsInstruction).
         console.warn('json_schema rejected, retrying with json_object fallback:', e instanceof Error ? e.message : e);
         try {
-          response = await chatClient.chat.completions.create({
-            ...baseChatRequest,
+          return await chatClient.chat.completions.create(withTools({
+            ...request,
             response_format: { type: 'json_object' as const },
-          });
+          }) as any);
         } catch (e2) {
           console.warn('json_object also rejected, retrying without response_format:', e2 instanceof Error ? e2.message : e2);
-          response = await chatClient.chat.completions.create(baseChatRequest);
+          return chatClient.chat.completions.create(withTools(request) as any);
         }
       }
-    } else {
-      response = await chatClient.chat.completions.create(baseChatRequest);
+    };
+
+    const usages: Array<{ prompt_tokens?: number; completion_tokens?: number;
+                          [k: string]: unknown }> = [];
+
+    // ── retrieval loop ──
+    // The model may search the corpus, read what came back, and search again. It
+    // is capped: past the last hop the tools are withheld, which forces the model
+    // to answer from what it already retrieved rather than looping on a query
+    // that is never going to match.
+    const readingsIndex = readingsIndexPath
+      ? openReadingsIndex(REPO_ROOT, chatProjectSlug, readingsIndexPath)
+      : null;
+    const MAX_TOOL_HOPS = 3;
+
+    let response: any;
+    for (let hop = 0; ; hop++) {
+      const offerTools = readingsIndex && hop < MAX_TOOL_HOPS
+        ? [SEARCH_READINGS_TOOL] : null;
+      response = await issue(offerTools);
+      if (response.usage) usages.push({ ...response.usage, _raw: response });
+
+      const assistantMsg = response.choices?.[0]?.message;
+      const toolCalls = assistantMsg?.tool_calls;
+      if (!readingsIndex || !toolCalls?.length) break;
+
+      convo.push(assistantMsg);
+      for (const call of toolCalls) {
+        let content: string;
+        try {
+          const args = JSON.parse(call.function?.arguments || '{}');
+          const searchQuery = typeof args.query === 'string' ? args.query.slice(0, 500) : '';
+          if (!searchQuery) {
+            content = 'search_readings requires a non-empty query string.';
+          } else {
+            // Embed the query with the same model the index was built with. A
+            // failure here is not fatal: search falls back to BM25 alone.
+            let queryVector: Float32Array | null = null;
+            try {
+              const embedding = await chatClient.embeddings.create({
+                model: 'text-embedding-3-small',
+                input: searchQuery,
+              });
+              const vec = embedding.data?.[0]?.embedding;
+              if (Array.isArray(vec)) queryVector = Float32Array.from(vec);
+            } catch (e) {
+              console.warn('[readings] query embedding failed; BM25 only:', e instanceof Error ? e.message : e);
+            }
+            const week = typeof args.week === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.week)
+              ? args.week : null;
+            const limit = Number.isInteger(args.limit)
+              ? Math.min(READINGS_MAX_RESULTS, Math.max(1, args.limit)) : undefined;
+            const results = searchReadings(readingsIndex, searchQuery, queryVector,
+                                           { week, limit });
+            console.log(`[readings] "${searchQuery}"${week ? ` week=${week}` : ''} -> ${results.length} passages`);
+            content = formatSearchResults(searchQuery, results);
+          }
+        } catch (e) {
+          console.error('[readings] tool call failed:', e);
+          content = 'The reading search failed. Tell the student the search is ' +
+                    'unavailable right now rather than answering from memory.';
+        }
+        convo.push({ role: 'tool', tool_call_id: call.id, content });
+      }
     }
 
-    // Log token usage (including Harvard gateway credit fields if present)
-    if (response.usage) {
-      const u = response.usage;
-      const raw = response as any;
+    // Log token usage for every hop (including Harvard gateway credit fields).
+    for (const u of usages) {
+      const raw = (u as any)._raw;
       logTokenUsage({
         project: activeProjectPrefix(),
         endpoint: '/api/chat',
@@ -607,8 +826,8 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
         prompt_tokens: u.prompt_tokens || 0,
         completion_tokens: u.completion_tokens || 0,
         estimated_cost: estimateCost(chatModel, u.prompt_tokens || 0, u.completion_tokens || 0),
-        harvard_credits_used: raw.your_harvard_credits_used_this_transaction ?? null,
-        harvard_credits_remaining: raw.your_harvard_credits_still_available ?? null,
+        harvard_credits_used: raw?.your_harvard_credits_used_this_transaction ?? null,
+        harvard_credits_remaining: raw?.your_harvard_credits_still_available ?? null,
       });
     }
 
@@ -719,7 +938,14 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, async (req, res) => {
       message: messageText,
       followups,
       beyondScope,
-      usage: response.usage,
+      // Summed across retrieval hops, so a searched answer reports what it
+      // actually cost rather than only its final turn.
+      usage: usages.length ? {
+        prompt_tokens: usages.reduce((n, u) => n + (u.prompt_tokens || 0), 0),
+        completion_tokens: usages.reduce((n, u) => n + (u.completion_tokens || 0), 0),
+        total_tokens: usages.reduce(
+          (n, u) => n + (u.prompt_tokens || 0) + (u.completion_tokens || 0), 0),
+      } : undefined,
       caseTemplate: templateName
     });
   } catch (error) {
@@ -1589,6 +1815,65 @@ app.post('/api/admin/content', authenticateAdmin, requireContentWrite, async (re
 });
 
 // Save system prompt individually
+// ── Reading index upload ─────────────────────────────────────────────
+//
+// The index is a derived copy of copyrighted PDFs. It is never committed, so it
+// cannot arrive with a deploy, and Railway's container filesystem is wiped on
+// every redeploy, so it cannot simply be uploaded once to disk either. It lives
+// on a mounted volume, and this is how it gets there.
+//
+// Global admin only, and the destination is READINGS_INDEX_<SLUG> — the same
+// variable the reader uses, so an upload cannot land anywhere the reader will
+// not look. Writes to a temporary file and renames, so a connection that drops
+// mid-upload leaves the previous index in place rather than a truncated one.
+//
+//   curl -f -X POST "$DEPLOY_URL/api/admin/readings-index" \
+//     -H "X-Project: ppol5013" -H "Authorization: Bearer $TOKEN" \
+//     -H "Content-Type: application/octet-stream" \
+//     --data-binary @projects/ppol5013/content/readings/readings.db
+//
+// See tools/upload-readings-index.sh, which wraps the login and this call.
+app.post('/api/admin/readings-index',
+  authenticateAdmin, requireContentWrite,
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  async (req, res) => {
+    try {
+      const slug = requestProjectSlug(req);
+      const envKey = `READINGS_INDEX_${slug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+      const target = process.env[envKey];
+      if (!target || !target.trim()) {
+        return res.status(400).json({
+          error: `${envKey} is not set on this deployment, so there is nowhere ` +
+                 'persistent to put the index. Set it to a path on a mounted volume.',
+        });
+      }
+      const body = req.body as Buffer;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return res.status(400).json({ error: 'Empty body; send the file as application/octet-stream' });
+      }
+      // Cheap sanity check that this is actually a SQLite database, so a wrong
+      // --data-binary argument fails here instead of at the next student question.
+      if (body.subarray(0, 15).toString('latin1') !== 'SQLite format 3') {
+        return res.status(400).json({ error: 'That is not a SQLite database file' });
+      }
+
+      const dest = path.resolve(target.trim());
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      const tmp = `${dest}.upload-${randomUUID().slice(0, 8)}`;
+      await fs.writeFile(tmp, body);
+      await fs.rename(tmp, dest);
+
+      console.log(`[readings] ${slug}: index uploaded to ${dest} (${body.length} bytes)`);
+      return res.json({ success: true, path: dest, bytes: body.length });
+    } catch (error) {
+      console.error('Reading index upload failed:', error);
+      return res.status(500).json({
+        error: 'Upload failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
 app.post('/api/admin/system-prompt', authenticateAdmin, async (req, res) => {
   try {
     const { systemPrompt } = req.body as { systemPrompt?: string };
@@ -1787,7 +2072,7 @@ app.post('/api/admin/vignettes/swap', authenticateAdmin, requireContentWrite, as
 
 // Get vignettes (optionally filtered by uid assignments)
 // Returns only vignette keys - sensitive content stays server-side
-app.get('/api/vignettes', async (req, res) => {
+app.get('/api/vignettes', requireAccessCode, async (req, res) => {
   try {
     const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : null;
     const vignettes = await getVignettesForUid(uid);
@@ -2347,6 +2632,8 @@ app.get('/api/config', async (_req, res) => {
     let enableFollowups = false;
     let skipWelcome = false;
     let dragDropAllocation = false;
+    let requireAccessCode = false;
+    let chatOnly = false;
     // Optional document-reference linking config (see doc-refs.ts on the frontend).
     // Passed through verbatim when present; absent for projects that don't opt in.
     let docRefs: unknown = null;
@@ -2360,6 +2647,8 @@ app.get('/api/config', async (_req, res) => {
       enableFollowups = projectConfig.enableFollowups || false;
       skipWelcome = projectConfig.skipWelcome || false;
       dragDropAllocation = projectConfig.dragDropAllocation || false;
+      requireAccessCode = projectConfig.requireAccessCode || false;
+      chatOnly = projectConfig.chatOnly || false;
       if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
         docRefs = projectConfig.docRefs;
       }
@@ -2379,6 +2668,8 @@ app.get('/api/config', async (_req, res) => {
       enableFollowups,
       skipWelcome,
       dragDropAllocation,
+      requireAccessCode,
+      chatOnly,
       docRefs,
     });
   } catch (error) {
@@ -2390,7 +2681,7 @@ app.get('/api/config', async (_req, res) => {
 // Tabs endpoint: returns tab structure + content for the active project.
 // Reads project.json and resolves each tab's contentFile from the filesystem.
 // Returns [] for projects that don't declare tabs in project.json.
-app.get('/api/tabs', async (req, res) => {
+app.get('/api/tabs', requireAccessCode, async (req, res) => {
   try {
     const projectSlug = (activeProjectPrefix() || 'demo').replace(/_+$/, '') || 'demo';
     const projectConfigPath = path.join(REPO_ROOT, 'projects', projectSlug, 'project.json');
@@ -2479,7 +2770,7 @@ app.get('/api/tabs', async (req, res) => {
 });
 
 // Serve project content files (PDFs, images, etc.)
-app.get('/api/project-content/*', (req, res) => {
+app.get('/api/project-content/*', requireAccessCode, (req, res) => {
   const relativePath = req.params[0];
   if (!relativePath) return res.status(400).json({ error: 'No path specified' });
   const filePath = path.resolve(REPO_ROOT, relativePath);

@@ -93,3 +93,16 @@ projects/**/forms/*.xlsx
 # Python bytecode
 __pycache__/
 *.pyc
+
+# PPOL 5013/5014 reading index. readings.db is a chunked, searchable copy of the
+# course's assigned PDFs, which are copyrighted and licensed to the instructor
+# personally. The index is treated exactly as the PDFs are: it is built locally by
+# tools/build-ppol-corpus.py, it is never committed, and it never reaches the
+# public mirror. Only readings-manifest.json (bibliographic metadata) and the
+# generated grounding.md (a syllabus map, no reading text) are tracked.
+projects/ppol5013/content/readings/readings.db
+projects/ppol5013/content/readings/readings.db-wal
+projects/ppol5013/content/readings/readings.db-shm
+projects/ppol5013/content/readings/text/
+# Cached OCR page text -- reading text, same rules as the index itself.
+projects/ppol5013/content/readings/ocr-cache/

@@ -1663,12 +1663,11 @@ body {
         font-size: 13px;
         gap: 6px;
     }
-    .main-container.has-tabs .chat-topbar {
-        display: none;
-    }
-    .chat-topbar {
-        padding: 0 0 8px;
-    }
+    /* The chat top bar's own mobile rules live beside its desktop rules further
+       down the file, NOT here: this block is declared before them, and equal
+       specificity means the later declaration wins even from outside a media
+       query. (The rule that used to sit here — .chat-topbar { padding: 0 0 8px }
+       — was dead for exactly that reason.) See "Chat top bar — mobile". */
 
     /* Hide desktop tab bar on mobile (tabs show in the strip instead) */
     .desktop-tab-bar {
@@ -2384,15 +2383,16 @@ body {
     }
 }
 
-/* Chat top bar (skipWelcome projects): carries the language switcher, which has
-   no welcome screen to live on. Sits above the conversation, not under it. */
+/* Chat top bar (skipWelcome projects): the language switcher on the left, the
+   standing notices on the right. Both have no welcome screen to live on, and
+   both sit above the conversation rather than under it. */
 .chat-topbar {
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
   flex-shrink: 0;
-  padding: 10px 30px 0;
+  padding: 10px 30px 8px;
 }
 
 /* Language switcher: a real control (flag + name + caret), not a line of small
@@ -2461,13 +2461,14 @@ body {
 }
 
 /* Chat notice bar (skipWelcome projects): standing disclaimer plus a slim
-   consent line under the input, whose popover carries the full notice text. */
+   consent line in the top-right of the chat top bar, whose popover carries the
+   full notice text. */
 .chat-standing-note {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
-  text-align: center;
+  text-align: right;
   white-space: normal;
 }
 .chat-standing-note-icon { color: var(--accent); font-weight: 700; }
@@ -2486,7 +2487,17 @@ body {
 
 .chat-notice-bar {
   position: relative;
-  padding: 4px 16px 8px;
+  /* Right-hand half of the top bar. margin-left: auto keeps it in the corner
+     even when the switcher is absent (a single-language project), where
+     space-between alone would leave it on the left. */
+  margin-left: auto;
+  min-width: 0;
+  /* Caps the measure so a wide chat-only column does not stretch the notice
+     into one long line across the whole page. In px deliberately: ch would
+     resolve against this element's inherited 16px, not the 11.5–12px the two
+     lines are actually set in. */
+  max-width: 640px;
+  padding: 0;
 }
 .chat-notice-line {
   display: block;
@@ -2497,26 +2508,29 @@ body {
   font-size: 11.5px;
   line-height: 1.4;
   color: var(--text-secondary);
-  text-align: center;
+  text-align: right;
   padding: 0;
 }
 .chat-notice-line:hover .chat-notice-details { text-decoration: underline; }
 .chat-notice-details { color: var(--accent); white-space: nowrap; }
 .chat-notice-popover {
+  /* Anchored to the bar's own right edge and opening DOWNWARD, because the bar
+     now sits in the top-right corner: an upward popover would render off the
+     top of the viewport, and a left-anchored one off its right side. */
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 16px;
-  right: 16px;
-  max-width: 480px;
-  margin: 0 auto;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  width: min(480px, calc(100vw - 32px));
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   padding: 14px 16px;
+  text-align: left;
   z-index: 60;
-  /* .chatbot-container clips its overflow, so a long consent text would be cut
-     off with no scrollbar and no indication anything was missing. */
+  /* .left-panel clips its overflow, so a long consent text would be cut off
+     with no scrollbar and no indication anything was missing. */
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -2525,6 +2539,50 @@ body {
   line-height: 1.5;
   color: var(--text-secondary);
   margin: 6px 0 0;
+}
+
+/* ── Chat top bar — mobile ──────────────────────────────────────────────
+   Deliberately here and not in the main @media (max-width: 768px) block far
+   above: that block is declared BEFORE the desktop rules just above, and at
+   equal specificity the later declaration wins even across a media query, so
+   overrides written up there are silently dead. */
+@media (max-width: 768px) {
+  /* One column at phone width: the switcher on its own row at the left, the
+     notices below it across the full width and set left-aligned, which reads
+     better than a ragged left edge over three or four short lines. Neither can
+     collide with the other or with the title below. */
+  .chat-topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    /* Inset to roughly the same place as .chat-header-scrollable below it. The
+       panel inner drops its own side margin on a chat-only project and again
+       under 480px, so a bar with no padding of its own would sit flush against
+       the screen edge there. */
+    padding: 6px 20px 8px;
+  }
+  .chat-topbar .lang-switcher {
+    align-self: flex-start;
+  }
+  /* Only the switcher is duplicated by the fixed tab strip, so only the
+     switcher is hidden — the notices have no second copy and must stay on
+     screen. A skipWelcome project WITHOUT tabs has no strip, so its top bar
+     keeps its own switcher. */
+  .main-container.has-tabs .chat-topbar .lang-switcher {
+    display: none;
+  }
+  .chat-notice-bar {
+    max-width: none;
+    margin-left: 0;
+  }
+  .chat-standing-note,
+  .chat-notice-line {
+    text-align: left;
+  }
+  .chat-notice-popover {
+    right: auto;
+    left: 0;
+  }
 }
 
 /* ── Course access gate (projects with requireAccessCode) ───────────────

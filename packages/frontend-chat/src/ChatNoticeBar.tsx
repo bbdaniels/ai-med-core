@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react';
 import { useDismiss } from './use-dismiss';
 
-// Slim permanent line under the chat input for skipWelcome projects, which have
-// no welcome page to carry this: a standing disclaimer (always visible) plus an
-// abbreviated consent notice whose "Details" opens the full consent text.
+// Standing notices for skipWelcome projects, which have no welcome page to carry
+// them: a grounding disclaimer (always visible) plus an abbreviated consent line
+// whose "Details" opens the full consent text.
 //
-// The language switcher used to live here too. It moved to <LanguageSwitcher /> in
-// the chat top bar (client feedback, 2026-08-21: the control was too hard to find
-// at the bottom of the dialog box). There is exactly one in-chat switcher; this
-// bar is now notice-only.
+// It renders in the top-right of <div className="chat-topbar">, opposite the
+// language switcher. Both used to sit at the bottom: the switcher moved up on
+// 2026-08-21 (client feedback: too hard to find under the dialog box) and these
+// notices followed on 2026-08-28, which returned the bottom band to the chat.
+// The popover therefore opens DOWNWARD and leftward from the corner — see
+// .chat-notice-popover in style.css.
 interface ChatNoticeBarProps {
   /** Always-visible disclaimer line, e.g. what the answers are grounded in. */
   standingNote?: string;

@@ -1385,21 +1385,45 @@ function ChatInterface() {
       {/* Left Panel: Chatbot */}
       <div className={`left-panel ${!chatOnly && mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
         <div className="left-panel-inner">
-          {/* skipWelcome projects never see the welcome screen's language selector,
-              so the switcher lives here, in the chat's top bar. On mobile with tabs
-              it is hidden by CSS in favour of the copy in the fixed tab strip, which
-              stays reachable from every panel. Projects that show the welcome screen
-              render nothing here and are untouched. */}
-          {skipWelcome && (langs?.languages?.length ?? 0) > 1 && (
-            <div className="chat-topbar">
-              <LanguageSwitcher
-                languages={langs?.languages || []}
-                selectedCode={selectedLanguageCode || 'en'}
-                onSelect={setSelectedLanguageCode}
-                label={t('welcome', 'languageLabel') || 'Language'}
-              />
-            </div>
-          )}
+          {/* skipWelcome projects never see the welcome screen, so both of its
+              standing jobs live here, in the chat's top bar: the language selector
+              on the left, the grounding disclaimer and consent notice on the right
+              (client feedback, 2026-08-28 — the notices used to sit under the input
+              and cost the chat a band of vertical space). Deliberately NO
+              DEFAULT_CONSENT_PARAGRAPHS fallback: that constant is a bracketed
+              placeholder, so a project without its own consent text gets no consent
+              line rather than fake text. On mobile with tabs the switcher here is
+              hidden by CSS in favour of the copy in the fixed tab strip, which stays
+              reachable from every panel, and the notices go full width below the
+              switcher's row. Projects that show the welcome screen render nothing
+              here and are untouched. */}
+          {skipWelcome && (() => {
+            const code = selectedLanguageCode || 'en';
+            const noticeParagraphs = (langs?.ui?.[code]?.welcome?.consentParagraphs
+              || langs?.ui?.['en']?.welcome?.consentParagraphs) as string[] | undefined;
+            const standingNote = t('chat', 'groundingNote');
+            const hasSwitcher = (langs?.languages?.length ?? 0) > 1;
+            const hasNotice = Boolean(standingNote) || (noticeParagraphs?.length ?? 0) > 0;
+            if (!hasSwitcher && !hasNotice) return null;
+            return (
+              <div className="chat-topbar">
+                {hasSwitcher && (
+                  <LanguageSwitcher
+                    languages={langs?.languages || []}
+                    selectedCode={selectedLanguageCode || 'en'}
+                    onSelect={setSelectedLanguageCode}
+                    label={t('welcome', 'languageLabel') || 'Language'}
+                  />
+                )}
+                <ChatNoticeBar
+                  standingNote={standingNote}
+                  noticeLine={t('chat', 'noticeLine')}
+                  detailsLabel={t('chat', 'noticeDetails') || 'Details'}
+                  consentParagraphs={noticeParagraphs || []}
+                />
+              </div>
+            );
+          })()}
           {wipEnabled && (
             <div className="left-panel-header">
               <button
@@ -1597,26 +1621,6 @@ function ChatInterface() {
                 </div>
               </div>
 
-              {/* skipWelcome projects carry the welcome page's consent notice here
-                  instead, alongside the standing grounding disclaimer. Deliberately
-                  NO DEFAULT_CONSENT_PARAGRAPHS fallback: that constant is a bracketed
-                  placeholder, so a project without its own consent text gets no
-                  consent line rather than fake text. The language switcher used to
-                  live here; it is now in the chat top bar, so the bar renders nothing
-                  when the project has neither a standing note nor consent text. */}
-              {skipWelcome && (() => {
-                const code = selectedLanguageCode || 'en';
-                const noticeParagraphs = (langs?.ui?.[code]?.welcome?.consentParagraphs
-                  || langs?.ui?.['en']?.welcome?.consentParagraphs) as string[] | undefined;
-                return (
-                  <ChatNoticeBar
-                    standingNote={t('chat', 'groundingNote')}
-                    noticeLine={t('chat', 'noticeLine')}
-                    detailsLabel={t('chat', 'noticeDetails') || 'Details'}
-                    consentParagraphs={noticeParagraphs || []}
-                  />
-                );
-              })()}
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { api, apiFetch } from './api-base';
+import { scrollListToBottom } from './scroll-list';
 import NativeKoboForm from './components/NativeKoboForm';
 
 // Live speech-to-speech voice mode (OpenAI Realtime API), offered as an option
@@ -118,7 +119,8 @@ export default function RealtimeVoice() {
   const userUid = useRef<string | null>(readUid()).current;
 
   useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
-  useEffect(() => { transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [transcript]);
+  // Same frame-safe scroll as the text chat; see scroll-list.ts.
+  useEffect(() => { scrollListToBottom(transcriptEndRef.current); }, [transcript]);
 
   // Load the same vignettes + languages the text chat offers for this project.
   useEffect(() => {

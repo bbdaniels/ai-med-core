@@ -11,6 +11,7 @@ import SuggestedQuestions, { type SuggestionsContent } from './components/Sugges
 import DocumentPanel from './components/DocumentPanel';
 import LegalLibraryPanel, { type LegalLibraryContent } from './components/LegalLibraryPanel';
 import ChatNoticeBar from './ChatNoticeBar';
+import { scrollListToBottom } from './scroll-list';
 import LanguageSwitcher from './LanguageSwitcher';
 import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
@@ -1093,14 +1094,19 @@ function ChatInterface() {
   // Keep the cursor in the input whenever loading finishes
   useEffect(() => {
     if (!isLoading) {
-      // Defer to ensure DOM updates after disabled->enabled toggle
-      setTimeout(() => inputRef.current?.focus(), 0);
+      // Defer to ensure DOM updates after disabled->enabled toggle.
+      // preventScroll: focusing an element scrolls it into view by default, and
+      // that scroll reaches the parent document when embedded in an iframe.
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
     }
   }, [isLoading]);
   
-  // Auto-scroll to bottom when messages change or when loading
+  // Auto-scroll to bottom when messages change or when loading. Scrolls the
+  // message list itself, never scrollIntoView on a node — see scroll-list.ts:
+  // scrollIntoView scrolls every scrollable ancestor, and inside the Canvas
+  // iframe that includes the course page, which got dragged down on every reply.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollListToBottom(messagesEndRef.current);
   }, [messages, isLoading]);
 
   // Access gate. Rendered instead of the app, after every hook above has run, so
@@ -1204,7 +1210,7 @@ function ChatInterface() {
               audioRef.current = audio;
             }
             setHasStarted(true);
-            setTimeout(() => inputRef.current?.focus(), 0);
+            setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
           }}
         />
       );

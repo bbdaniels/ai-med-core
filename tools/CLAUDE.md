@@ -118,7 +118,8 @@ python3 tools/build-eip-text.py --en-only  # after an English-doc edit
 python3 tools/build-eip-text.py --no-pdf   # skip the ~5 MB PDF re-fetches
 ```
 
-Needs `pandoc` on PATH. **Never hand-edit any of those three outputs** -- the
+Needs `pandoc` on PATH, and PyMuPDF for the PDF step (see
+`strip-pdf-nav-marks.py` below). **Never hand-edit any of those three outputs** -- the
 grounding file used to be maintained by hand while the reader text was
 generated, which is two implementations of one job and is how the reader tab and
 the model's grounding ended up as separate things to keep in sync. Change the
@@ -130,6 +131,36 @@ The build refuses to write a reader text whose own links dangle: every
 file, or the run exits. The document cross-references itself in both syntaxes --
 markdown in prose, raw `<a href="#...">` inside tables and list items -- and a
 rewriter that only knew the first shipped eight dead links per language.
+
+## strip-pdf-nav-marks.py
+
+Lifts Google Docs' dead navigation chip out of a PDF export. A Doc with an
+outline exports with a small "table of contents" icon stamped into the top-left
+corner of every body page, linked to a named destination the exporter never
+writes into the file -- inert in every viewer, on every page, by construction,
+and not something the document's owner can switch off. `build-eip-text.py` runs
+this on each PDF it fetches, so a re-ingest cannot quietly put the chip back.
+
+```bash
+python3 tools/strip-pdf-nav-marks.py --dry-run FILE.pdf   # report only
+python3 tools/strip-pdf-nav-marks.py FILE.pdf [FILE.pdf ...]
+```
+
+Needs PyMuPDF (`pip install 'pymupdf>=1.23'`). It is deliberately narrow: it
+acts only on an image that is drawn on at least half the pages, always at one
+rectangle, under a link to a destination the file never defines. A working
+contents link fails that test, and so does a one-off dead link in the body --
+the Vietnamese EIP has one, and it is the document owner's to fix, not ours.
+Idempotent: a stripped file matches nothing and is not rewritten at all.
+
+**If you extend the content-stream editing, keep `balanced()` in front of every
+span you delete.** Removing a `q ... Q` group whose ends do not match leaves a
+stray `Q` that pops the graphics state a level too far, and everything drawn
+after it is re-drawn under whatever matrix was underneath. That is not
+theoretical: an off-by-one on the closing `Q` moved the figure on six English
+pages down the page and flipped it upside down, and every other check --
+extracted text, link targets, page count, named destinations -- still passed. It
+was caught by rendering the page and looking at it. Render and look.
 
 ## fetch-legal-docs.py
 

@@ -10,6 +10,11 @@ interface PdfJsViewerProps {
   src: string;
   title?: string;
   openLabel?: string;
+  // An imperative jump requested from outside: scroll to a 1-based page. Bump
+  // `nonce` to re-trigger for the same page. Handled through the very same
+  // goToDest path an in-document TOC link takes, so there is one implementation
+  // of "move the viewport to page N" rather than two that can drift apart.
+  jumpTarget?: { page: number; nonce: number } | null;
 }
 
 // The scrolling ancestor is the tab panel (overflow-y:auto), not the window — the
@@ -186,7 +191,7 @@ function PdfPage({ pdf, pageNumber, scale, root, registerPage, resolveDest, onNa
   );
 }
 
-export default function PdfJsViewer({ src, title, openLabel }: PdfJsViewerProps) {
+export default function PdfJsViewer({ src, title, openLabel, jumpTarget }: PdfJsViewerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -250,6 +255,26 @@ export default function PdfJsViewer({ src, title, openLabel }: PdfJsViewerProps)
     const delta = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top;
     scrollParent.scrollTo({ top: scrollParent.scrollTop + delta + offset - 8, behavior: 'smooth' });
   }, [pdf, scale, scrollParent]);
+
+  // An outside jump must survive the document still loading and the page
+  // placeholders still being estimated 700px tall, so it is re-run once the
+  // real page heights have landed. Held in a ref so a scale change (which
+  // rebuilds goToDest) cannot cancel a jump that is still settling.
+  const goToDestRef = useRef(goToDest);
+  goToDestRef.current = goToDest;
+  const jumpNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!jumpTarget || status !== 'ready' || numPages === 0) return;
+    if (jumpNonceRef.current === jumpTarget.nonce) return;
+    jumpNonceRef.current = jumpTarget.nonce;
+    const page = Math.min(Math.max(1, Math.round(jumpTarget.page)), numPages);
+    let cancelled = false;
+    const run = () => { if (!cancelled) void goToDestRef.current({ pageNumber: page, y: null }); };
+    run();
+    const t1 = setTimeout(run, 300);
+    const t2 = setTimeout(run, 900);
+    return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
+  }, [jumpTarget, status, numPages]);
 
   // Load the document.
   useEffect(() => {

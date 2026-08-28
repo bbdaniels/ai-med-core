@@ -2660,3 +2660,103 @@ body {
     height: 44px;
     transform: translate(-50%, -50%);
 }
+
+/* ================================================================== */
+/*  Jump-tos: document-reference chips and legal section lists         */
+/* ================================================================== */
+
+/* A reference whose page is known in the PDF map: the reference itself opens
+   the PDF at that page, the trailing pill goes to the text edition. Inline so
+   it wraps inside a paragraph of chat text like the bare link it replaces. */
+.doc-ref-chip {
+    display: inline;
+    white-space: nowrap;
+}
+
+.doc-ref-alt {
+    margin-left: 0.25rem;
+    padding: 0.05rem 0.35rem;
+    font: inherit;
+    font-size: 0.72em;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text-muted);
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    cursor: pointer;
+    vertical-align: baseline;
+}
+
+.doc-ref-alt:hover { color: var(--text-body); }
+
+.doc-ref-alt:focus-visible {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: 1px;
+}
+
+/* Collapsed section list for a legal document that shipped a page map. */
+.legal-doc-sections {
+    margin-top: 0.6rem;
+}
+
+.legal-doc-sections-summary {
+    display: inline-block;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-body);
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.legal-doc-sections-summary:hover { background: var(--bg-deep); }
+
+.legal-doc-sections-count {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.legal-doc-section-list {
+    margin: 0.35rem 0 0;
+    padding: 0;
+    list-style: none;
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.legal-doc-section-jump {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    color: var(--text-body);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.legal-doc-section-jump:hover { background: var(--bg-deep); }
+
+.legal-doc-section-jump:focus-visible {
+    outline: 2px solid var(--accent-focus);
+    outline-offset: -2px;
+}
+
+.legal-doc-section-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.legal-doc-section-page {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}

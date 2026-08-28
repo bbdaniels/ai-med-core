@@ -161,6 +161,22 @@ const PDF_TAB_UI: Record<string, { openInNewTab: string }> = {
   vi: { openInNewTab: 'Mở trong tab mới' },
 }
 
+// The secondary affordance on a document-reference chip. The chip itself opens
+// the PDF at the cited page; this is the way back to the text edition.
+const DOC_REF_UI: Record<string, { text: string; openPdf: string; openText: string }> = {
+  en: { text: 'Text', openPdf: 'Open in the PDF', openText: 'Open in the text' },
+  vi: { text: 'Văn bản', openPdf: 'Mở trong bản PDF', openText: 'Mở trong toàn văn' },
+}
+
+// A PDF tab's page map lives beside the PDF it maps, under the same base name:
+//   .../eip-en.pdf  ->  .../eip-map.en.json
+// Derived rather than configured so no project.json change is needed, and a
+// project with no such file simply gets a 404 and keeps today's behavior.
+function pdfPageMapUrl(pdfUrl: string): string | null {
+  const m = /^(.*\/)([^/]+)-([A-Za-z]{2}(?:-[A-Za-z0-9]+)?)\.pdf$/.exec(pdfUrl)
+  return m ? `${m[1]}${m[2]}-map.${m[3]}.json` : null
+}
+
 interface VignetteInfo {
   title?: string
   scenarioDescription: string
@@ -320,6 +336,14 @@ function ChatInterface() {
   // A clicked reference asks the target document tab to scroll; the bumped nonce
   // re-triggers the jump even when the same anchor is clicked twice.
   const [docScrollTarget, setDocScrollTarget] = useState<{ tabId: string; anchor: string; nonce: number } | null>(null);
+  // The same click, aimed at the PDF edition instead: which pdf tab, which
+  // 1-based page, and a nonce so the same page can be re-requested.
+  const [pdfScrollTarget, setPdfScrollTarget] = useState<{ tabId: string; page: number; nonce: number } | null>(null);
+  // anchor -> 1-based PDF page, from the PDF tab's page map. Null until the map
+  // has loaded (or if it never does), and the chips render exactly as they did
+  // before it arrived — so a jump is never delayed waiting on this.
+  const [pdfAnchorPages, setPdfAnchorPages] = useState<Record<string, number> | null>(null);
+  const pdfMapRequestedRef = useRef<string | null>(null);
   // A clicked legal-document reference asks the legal-library tab to select that
   // document; the bumped nonce re-triggers even for the same document.
   const [legalSelectTarget, setLegalSelectTarget] = useState<{ docId: string; nonce: number } | null>(null);
@@ -414,6 +438,37 @@ function ChatInterface() {
     const anchors = markdown ? extractAnchorIds(markdown) : new Set<string>();
     return buildDocRefMatcher(docRefs, anchors, legalNumberToId);
   }, [docRefs, resolvedTabs, legalNumberToId]);
+  // The PDF edition of the same document, and the page map beside it. Both are
+  // optional: with no pdf tab, or no map file, document references behave
+  // exactly as they did before this feature existed.
+  const pdfTab = useMemo(() => resolvedTabs?.find(t => t.type === 'pdf') ?? null, [resolvedTabs]);
+  const pdfTabMapUrl = useMemo(() => {
+    const url = (pdfTab?.content as { pdfUrl?: string } | null | undefined)?.pdfUrl;
+    const rel = url ? pdfPageMapUrl(url) : null;
+    return rel ? `${import.meta.env.VITE_API_BASE_URL || ''}${rel}` : null;
+  }, [pdfTab]);
+  // Load the map lazily — on the first answer that actually cites a passage,
+  // not at startup — and only once per PDF edition. Until it lands (or if it
+  // never does) the chips keep today's text-tab behavior, so nothing waits on
+  // this fetch and nothing flashes when it fails.
+  useEffect(() => {
+    if (!pdfTabMapUrl || !docRefMatcher) return;
+    if (pdfMapRequestedRef.current === pdfTabMapUrl) return;
+    const cites = messages.some(m => m.role === 'assistant' && docRefMatcher(m.content).some(s => !!s.anchor));
+    if (!cites) return;
+    pdfMapRequestedRef.current = pdfTabMapUrl;
+    let cancelled = false;
+    apiFetch(pdfTabMapUrl)
+      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+      .then((json: { anchors?: Record<string, number> }) => {
+        const anchors = json && typeof json === 'object' ? json.anchors : null;
+        if (!cancelled && anchors && typeof anchors === 'object') setPdfAnchorPages(anchors);
+      })
+      .catch(() => { /* no map: text-tab jumps, as before */ });
+    return () => { cancelled = true; };
+  }, [pdfTabMapUrl, docRefMatcher, messages]);
+  // A language switch swaps the PDF edition, and with it the page map.
+  useEffect(() => { setPdfAnchorPages(null); }, [pdfTabMapUrl]);
   const userPrefillParams = useMemo<string | null>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -991,6 +1046,15 @@ function ChatInterface() {
     setDocScrollTarget({ tabId: docRefs.tabId, anchor, nonce: Date.now() });
   };
 
+  // The same reference, opened in the PDF edition at the mapped page. This is
+  // the primary action wherever the map knows the anchor.
+  const handleDocRefPdfClick = (page: number) => {
+    if (!pdfTab) return;
+    setActiveTabId(pdfTab.id);
+    setMobileActivePanel('form');
+    setPdfScrollTarget({ tabId: pdfTab.id, page, nonce: Date.now() });
+  };
+
   // A legal-document reference: open the legal-library tab and select that document.
   const handleLegalRefClick = (docId: string) => {
     if (!legalTab) return;
@@ -1007,11 +1071,38 @@ function ChatInterface() {
   // anchor id from doc-refs.ts.
   const renderAssistantContent = (text: string): React.ReactNode => {
     if (!docRefMatcher) return text;
+    const refUi = DOC_REF_UI[selectedLanguageCode] ?? DOC_REF_UI.en;
     const segments = docRefMatcher(text);
     if (segments.length === 1 && !segments[0].anchor) return text;
     return segments.map((seg, i) => {
       if (seg.anchor) {
         const anchor = seg.anchor;
+        const page = pdfTab && pdfAnchorPages ? pdfAnchorPages[anchor] : undefined;
+        // With a mapped page, the PDF is the jump and the text edition is the
+        // secondary affordance. Without one — no map, map not loaded yet, or an
+        // anchor the map does not carry — this is exactly the old link.
+        if (typeof page === 'number' && page > 0) {
+          return (
+            <span key={i} className="doc-ref-chip">
+              <a
+                href={`#${anchor}`}
+                className="doc-ref-link"
+                title={refUi.openPdf}
+                onClick={(e) => { e.preventDefault(); handleDocRefPdfClick(page); }}
+              >
+                {seg.text}
+              </a>
+              <button
+                type="button"
+                className="doc-ref-alt"
+                title={refUi.openText}
+                onClick={() => handleDocRefClick(anchor)}
+              >
+                {refUi.text}
+              </button>
+            </span>
+          );
+        }
         return (
           <a
             key={i}
@@ -1582,7 +1673,12 @@ function ChatInterface() {
                             <p>{t('chat','loadingForm')}</p>
                           </div>
                         }>
-                          <PdfJsViewer src={pdfSrc} title={pdfLabel} openLabel={openLabel} />
+                          <PdfJsViewer
+                            src={pdfSrc}
+                            title={pdfLabel}
+                            openLabel={openLabel}
+                            jumpTarget={pdfScrollTarget?.tabId === tab.id ? pdfScrollTarget : null}
+                          />
                         </Suspense>
                       ) : (
                         <p style={{ padding: '1rem' }}>PDF not available.</p>

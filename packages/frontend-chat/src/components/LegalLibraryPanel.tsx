@@ -33,6 +33,27 @@ interface LegalDocument {
   // Repo-relative path to the document's saved source PDF, written into the
   // registry only when the fetch succeeded. Absent → no PDF view is offered.
   pdfFile?: string | null;
+  // Repo-relative path to this document's section→page map, written into the
+  // registry only when a map actually shipped. Absent → no section jumps.
+  mapFile?: string | null;
+}
+
+// A section of a legal document and the PDF page it starts on (1-based).
+// `confidence` records how the page was established: "confirmed" means an exact
+// normalized match of the canonical heading text against exactly one page;
+// "structural" means the heading was only detected in the page's own (possibly
+// OCR'd) text, with no canonical text to check it against.
+interface LegalMapSection {
+  key: string;
+  label: string;
+  page: number;
+  confidence?: 'confirmed' | 'structural';
+}
+
+interface LegalDocMap {
+  docId?: string;
+  source?: 'native' | 'ocr';
+  sections?: LegalMapSection[];
 }
 
 // The best human-facing source link: a specific official-document URL when we
@@ -78,6 +99,7 @@ const UI: Record<string, {
   agency: string; openSource: string; scope: string;
   noText: string; noTextPdf: string; loading: string; loadFailed: string; disclaimer: string;
   viewText: string; viewPdf: string; viewLabel: string; openInNewTab: string;
+  sections: string; pageAbbr: string; jumpHint: string;
 }> = {
   en: {
     choose: 'Choose a document',
@@ -95,6 +117,9 @@ const UI: Record<string, {
     viewPdf: 'PDF',
     viewLabel: 'View',
     openInNewTab: 'Open in new tab',
+    sections: 'Sections',
+    pageAbbr: 'p.',
+    jumpHint: 'Open in the PDF',
     disclaimer: 'You are responsible for ensuring you rely on the most up-to-date legal documents. Documents, or portions of documents, shown here may be superseded.',
   },
   vi: {
@@ -113,6 +138,9 @@ const UI: Record<string, {
     viewPdf: 'PDF',
     viewLabel: 'Xem',
     openInNewTab: 'Mở trong tab mới',
+    sections: 'Mục lục',
+    pageAbbr: 'tr.',
+    jumpHint: 'Mở trong bản PDF',
     disclaimer: 'Bạn có trách nhiệm bảo đảm sử dụng các văn bản pháp luật cập nhật mới nhất. Các văn bản, hoặc một phần của văn bản, hiển thị ở đây có thể đã bị thay thế.',
   },
 };
@@ -127,6 +155,13 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   // wherever a document ships one, so the PDF machinery is not pulled in by
   // merely browsing the library; a document that has only a PDF opens on it.
   const [view, setView] = useState<'text' | 'pdf'>('text');
+  // The selected document's section→page map, when one shipped. A document with
+  // no map, or a map that fails to load, simply has no section list: everything
+  // else on the panel is unchanged.
+  const [docMap, setDocMap] = useState<LegalDocMap | null>(null);
+  // A section click asks the PDF viewer to move; the bumped nonce re-triggers
+  // even when the same section is clicked twice.
+  const [pdfJump, setPdfJump] = useState<{ page: number; nonce: number } | null>(null);
 
   // Default to the first document so the panel opens on something, and reset the
   // selection if the document set changes underneath us (e.g. language switch).
@@ -154,7 +189,36 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   // readable copy hidden one click away.
   useEffect(() => {
     setView(!selected?.textFile && selected?.pdfFile ? 'pdf' : 'text');
+    setPdfJump(null);
   }, [selectedId, selected?.textFile, selected?.pdfFile]);
+
+  // Fetch the section map only for documents that ship one, through the same
+  // /api/project-content route the PDF and the full text use. Any failure is
+  // swallowed: the map is an accelerator, never a prerequisite for reading.
+  useEffect(() => {
+    const file = selected?.mapFile;
+    if (!file) { setDocMap(null); return; }
+    let cancelled = false;
+    setDocMap(null);
+    apiFetch(api(`/api/project-content/${file}`))
+      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+      .then((json: LegalDocMap) => { if (!cancelled) setDocMap(json && typeof json === 'object' ? json : null); })
+      .catch(() => { if (!cancelled) setDocMap(null); });
+    return () => { cancelled = true; };
+  }, [selected?.mapFile]);
+
+  // Which sections are offered as jumps. Where a canonical text is on screen,
+  // only pages CONFIRMED by exact match are offered -- a structural guess must
+  // never send a reader to a page that the text beside it contradicts. A
+  // pdf-only document has nothing to confirm against, so its structural list is
+  // all there is, and all it claims to be.
+  const jumpSections = useMemo(() => {
+    const all = (docMap?.sections ?? []).filter(
+      (s): s is LegalMapSection =>
+        !!s && typeof s.key === 'string' && typeof s.page === 'number' && s.page > 0,
+    );
+    return selected?.textFile ? all.filter(s => s.confidence === 'confirmed') : all;
+  }, [docMap, selected?.textFile]);
 
   // Fetch the full text only for documents that ship one. The file is served by
   // the existing /api/project-content route (path-guarded to projects/).
@@ -257,6 +321,33 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
               </button>
             </div>
           )}
+
+          {/* Section jumps. Present only when this document shipped a map AND a
+              PDF to jump into; collapsed by default so a 121-article law does
+              not push the document itself off a 390px screen. From the text
+              view a click also flips the toggle to PDF -- that IS the jump. */}
+          {pdfSrc && jumpSections.length > 0 && (
+            <details className="legal-doc-sections">
+              <summary className="legal-doc-sections-summary">
+                {t.sections} <span className="legal-doc-sections-count">({jumpSections.length})</span>
+              </summary>
+              <ul className="legal-doc-section-list">
+                {jumpSections.map((s, i) => (
+                  <li key={`${s.key}-${i}`}>
+                    <button
+                      type="button"
+                      className="legal-doc-section-jump"
+                      title={t.jumpHint}
+                      onClick={() => { setView('pdf'); setPdfJump({ page: s.page, nonce: Date.now() }); }}
+                    >
+                      <span className="legal-doc-section-label">{s.label || s.key}</span>
+                      <span className="legal-doc-section-page">{t.pageAbbr} {s.page}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
@@ -267,6 +358,7 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
               src={pdfSrc}
               title={resolveI18n(selected?.title, lang || 'en')}
               openLabel={t.openInNewTab}
+              jumpTarget={pdfJump}
             />
           </Suspense>
         </div>

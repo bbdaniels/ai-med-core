@@ -111,15 +111,18 @@ Google Doc, from a single parse per language:
 - `projects/haivn_eip/content/eip-text.<lang>.md` -- the "EIP Text" reader tab
 - `projects/haivn_eip/cases/eip-advisor/content.md` -- the advisor's LLM grounding text
 - `projects/haivn_eip/content/eip-<lang>.pdf` -- the "EIP PDF" tab
+- `projects/haivn_eip/content/eip-map.<lang>.json` -- the text tab's anchors
+  resolved to pages of that PDF, built by `build-jump-maps.py` on the same run
 
 ```bash
-python3 tools/build-eip-text.py            # everything, both languages
-python3 tools/build-eip-text.py --en-only  # after an English-doc edit
-python3 tools/build-eip-text.py --no-pdf   # skip the ~5 MB PDF re-fetches
+python3 tools/build-eip-text.py             # everything, both languages
+python3 tools/build-eip-text.py --en-only   # after an English-doc edit
+python3 tools/build-eip-text.py --no-pdf    # skip the ~5 MB PDF re-fetches
+python3 tools/build-eip-text.py --maps-only # re-resolve the anchor maps only
 ```
 
 Needs `pandoc` on PATH, and PyMuPDF for the PDF step (see
-`strip-pdf-nav-marks.py` below). **Never hand-edit any of those three outputs** -- the
+`strip-pdf-nav-marks.py` below). **Never hand-edit any of those four outputs** -- the
 grounding file used to be maintained by hand while the reader text was
 generated, which is two implementations of one job and is how the reader tab and
 the model's grounding ended up as separate things to keep in sync. Change the
@@ -217,3 +220,94 @@ Three behaviours worth knowing before you point a registry entry at a new PDF:
   a session cookie set there and to that page as `Referer`; a cold request gets
   the nine bytes `Wrong URL`. The Referer otherwise defaults to the file's own
   origin.
+
+## build-jump-maps.py
+
+Answers one question for both reader surfaces: **which page is this heading
+on?** It writes
+
+- `projects/haivn_eip/content/legal/maps/<id>.json` for every registry document
+  with a PDF whose structure could be located, shape
+  `{"docId", "source": "native"|"ocr", "sections": [{"key": "dieu-5", "label":
+  "Điều 5. ...", "page": 7, "confidence": "confirmed"|"structural"}]}`, and a
+  `mapFile` path into that document's registry entry (the second and last field
+  this repo's tooling writes into the hand-curated registry, after `pdfFile`);
+- `projects/haivn_eip/content/eip-map.<lang>.json`, shape
+  `{"anchors": {"sec-1-2": 5, "app-2": 24}}`, 1-based pages;
+- and a **canonical text layer** into the scanned legal PDFs that have a trusted
+  text file, so those scans become searchable and selectable.
+
+```bash
+python3 tools/build-jump-maps.py                     # maps + injection + EIP anchors
+python3 tools/build-jump-maps.py --only tt-43-2025-tt-byt
+python3 tools/build-jump-maps.py --no-inject         # maps only, PDFs untouched
+python3 tools/build-jump-maps.py --eip-only          # just the two anchor maps
+python3 tools/fetch-legal-docs.py --maps             # same legal pass, from the fetcher
+```
+
+**OCR is only ever used to LOCATE text, never to produce it.** That is the rule
+the whole tool is shaped around, and it is not a stylistic preference: with
+diacritics stripped, tesseract reads this corpus at 98-99% token accuracy, but
+with tone marks kept it falls to about 90% on the harder scans -- and `cầu` for
+`cấu` is a different word, not a typo. So:
+
+- A page assignment is **confirmed** only by exact match: both sides normalised
+  the same way (diacritics stripped, `đ`->`d`, lowercased, punctuation dropped,
+  whitespace collapsed), a heading-plus-context n-gram taken from the CANONICAL
+  text file, longest first (14 tokens down to 6), and accepted only when exactly
+  one page contains it. Ambiguous or absent means the section is **dropped and
+  named in the run's output**, never guessed.
+- A heading with no canonical text behind it can still be located
+  **structurally**, and is labelled `confidence: "structural"`. For a scanned
+  document the label is then SYNTHESISED (`Điều 12`) rather than copied out of
+  the OCR -- the map is a reader-facing file, and OCR words are never shown to a
+  reader as if they were the law. A native document's label is its own text
+  layer's line, which is trustworthy.
+- A document whose detection is incoherent gets **no map and a logged reason**.
+
+Parsing detail worth keeping: headings are parsed in a form that KEEPS
+punctuation, because the punctuation is the discriminator -- `Điều 5.` opens an
+article, `Điều 5 của Luật Khám bệnh` cites one, and those are the same string
+once the full stop is gone. Matching is still done punctuation-free, since OCR's
+punctuation is not reliable. Three more guards each come from a real failure:
+leading scan noise is tolerated (`- Điều4.`, `l Điều 11.`); roman numerals are
+read through the misreads tesseract makes of `I` (`Chương J`, `Chương H`);
+contents pages are excluded from matching entirely, because they are the one
+page carrying every heading and so are a magnet for a "unique" match (that is
+how `PHỤ LỤC 6` landed on page 6 of a guideline whose appendix six starts on page
+41); and a kind whose detections collapse under the monotone filter is dropped
+as a repeating label rather than shipped (one circular's appendix FORMS are
+headed `Mục I`..`Mục IV`, restarting on each of two dozen forms).
+
+### Canonical text-layer injection
+
+For a scan that HAS a canonical text file, OCR word boxes supply the geometry
+and the canonical text supplies the strings. The token streams are aligned on
+their stripped forms; each fully-aligned OCR line is written back as one
+invisible run (PDF render mode 3) at that line's box, in an embedded Noto Sans
+(SIL OFL, pinned by SHA-256). A line that does not align completely is skipped
+whole -- half a canonical line beside half an OCR line is the mixture this exists
+to prevent -- and a pre-Unicode garbage layer is redacted first, or it is what
+search would hit.
+
+Lines, not words, is the unit, and that is the one non-obvious part: per-word
+injection also renders invisibly and also carries correct diacritics, but the
+extracted text then has one word per line and **phrase search silently returns
+nothing**.
+
+Invisibility is checked, not asserted: every page is rasterised before and
+after, and the injection is discarded whole if any page moved. Idempotency is a
+marker in the PDF's metadata naming this tool and the PRE-injection content
+digest; the digest is also the OCR cache key, so a second run neither re-OCRs
+nor re-injects, and the map it builds is identical. Re-fetching a document with
+`fetch-legal-docs.py` restores the government's original (dropping the marker),
+and the map pass that same run re-injects it -- which is why the fetcher calls
+this tool by default and `--no-maps` is the way to opt out.
+
+First run on a machine provisions itself into `~/.cache/`: the pinned
+`tessdata_best` Vietnamese model (SHA-256 checked) plus two symlinks INTO the
+tesseract install's own `configs`/`tessconfigs`, without which `TESSDATA_PREFIX`
+hides the `tsv` output config and tesseract silently emits plain text with no
+word boxes at all. Nothing under `/opt/homebrew` or any other system directory
+is modified. Without tesseract installed, the native documents still map and the
+scans are reported as skipped.

@@ -179,6 +179,8 @@ identical blob into git history).
 ```bash
 python3 tools/fetch-legal-docs.py            # fetch PDFs + rebuild grounding
 python3 tools/fetch-legal-docs.py --index    # only rebuild grounding.md
+python3 tools/fetch-legal-docs.py --format   # only restructure existing text
+python3 tools/fetch-legal-docs.py --format --dry-run
 python3 tools/fetch-legal-docs.py --only qd-1740-2026
 ```
 
@@ -220,6 +222,96 @@ Three behaviours worth knowing before you point a registry entry at a new PDF:
   a session cookie set there and to that page as `Referer`; a cold request gets
   the nine bytes `Wrong URL`. The Referer otherwise defaults to the file's own
   origin.
+
+### The structure pass (`format_structure`)
+
+Extraction gets the words right and the shape wrong. Before the restructuring
+pass, not one `Điều` / `Chương` / `Mục` / `Phụ lục` in twenty-one documents was
+a Markdown heading, a contents list was twelve bare lines, and an abbreviation
+table was 179 lines reading `AFP | Alpha-fetoprotein` -- which is not GFM (no
+leading pipe, no separator row), so the reader printed the pipes. `DocumentPanel`
+renders with `marked` in GFM mode and the stylesheet already covers h1-h4, lists
+and tables; the files simply had no markup for it to render. So the fix is in
+the text, not the panel.
+
+`format_structure()` runs on the assembled document at the end of every fetch,
+and `--format` applies the same pass to the text files already on disk -- which
+is the only route for the eight documents whose text was ingested from an
+official HTML full text and so cannot be re-extracted. It is a pure function of
+the text, so it is idempotent: a second run writes the same bytes, and a
+document that later goes round through `--fetch` comes out the same.
+
+**The invariant is absolute: it changes markup, never words.** Every file it
+writes is checked token for token against the file that went in -- all Markdown
+syntax stripped, whitespace collapsed, sequence compared -- and a document whose
+word stream moved is REFUSED and reported rather than written. The one tolerated
+exception is a table this pass reconstructs, where row-major reflow may move a
+token but may not add, drop or alter one; such a region is accepted only if it
+is multiset-identical, and it is named in the run's output. (The reconstruction
+preserves order anyway, so the exception exists to be reported, not used.)
+
+What it does, in order: unwraps lines the source page wrapped mid-sentence,
+gathers `- ` runs into lists, turns runs of `left | right` lines into GFM
+tables, folds contents blocks into a compact list under their `MỤC LỤC` heading,
+promotes headings, and marks `a) b) c)` clause runs as list items. Numbered
+clauses (`1.`, `2.`) are deliberately left alone -- `marked` already renders them
+as an ordered list, and re-marking them would renumber them. Headings stop at
+**h4** because h5 and h6 have no rule in the reader's stylesheet, and the ladder
+is computed per document from the kinds it actually uses, anchored at the bottom
+so that Mục and Điều keep their distinction and it is the outer pair that shares
+a level when a decree nests four deep.
+
+**The original PDF is what says which line is a heading.** On a born-digital
+text layer nearly every heading candidate is bold somewhere (nd-96: 225 of 226),
+so a candidate the PDF never sets bold is a cross-reference and is dropped; and
+a size ladder appears in the guideline-style documents (`qd-1740` sets its title
+at 22pt over 14pt body), which is what names their untitled sections. On the
+eight scans -- whose only text layer is the canonical one `build-jump-maps.py`
+injected, every span one font at flags 0 with the size scaled to fit an OCR box
+-- typography says nothing, the whole document's style is distrusted at once
+rather than a line at a time, and structure comes from the heading grammar, the
+document's own contents entries, and roman-numeral capitalised section lines.
+That is the same rule as everywhere else here: OCR locates, it never produces.
+
+The heading grammar is imported from `build-jump-maps.py` rather than copied,
+because telling `Điều 5.` from `Điều 5 của Luật` is the whole difficulty and a
+second copy would drift from the one the page maps are built with.
+
+**A section cannot open inside a sentence that is still pointing at it**
+(`cross_reference()`). The PDF's bold veto only fires where `attach_style`'s
+cursor can place the line, and it cannot place a fragment a page wrap pushed to
+the start of a line -- so `tt-40`, whose bidding forms cite five of their own
+chapters by name, set eleven citations as h2 in the middle of legal sentences.
+Three shapes are refused, and in each it is the document's own punctuation
+saying so, never a guess about the words:
+
+- the line is a list item (`- Chương V. Phạm vi cung cấp.` is one line of the
+  contents list printed above it -- the source wrote that bullet, not this pass);
+- the line above it ends on the words a citation is introduced with -- a
+  preposition (`... nêu trong`, `... quy định tại các`) or the citation's own
+  hanging stub (`... theo Mẫu số 15`, `... tại Mục 3`);
+- the line is a bare marker under a colon (`... nhiễm HBV mạn:` `Phụ lục 1` is
+  *see Appendix 1*; a section opening after a colon brings its own title).
+
+**The absence of a full stop is NOT one of those shapes, and must not become
+one.** Half this corpus's real titles sit under an all-capitals banner or a bare
+page number carrying no punctuation at all; a plain "previous line does not end
+in a full stop" rule deletes about a hundred and eighty good headings, `qd-1740`'s
+`PHỤ LỤC 4` among them. Both filters are therefore required: the line above must
+read as running prose (two words up, and containing a lower-case letter), and it
+must break off on citation words. Refusals are counted per document in the run's
+output.
+
+A contents entry's page number may be **arabic or a lower-case roman numeral** --
+front matter is numbered `v`, `vii` and the contents list is in the front matter.
+And a dot-leader run absorbs a contents block this pass folded on an earlier run
+(`folded_contents()`), which is what lets an entry printed above the block join
+the same list instead of staying a loose paragraph on every future run.
+
+**After any text change, re-run the maps** (`--maps`): the map builder reads
+these text files on its canonical side, so a text edit moves what it finds.
+Diff the confirmed-section counts before and after and treat a drop as a
+regression.
 
 ## build-jump-maps.py
 
@@ -264,6 +356,24 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   reader as if they were the law. A native document's label is its own text
   layer's line, which is trustworthy.
 - A document whose detection is incoherent gets **no map and a logged reason**.
+- A heading whose own line carries no title -- `Chương I`, or the `Điều 15.`
+  that `format_structure` leaves behind when it hands a 600-character article
+  back to the body -- **borrows exactly one following line for its LABEL**, and
+  only when that line is the heading's own continuation (the capitalised title
+  printed under it, or the sentence the article was split from). A line that is
+  itself a heading is the next section, so a contents list's `PHỤ LỤC 1` does
+  not swallow `PHỤ LỤC 2`. This is display only: the page is confirmed by the
+  same n-gram either way. Markdown, list bullet included, is stripped before a
+  line is parsed or labelled.
+- `continues_sentence()` -- the punctuation test that rejects a heading-shaped
+  fragment of a wrapped sentence -- is asked **only about a line the structure
+  pass has not marked**. Where `format_structure` has written a `##`, that mark
+  wins: it was made by reading the PDF's own typography, while the punctuation
+  test cannot see a paragraph that simply ends without a full stop. Overruling it
+  cost `qd-1740` its `PHỤ LỤC 4` (page 39, confirmed) and hid `qd-3310`'s
+  `PHỤ LỤC 3` (page 16). This relaxation is only safe because the structure pass
+  refuses cross-references itself (see `cross_reference()` above); loosening one
+  without the other feeds citations straight into the maps.
 
 Parsing detail worth keeping: headings are parsed in a form that KEEPS
 punctuation, because the punctuation is the discriminator -- `Điều 5.` opens an

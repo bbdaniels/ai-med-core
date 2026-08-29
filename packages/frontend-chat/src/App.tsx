@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import './App.css';
 import { api, apiFetch, getAccessToken, setAccessToken, readAccessCodeFromUrl, scrubAccessCodeFromUrl } from './api-base';
 import AccessGate from './components/AccessGate';
@@ -10,6 +10,7 @@ import ContentPanel from './components/ContentPanel';
 import SuggestedQuestions, { type SuggestionsContent } from './components/SuggestedQuestions';
 import DocumentPanel from './components/DocumentPanel';
 import LegalLibraryPanel, { type LegalLibraryContent } from './components/LegalLibraryPanel';
+import DualViewTab, { type DualViewKind } from './components/DualViewTab';
 import ChatNoticeBar from './ChatNoticeBar';
 import { scrollListToBottom } from './scroll-list';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -143,6 +144,77 @@ interface TabDefinition {
   content?: unknown
   // When set, tab only renders if the currently selected vignette key is in this list.
   showForVignetteKeys?: string[]
+  // A second rendering of the same document, folded in from a duplicate tab
+  // declaration (see mergeTabViews). Set only on a merged `pdf`/`document` tab.
+  altView?: TabDefinition
+}
+
+// The two tab types that can be two views of one document.
+const DUAL_VIEW_TYPES: ReadonlySet<string> = new Set(['pdf', 'document'])
+
+/**
+ * Fold tabs that declare the SAME id into one tab with two views.
+ *
+ * A reference document that ships both a PDF and an extracted text is one
+ * document, and a project says so by declaring one tab id twice — once as `pdf`,
+ * once as `document`, each with its own contentFile:
+ *
+ *   { "id": "eip-doc", "type": "pdf",      "contentFile": {...} }   <- default view
+ *   { "id": "eip-doc", "type": "document", "contentFile": {...} }
+ *
+ * Declaration order decides which view opens first. The shared id is the point:
+ * everything that addresses a tab — the doc-reference jump machinery, the PDF
+ * page jumps, the active-tab reselect — keeps working on one stable id instead of
+ * having to know which edition a citation happened to be aimed at.
+ *
+ * A project that declares each id once (every project but haivn_eip today) gets
+ * its tab list back unchanged.
+ */
+function mergeTabViews(tabs: TabDefinition[]): TabDefinition[] {
+  const byId = new Map<string, TabDefinition>()
+  const merged: TabDefinition[] = []
+  for (const tab of tabs) {
+    const primary = byId.get(tab.id)
+    if (!primary) {
+      const copy = { ...tab }
+      byId.set(tab.id, copy)
+      merged.push(copy)
+      continue
+    }
+    // Only a genuine second EDITION folds in. Anything else is a config mistake
+    // (two unrelated tabs sharing an id), and rendering it would put two panels
+    // behind one tab button — so it is dropped loudly rather than shown.
+    if (
+      !primary.altView &&
+      DUAL_VIEW_TYPES.has(primary.type) &&
+      DUAL_VIEW_TYPES.has(tab.type) &&
+      primary.type !== tab.type
+    ) {
+      primary.altView = tab
+    } else {
+      console.warn(`Duplicate tab id "${tab.id}" (type ${tab.type}) ignored: not a second view of the primary tab.`)
+    }
+  }
+  return merged
+}
+
+// The markdown a document tab carries, whichever of its views holds it. Used to
+// derive the valid anchor set for document references, which must not depend on
+// the reader having opened the text view.
+function tabMarkdown(tab: TabDefinition | null | undefined): string | undefined {
+  const own = (tab?.content as { markdown?: string } | null | undefined)?.markdown
+  return own ?? (tab?.altView?.content as { markdown?: string } | null | undefined)?.markdown
+}
+
+// The PDF url a document tab carries, whichever of its views holds it.
+function tabPdfUrl(tab: TabDefinition | null | undefined): string | undefined {
+  const own = (tab?.content as { pdfUrl?: string } | null | undefined)?.pdfUrl
+  return own ?? (tab?.altView?.content as { pdfUrl?: string } | null | undefined)?.pdfUrl
+}
+
+// Whether a tab offers a PDF rendering at all — as its own type or as its alt view.
+function tabHasPdf(tab: TabDefinition | null | undefined): boolean {
+  return !!tab && (tab.type === 'pdf' || tab.altView?.type === 'pdf')
 }
 
 // Resolves a language-keyed object string to the user's language, falling back to English.
@@ -159,6 +231,15 @@ function resolveI18n(val: TabLabel | undefined, lang: string): string {
 const PDF_TAB_UI: Record<string, { openInNewTab: string }> = {
   en: { openInNewTab: 'Open in new tab' },
   vi: { openInNewTab: 'Mở trong tab mới' },
+}
+
+// The Text/PDF control on a merged document tab. Same wording as the Legal
+// Library's own switcher (LegalLibraryPanel's UI map) so one vocabulary covers
+// both surfaces; kept here rather than in each project's languages.json for the
+// same reason PDF_TAB_UI is — a merged tab needs no per-project i18n wiring.
+const DUAL_VIEW_UI: Record<string, { group: string; pdf: string; text: string }> = {
+  en: { group: 'View', pdf: 'PDF', text: 'Text' },
+  vi: { group: 'Xem', pdf: 'PDF', text: 'Văn bản' },
 }
 
 // The secondary affordance on a document-reference chip. The chip itself opens
@@ -382,7 +463,10 @@ function ChatInterface() {
     if (!formless && !tabs.some(t => t.type === 'form')) {
       tabs.push({ id: 'form', label: 'Assessment', type: 'form', pinned: true, order: 999 });
     }
-    return tabs.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+    // Fold any id declared twice into one tab with two views (see mergeTabViews)
+    // BEFORE sorting, so declaration order — not the two entries' `order` values —
+    // is what decides which view a merged tab opens on.
+    return mergeTabViews(tabs).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }, [langs, apiTabs, formless, selectedVignetteKey]);
   const hasTabs = resolvedTabs !== null;
   // Starter questions come from languages.json (chat.starterQuestions), so they
@@ -413,6 +497,25 @@ function ChatInterface() {
   useEffect(() => {
     setVisitedTabIds(prev => (prev.has(activeTabId) ? prev : new Set(prev).add(activeTabId)));
   }, [activeTabId]);
+  // Which view a merged document tab is showing (see mergeTabViews). Absent
+  // means "the primary view", i.e. whichever edition the project declared first —
+  // the PDF, for haivn_eip's EIP tab. Held here rather than inside the panel
+  // because a clicked citation both selects the tab and chooses the edition.
+  const [tabViews, setTabViews] = useState<Record<string, DualViewKind>>({});
+  // The same defer-until-first-opened rule visitedTabIds applies to tabs, applied
+  // to the second view of a merged tab: keyed `${tabId}:${view}`. The primary
+  // view is always mounted with the tab, so only the alt view appears here.
+  const [visitedViewKeys, setVisitedViewKeys] = useState<Set<string>>(new Set());
+  const setTabView = useCallback((tabId: string, view: DualViewKind) => {
+    setTabViews(prev => (prev[tabId] === view ? prev : { ...prev, [tabId]: view }));
+    // Mounted in the SAME commit as the view change, deliberately: a citation
+    // that opens the text edition needs the panel mounted with its scroll target
+    // already in place, not one render later.
+    setVisitedViewKeys(prev => {
+      const key = `${tabId}:${view}`;
+      return prev.has(key) ? prev : new Set(prev).add(key);
+    });
+  }, []);
   // Build the document-reference matcher from the anchors actually present in the
   // target document tab. Deriving the valid-anchor set from the loaded markdown
   // (rather than a hardcoded list) means a link can only point at a passage that
@@ -434,16 +537,22 @@ function ChatInterface() {
   const docRefMatcher = useMemo(() => {
     if (!docRefs) return null;
     const tab = resolvedTabs?.find(t => t.id === docRefs.tabId);
-    const markdown = (tab?.content as { markdown?: string } | null | undefined)?.markdown;
+    // The markdown may sit on the tab itself or on its alt view (a merged
+    // PDF+text tab), and the anchors must be known either way: they are what
+    // decides whether a citation becomes a link at all, long before the reader
+    // has opened — or even seen — the text edition.
+    const markdown = tabMarkdown(tab);
     const anchors = markdown ? extractAnchorIds(markdown) : new Set<string>();
     return buildDocRefMatcher(docRefs, anchors, legalNumberToId);
   }, [docRefs, resolvedTabs, legalNumberToId]);
   // The PDF edition of the same document, and the page map beside it. Both are
   // optional: with no pdf tab, or no map file, document references behave
   // exactly as they did before this feature existed.
-  const pdfTab = useMemo(() => resolvedTabs?.find(t => t.type === 'pdf') ?? null, [resolvedTabs]);
+  // `tabHasPdf`, not `type === 'pdf'`: on a merged tab the PDF may be the alt
+  // view, and a citation must still be able to open it.
+  const pdfTab = useMemo(() => resolvedTabs?.find(tabHasPdf) ?? null, [resolvedTabs]);
   const pdfTabMapUrl = useMemo(() => {
-    const url = (pdfTab?.content as { pdfUrl?: string } | null | undefined)?.pdfUrl;
+    const url = tabPdfUrl(pdfTab);
     const rel = url ? pdfPageMapUrl(url) : null;
     return rel ? `${import.meta.env.VITE_API_BASE_URL || ''}${rel}` : null;
   }, [pdfTab]);
@@ -1043,6 +1152,8 @@ function ChatInterface() {
     if (!docRefs) return;
     setActiveTabId(docRefs.tabId);
     setMobileActivePanel('form');
+    // On a merged tab this also flips the edition: the anchor lives in the text.
+    setTabView(docRefs.tabId, 'document');
     setDocScrollTarget({ tabId: docRefs.tabId, anchor, nonce: Date.now() });
   };
 
@@ -1052,6 +1163,7 @@ function ChatInterface() {
     if (!pdfTab) return;
     setActiveTabId(pdfTab.id);
     setMobileActivePanel('form');
+    setTabView(pdfTab.id, 'pdf');
     setPdfScrollTarget({ tabId: pdfTab.id, page, nonce: Date.now() });
   };
 
@@ -1062,6 +1174,44 @@ function ChatInterface() {
     setMobileActivePanel('form');
     setLegalSelectTarget({ docId, nonce: Date.now() });
   };
+
+  // The two renderings of a document tab. Factored out because a merged tab
+  // shows both behind one switcher and a plain tab shows one; two copies of
+  // either panel's wiring is exactly how the PDF and text editions would drift
+  // apart. `tabId` is the id the jump machinery addresses — on a merged tab both
+  // views answer to the tab's own id, which is the point of merging them.
+  //
+  // Rendered with bundled pdf.js (not the browser's built-in viewer) so we
+  // control link targets: every in-PDF external link becomes a real
+  // <a target="_blank">, and there is no outline sidebar eating panel width.
+  const renderPdfView = (view: TabDefinition, tabId: string, label: string) => {
+    const pdfUrl = (view.content as { pdfUrl?: string } | null)?.pdfUrl;
+    const pdfSrc = pdfUrl ? `${import.meta.env.VITE_API_BASE_URL || ''}${pdfUrl}` : '';
+    if (!pdfSrc) return <p style={{ padding: '1rem' }}>PDF not available.</p>;
+    return (
+      <Suspense fallback={
+        <div className="loading-form-wrapper">
+          <p>{t('chat','loadingForm')}</p>
+        </div>
+      }>
+        <PdfJsViewer
+          src={pdfSrc}
+          title={label}
+          openLabel={(PDF_TAB_UI[selectedLanguageCode] ?? PDF_TAB_UI.en).openInNewTab}
+          lang={selectedLanguageCode}
+          jumpTarget={pdfScrollTarget?.tabId === tabId ? pdfScrollTarget : null}
+        />
+      </Suspense>
+    );
+  };
+
+  const renderDocumentView = (view: TabDefinition, tabId: string) => (
+    <DocumentPanel
+      content={(view.content as { markdown?: string } | null) ?? null}
+      lang={selectedLanguageCode}
+      scrollTarget={docScrollTarget?.tabId === tabId ? docScrollTarget : null}
+    />
+  );
 
   // Render an assistant message, linking any recognized document references.
   // When the feature is off (no matcher) or nothing resolves, the raw string is
@@ -1659,45 +1809,50 @@ function ChatInterface() {
                     </div>
                   );
                 }
-                if (tab.type === 'pdf') {
-                  const pdfContent = tab.content as { pdfUrl?: string } | null;
-                  const pdfSrc = pdfContent?.pdfUrl
-                    ? `${import.meta.env.VITE_API_BASE_URL || ''}${pdfContent.pdfUrl}`
-                    : '';
-                  const pdfLabel = typeof tab.label === 'string' ? tab.label : resolveI18n(tab.label, selectedLanguageCode || 'en');
-                  const openLabel = (PDF_TAB_UI[selectedLanguageCode] ?? PDF_TAB_UI.en).openInNewTab;
-                  // Rendered with bundled pdf.js (not the browser's built-in viewer) so we
-                  // control link targets: every in-PDF external link becomes a real
-                  // <a target="_blank">, and there is no outline sidebar eating panel width.
+                if (tab.type === 'pdf' || tab.type === 'document') {
+                  const tabLabel = typeof tab.label === 'string' ? tab.label : resolveI18n(tab.label, selectedLanguageCode || 'en');
+                  const renderView = (view: TabDefinition) =>
+                    view.type === 'pdf' ? renderPdfView(view, tab.id, tabLabel) : renderDocumentView(view, tab.id);
+
+                  // A tab with only one edition renders exactly as it always did.
+                  if (!tab.altView) {
+                    const style = tab.type === 'pdf'
+                      ? { flex: 1, display: 'flex', flexDirection: 'column' as const, minHeight: 0 }
+                      : undefined;
+                    return (
+                      <div key={tab.id} data-tab-id={tab.id} style={style}>
+                        {renderView(tab)}
+                      </div>
+                    );
+                  }
+
+                  // Two editions of one document behind one tab. The primary (the
+                  // edition declared first — the PDF) is mounted with the tab; the
+                  // alt view waits until the reader asks for it, the same way a tab
+                  // itself waits for its first visit.
+                  const primary = tab;
+                  const alt = tab.altView;
+                  const currentView = tabViews[tab.id] ?? primary.type as DualViewKind;
+                  const altMounted = visitedViewKeys.has(`${tab.id}:${alt.type}`);
+                  const pdfSide = primary.type === 'pdf' ? primary : alt;
+                  const textSide = primary.type === 'pdf' ? alt : primary;
+                  const isMounted = (view: TabDefinition) => view === primary || altMounted;
+                  // The latest jump aimed at this tab, in either edition — it
+                  // tells the panel not to restore a remembered offset on top of
+                  // a destination the reader just asked for.
+                  const jumpNonce = Math.max(
+                    docScrollTarget?.tabId === tab.id ? docScrollTarget.nonce : 0,
+                    pdfScrollTarget?.tabId === tab.id ? pdfScrollTarget.nonce : 0,
+                  );
                   return (
                     <div key={tab.id} data-tab-id={tab.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                      {pdfSrc ? (
-                        <Suspense fallback={
-                          <div className="loading-form-wrapper">
-                            <p>{t('chat','loadingForm')}</p>
-                          </div>
-                        }>
-                          <PdfJsViewer
-                            src={pdfSrc}
-                            title={pdfLabel}
-                            openLabel={openLabel}
-                            lang={selectedLanguageCode}
-                            jumpTarget={pdfScrollTarget?.tabId === tab.id ? pdfScrollTarget : null}
-                          />
-                        </Suspense>
-                      ) : (
-                        <p style={{ padding: '1rem' }}>PDF not available.</p>
-                      )}
-                    </div>
-                  );
-                }
-                if (tab.type === 'document') {
-                  return (
-                    <div key={tab.id} data-tab-id={tab.id}>
-                      <DocumentPanel
-                        content={(tab.content as { markdown?: string } | null) ?? null}
-                        lang={selectedLanguageCode}
-                        scrollTarget={docScrollTarget?.tabId === tab.id ? docScrollTarget : null}
+                      <DualViewTab
+                        view={currentView}
+                        onViewChange={(next) => setTabView(tab.id, next)}
+                        labels={DUAL_VIEW_UI[selectedLanguageCode] ?? DUAL_VIEW_UI.en}
+                        jumpNonce={jumpNonce}
+                        pdfView={isMounted(pdfSide) ? renderView(pdfSide) : null}
+                        textView={isMounted(textSide) ? renderView(textSide) : null}
                       />
                     </div>
                   );

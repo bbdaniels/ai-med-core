@@ -172,7 +172,11 @@ Tab types:
 - `form` — renders `<NativeKoboForm>` (Enketo)
 - `suggestions` — renders `<SuggestedQuestions>` with clickable question buttons that auto-send on click
 - `document` — renders `<DocumentPanel>` with a single markdown file as formatted HTML (headings, tables, bold, lists)
-- `pdf` — embeds the PDF returned as `{pdfUrl}` by `/api/tabs` in an iframe
+- `pdf` — renders `<PdfJsViewer>` on the `{pdfUrl}` returned by `/api/tabs` (bundled pdf.js, lazy-loaded, with a selectable text layer and its own find bar)
+
+**Two editions, one tab.** A project may declare the SAME tab id twice — once `pdf`, once `document` — and `mergeTabViews` (App.tsx) folds them into one tab whose `altView` holds the second edition, rendered by `<DualViewTab>` behind a Text/PDF switcher (the Legal Library's `legal-doc-view-*` control, lifted to the top of the tab). Declaration order sets the default view; haivn_eip declares the PDF first, so the EIP tab opens on the PDF. Because both editions answer to one id, `docRefs.tabId`, `pdfScrollTarget.tabId`, `docScrollTarget.tabId` and the active-tab reselect all keep working unchanged — a citation chooses an *edition*, not a tab. `tabMarkdown()` / `tabPdfUrl()` / `tabHasPdf()` read through to whichever view carries the payload, so the doc-reference anchor set is known before the reader has ever opened the text. An id repeated in any other combination is dropped with a console warning. See `projects/CLAUDE.md` for the config shape.
+
+`DualViewTab` also remembers the reader's place in each edition. It does so with a *continuous* scroll listener rather than a read at switch time, and that is load-bearing: React hides the outgoing view in the same commit, and a scroller whose content has just collapsed has had `scrollTop` forced to 0 by the browser before any effect can read it — so reading at switch time saved 0 every time and "back to the PDF" always meant page 1. A `jumpNonce` prop suppresses the restore when a citation arrives with the switch, so the jump is not fought.
 
 `/api/tabs` is re-fetched whenever `selectedLanguageCode` changes, because a tab's `contentFile` may be declared per language (see `projects/CLAUDE.md`). The "select the first tab" effect is therefore keyed on the joined list of tab **ids** rather than the tabs array identity: a language switch (same ids, new content) leaves the reader where they were, while a vignette switch (different ids) still pulls a newly-visible tab forward, which is what TEECH's `showForVignetteKeys` Physical Exams tab relies on.
 
@@ -180,7 +184,9 @@ Tab types:
 
 `<DocumentPanel content lang />` renders the markdown and layers an in-panel search over it: sticky field, `n/total` counter, prev/next buttons, Enter / Shift+Enter to step, Escape to clear. Matches are wrapped by walking **text nodes** (never string-replacing the HTML, which would corrupt tags), and the body is re-rendered from the memoized HTML on each new query, which is what clears the previous highlights. Input is debounced 150 ms because these documents run to ~100 KB. UI strings live in a small `UI` map in the component (en/vi, falling back to en).
 
-Headings carry `scroll-margin-top` so a contents link doesn't land underneath the sticky find bar.
+Matching goes through `foldQuery`/`foldWithMap` in `src/text-search.ts` — the same fold the PDF find bar uses — so it is diacritic- and case-insensitive: `dieu tri` finds `điều trị`. The fold's index map is what makes that safe: a match is found in the folded form and then painted back onto the ORIGINAL characters, so a `<mark>` still carries the document's own accents, capitalization and spacing. (Before this, the two views of one legal document disagreed — 0 hits in Text against 5 in PDF for the same query.)
+
+Headings carry `scroll-margin-top` so a contents link doesn't land underneath the sticky find bar. Inside a merged tab that clearance is widened by the switcher's height (`--dual-view-switch-height`).
 
 `DocumentPanel` also accepts an optional `scrollTarget={{anchor, nonce}}` prop: when the nonce changes it scrolls that heading anchor into view (via `requestAnimationFrame`, so the tab has become visible first). This is how a document reference clicked in the chat drives the scroll. The anchor ids are the same `{#...}`-derived ids the in-panel contents list uses.
 

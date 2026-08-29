@@ -2,6 +2,8 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { foldQuery, foldWithMap } from '../text-search';
+import { findScrollParent } from '../scroll-parent';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -41,18 +43,10 @@ const UI: Record<string, { placeholder: string; prev: string; next: string; clea
 };
 
 // The document scrolls inside an ancestor (the tab's `.tab-panel`, overflow-y:auto),
-// not the window and not `.document-panel-body`. Find that element by its overflow
-// behavior rather than a hardcoded class, so the back-to-top control keeps working
-// if the surrounding markup is restructured.
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
-  let node = el?.parentElement ?? null;
-  while (node) {
-    const overflowY = getComputedStyle(node).overflowY;
-    if (overflowY === 'auto' || overflowY === 'scroll') return node;
-    node = node.parentElement;
-  }
-  return null;
-}
+// not the window and not `.document-panel-body`; `findScrollParent` (shared with
+// the PDF viewer) locates it by overflow behavior rather than a hardcoded class,
+// so the back-to-top control keeps working if the surrounding markup is
+// restructured.
 
 // How far the reader must scroll before the back-to-top control appears (roughly a
 // screenful), so it stays out of the way near the top of a document.
@@ -62,9 +56,16 @@ const BACK_TO_TOP_THRESHOLD = 320;
  * Wrap every occurrence of `query` in the panel's text nodes with a <mark>.
  * Walks text nodes rather than string-replacing the HTML, so a match can never
  * land inside a tag name or an attribute and break the markup.
+ *
+ * Matching goes through the shared fold in `text-search.ts` -- the same one the
+ * PDF find bar uses -- so `dieu tri` finds `điều trị` and the Text and PDF views
+ * of one document report the same number of hits. The fold's index map is what
+ * makes that safe here: a match is located in the folded form, then painted back
+ * onto the ORIGINAL characters, so the <mark> still carries the document's own
+ * accents, capitalization and spacing rather than a normalized copy of them.
  */
 function highlightMatches(root: HTMLElement, query: string): HTMLElement[] {
-  const needle = query.toLowerCase();
+  const needle = foldQuery(query);
   if (!needle) return [];
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -80,21 +81,32 @@ function highlightMatches(root: HTMLElement, query: string): HTMLElement[] {
   const marks: HTMLElement[] = [];
   for (const textNode of textNodes) {
     const text = textNode.nodeValue ?? '';
-    const haystack = text.toLowerCase();
-    let idx = haystack.indexOf(needle);
+    const { folded, map } = foldWithMap(text);
+    let idx = folded.indexOf(needle);
     if (idx === -1) continue;
 
     const frag = document.createDocumentFragment();
-    let cursor = 0;
+    let cursor = 0; // an index into `text`, not into `folded`
     while (idx !== -1) {
-      if (idx > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
-      const mark = document.createElement('mark');
-      mark.className = 'document-search-hit';
-      mark.textContent = text.slice(idx, idx + needle.length);
-      frag.appendChild(mark);
-      marks.push(mark);
-      cursor = idx + needle.length;
-      idx = haystack.indexOf(needle, cursor);
+      // Map the folded span back to source offsets. `map[i]` is the source index
+      // of the character that produced `folded[i]`; the end is one past the
+      // source character behind the last folded character, which covers a source
+      // character that folded to several (a ligature) as well as one that folded
+      // to one.
+      const start = map[idx];
+      const end = map[idx + needle.length - 1] + 1;
+      // A folded match can only start at or after the cursor, but guard anyway so
+      // a pathological mapping can never emit overlapping marks.
+      if (start >= cursor) {
+        if (start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, start)));
+        const mark = document.createElement('mark');
+        mark.className = 'document-search-hit';
+        mark.textContent = text.slice(start, end);
+        frag.appendChild(mark);
+        marks.push(mark);
+        cursor = end;
+      }
+      idx = folded.indexOf(needle, idx + needle.length);
     }
     if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
     textNode.parentNode?.replaceChild(frag, textNode);

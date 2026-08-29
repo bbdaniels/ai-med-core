@@ -70,13 +70,15 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
       ]
     }
   ],
+  // Declaring one id TWICE — once "pdf", once "document" — makes those two
+  // entries one tab with a Text/PDF switcher (see "Two editions, one tab" below).
   "languages": ["en", "th"],
   "enableFeedback": false,          // Real-time grading/feedback
   "enableVoice": false,             // TTS for assistant messages
   "formless": false,                // Skip the Kobo form tab entirely (Q&A chatbots)
   "enableFollowups": false,         // Inline AI-suggested follow-up questions above chat input
   "docRefs": {                      // Optional — linkify document references in chat answers
-    "tabId": "eip-text",            // id of the `document` tab the links point into
+    "tabId": "eip-doc",             // id of the tab the links point into (its `document` edition)
     "patterns": [                   // surface words -> anchor prefix (the {#sec-…}/{#app-…} ids in the document)
       { "prefix": "sec", "words": ["Section", "Mục", "Phần"] },
       { "prefix": "app", "words": ["Appendix", "Phụ lục"] }
@@ -125,6 +127,36 @@ Tab structure (id, type, order, pinned, label) lives in `project.json`. Tab cont
 - **`suggestions`** — grouped clickable question buttons that auto-send to chat on click. Content file is JSON with `{label, intro, sections: [{heading, questions[]}]}`.
 - **`document`** — single markdown file rendered as formatted HTML (headings, tables, bold, lists, links). Content file is raw `.md`. Good for embedding reference documents. Ships with a sticky find bar (match counter, prev/next, Enter / Shift+Enter, Escape to clear) and scrolls in-panel to `{#anchor}` heading ids, so a generated contents list at the top of the file works as navigation.
 
+### Two editions, one tab (`pdf` + `document` sharing an id)
+
+A reference document that ships both a PDF and an extracted text is one document,
+not two, and a project says so by **declaring the same tab id twice** — once as
+`pdf`, once as `document`, each with its own `contentFile`:
+
+```json
+{ "id": "eip-doc", "type": "pdf",      "order": 1, "label": {"en": "EIP", "vi": "EIP"},
+  "contentFile": { "en": ".../eip-en.pdf", "vi": ".../eip-vi.pdf" } },
+{ "id": "eip-doc", "type": "document", "order": 2,
+  "contentFile": { "en": ".../eip-text.en.md", "vi": ".../eip-text.vi.md" } }
+```
+
+The frontend folds them into one tab carrying a Text/PDF switcher — the same
+segmented control the Legal Library uses. **Declaration order decides the default
+view**, so the PDF is declared first: it is the document as published, and the
+text is our extraction of it. The label and any `showForVignetteKeys` come from
+the first entry; the second needs neither.
+
+The shared id is the point. Everything that addresses a tab — `docRefs.tabId`,
+the PDF page jumps, the active-tab reselect — keeps working on one stable id
+instead of having to know which edition a citation was aimed at. A citation with
+a known page opens the PDF view at that page; its "Text" affordance opens the
+text view at the anchor; an unmapped anchor falls back to the text view.
+
+`/api/tabs` passes both entries through untouched — the merge is entirely
+frontend-side. An id repeated in any other combination (same type twice, or a
+type other than `pdf`/`document`) is a config error: the extra entry is dropped
+with a console warning rather than rendered behind the same tab button.
+
 ### Per-language content files
 
 A tab's `contentFile` may be a single path **or** an object keyed by language code:
@@ -160,7 +192,7 @@ Markdown files (for `document`) are loaded as raw text and wrapped in `{markdown
 
 ### Label resolution
 
-`/api/tabs` resolves each tab's label as: `tab.label` (from `project.json`) → fallback to `content.label` (from the JSON content file). Document tabs must set `tab.label` since their `.md` contentFile has no label field.
+`/api/tabs` resolves each tab's label as: `tab.label` (from `project.json`) → fallback to `content.label` (from the JSON content file). Document tabs must set `tab.label` since their `.md` contentFile has no label field — except the second entry of a merged pair, which takes the label of the first.
 
 ### Per-vignette tab visibility
 

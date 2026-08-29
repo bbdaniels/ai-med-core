@@ -5,6 +5,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // worker is served same-origin from our own bundle — no CDN, CSP-safe.
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { foldQuery, foldWithMap } from '../text-search';
+import { findScrollParent } from '../scroll-parent';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -58,17 +59,10 @@ const FIND_UI: Record<string, {
 const MAX_MATCHES = 1000;
 
 // The scrolling ancestor is the tab panel (overflow-y:auto), not the window — the
-// same container DocumentPanel scrolls. Find it so lazy-render observers use the
-// right root instead of a hardcoded selector that could silently break.
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
-  let node = el?.parentElement || null;
-  while (node) {
-    const oy = getComputedStyle(node).overflowY;
-    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) return node;
-    node = node.parentElement;
-  }
-  return null;
-}
+// same container DocumentPanel scrolls, and `findScrollParent` is shared with it.
+// `requireOverflow` matters here and only here: the result is an
+// IntersectionObserver root, so it must be the element that is actually
+// clipping, not merely one declared `overflow: auto` while it still fits.
 
 // Where an internal GoTo link lands: a page, and (when the destination carries one)
 // a vertical position in that page's user space.
@@ -506,7 +500,14 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       } catch { /* keep the page top */ }
     }
     if (!scrollParent) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    const headroom = (headRef.current?.offsetHeight ?? 0) + 8;
+    // Unusable space at the top of the scrollport: our own sticky header, plus
+    // whatever it sticks BELOW. Reading the header's computed `top` rather than
+    // assuming zero is what keeps a jump landing correctly when this viewer is
+    // one of two editions under a merged tab's switcher — the switcher owns the
+    // first 2.6rem there, and a jump that ignored it would land behind it.
+    const head = headRef.current;
+    const stickyTop = head ? parseFloat(getComputedStyle(head).top) || 0 : 0;
+    const headroom = (head?.offsetHeight ?? 0) + stickyTop + 8;
     const delta = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top;
     scrollParent.scrollTo({ top: scrollParent.scrollTop + delta + offset - headroom, behavior: 'smooth' });
   }, [pdf, scale, scrollParent]);
@@ -547,7 +548,9 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   }, [src]);
 
   // Resolve the scroll parent once mounted (for the pages' lazy-render observers).
-  useEffect(() => { setScrollParent(findScrollParent(rootRef.current)); }, [status]);
+  useEffect(() => {
+    setScrollParent(findScrollParent(rootRef.current, { requireOverflow: true }));
+  }, [status]);
 
   // Typing settles before anything is searched.
   useEffect(() => {

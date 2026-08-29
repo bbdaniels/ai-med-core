@@ -151,10 +151,12 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   const [selectedId, setSelectedId] = useState<string>('');
   const [docText, setDocText] = useState<string | null>(null);
   const [textState, setTextState] = useState<'idle' | 'loading' | 'error'>('idle');
-  // Which rendering of the selected document is on screen. Text is the default
-  // wherever a document ships one, so the PDF machinery is not pulled in by
-  // merely browsing the library; a document that has only a PDF opens on it.
-  const [view, setView] = useState<'text' | 'pdf'>('text');
+  // Which rendering of the selected document is on screen. The PDF is the
+  // default wherever a document ships one: it is the instrument as issued --
+  // stamps, signatures, page numbers a reader can cite -- while the text is our
+  // extraction of it. A document with no saved PDF opens on its text, which is
+  // then the only rendering there is.
+  const [view, setView] = useState<'text' | 'pdf'>('pdf');
   // The selected document's section→page map, when one shipped. A document with
   // no map, or a map that fails to load, simply has no section list: everything
   // else on the panel is unchanged.
@@ -183,12 +185,13 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   const selected = documents.find(d => d.id === selectedId) ?? null;
   const pdfSrc = selected?.pdfFile ? api(`/api/project-content/${selected.pdfFile}`) : '';
 
-  // A new document opens on its text -- unless it has none, in which case the
-  // saved PDF is the whole document and opening on "Text" would show a Text
-  // button styled active above a message saying there is no text, with the only
-  // readable copy hidden one click away.
+  // A new document opens on its PDF whenever one was saved, and on its text
+  // otherwise. Selecting a document resets this: carrying the previous
+  // document's choice over would land a reader on "Text" for a document that has
+  // none, showing a Text button styled active above a message saying there is no
+  // text, with the only readable copy hidden one click away.
   useEffect(() => {
-    setView(!selected?.textFile && selected?.pdfFile ? 'pdf' : 'text');
+    setView(selected?.pdfFile ? 'pdf' : 'text');
     setPdfJump(null);
   }, [selectedId, selected?.textFile, selected?.pdfFile]);
 

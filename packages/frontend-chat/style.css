@@ -1355,6 +1355,76 @@ body {
     outline-offset: 1px;
 }
 
+/* ---- Merged document tab (DualViewTab) --------------------------------------
+   One tab holding both editions of the same document, with the Legal Library's
+   segmented control lifted to the top of the tab. */
+
+.tab-dual-view {
+    /* The height of the switcher bar. Every sticky header inside this tab is
+       pushed down by it, and the anchor jumps clear it — one value, declared
+       once, so the three can never disagree. */
+    --dual-view-switch-height: 2.6rem;
+    /* `1 0 auto`, like .pdfjs-viewer and for the same reason: a zero flex-basis
+       would clamp this box to the panel's height while the document inside
+       overflows it, and a sticky header can only stick within its containing
+       block. Sizing to content keeps the switcher pinned for the whole scroll. */
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.tab-dual-view-switch {
+    position: sticky;
+    top: 0;
+    /* Above both views' own sticky headers (.pdfjs-headbar is 6, .document-search 5). */
+    z-index: 8;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    height: var(--dual-view-switch-height);
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+}
+
+/* The library's segmented control, minus the margin it carries there (where it
+   follows a block of document metadata) and pinned to one line: two short
+   labels never need to wrap, even in a 390px panel. */
+.tab-dual-view-switch .legal-doc-view-toggle {
+    margin-top: 0;
+    flex-wrap: nowrap;
+}
+
+.tab-dual-view-switch .legal-doc-view-btn {
+    min-width: 3.75rem;
+    padding: 0.25rem 0.7rem;
+    white-space: nowrap;
+}
+
+.tab-dual-view-body {
+    flex: 1 0 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* Each edition keeps its own sticky find bar; here they stick below the
+   switcher rather than at the top of the scrollport. */
+.tab-dual-view-body .pdfjs-headbar,
+.tab-dual-view-body .document-search {
+    top: var(--dual-view-switch-height);
+}
+
+/* And an anchor jump must clear both. 3.5rem is the find-bar clearance from
+   .document-panel-body's own rule. */
+.tab-dual-view-body .document-panel-body h1,
+.tab-dual-view-body .document-panel-body h2,
+.tab-dual-view-body .document-panel-body h3,
+.tab-dual-view-body .document-panel-body h4 {
+    scroll-margin-top: calc(3.5rem + var(--dual-view-switch-height));
+}
+
 /* The viewer measures its own container, so it just needs room to grow inside
    the library column without forcing horizontal scroll.
 

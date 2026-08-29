@@ -377,21 +377,27 @@ export function formatSearchResults(query: string, results: ReadingChunk[]): str
   }
   const blocks = results.map((r, i) => {
     const year = r.year ? ` ${r.year}` : '';
-    const pages = r.pageStart === r.pageEnd
-      ? `p. ${r.pageStart}` : `pp. ${r.pageStart}-${r.pageEnd}`;
+    // Page 0 means the source has no pages to cite -- a spreadsheet row, an
+    // unmapped statute chunk. Printing "p. 0" hands the model a page number that
+    // does not exist, and the prompt tells it to repeat locations verbatim.
+    const pages = r.pageStart === 0
+      ? '' : r.pageStart === r.pageEnd
+        ? `p. ${r.pageStart}` : `pp. ${r.pageStart}-${r.pageEnd}`;
     const week = r.weeks[0]
       ? ` | assigned ${r.weeks[0].date}, "${r.weeks[0].topic}"` : '';
-    const section = r.section ? ` | section: ${r.section}` : '';
+    const section = r.section ? `section: ${r.section}` : '';
+    const location = [pages, section, week.replace(/^ \| /, '')]
+      .filter(Boolean).join(' | ');
     return [
       `--- passage ${i + 1} ---`,
       `CITE AS: ${r.authorShort}${year}`,
       `Full title: ${r.title}${r.venue ? ` (${r.venue})` : ''}`,
-      `Location: ${pages}${section}${week}`,
+      ...(location ? [`Location: ${location}`] : []),
       '',
       r.text,
     ].join('\n');
   });
-  return `Passages from the assigned course readings matching "${query}":\n\n` +
+  return `Passages from the indexed course materials matching "${query}":\n\n` +
          blocks.join('\n\n');
 }
 
@@ -401,11 +407,14 @@ export const SEARCH_READINGS_TOOL = {
   function: {
     name: 'search_readings',
     description:
-      'Search the full text of the assigned course readings and return the passages ' +
-      'that best match a query, each with the author, year, page range, and the week ' +
-      'it is assigned. Call this before answering any question about what a reading ' +
-      'says, argues, defines, or recommends. Call it more than once, with different ' +
-      'wording, when the first search misses or when a question spans several weeks.',
+      'Search the full text of the course corpus and return the passages that best ' +
+      'match a query, each with the author, year, page range, and the week it is ' +
+      'assigned. The corpus holds the assigned readings AND the course resource ' +
+      'listings of datasets, data portals and research catalogs. Call this before ' +
+      'answering any question about what a reading says, argues, defines, or ' +
+      'recommends, AND before naming any specific data source, dataset, portal or ' +
+      'catalog to a student. Call it more than once, with different wording, when the ' +
+      'first search misses or when a question spans several weeks.',
     parameters: {
       type: 'object' as const,
       additionalProperties: false,
@@ -414,10 +423,12 @@ export const SEARCH_READINGS_TOOL = {
         query: {
           type: 'string',
           description:
-            'What to look for, in the vocabulary the readings themselves would use. ' +
+            'What to look for, in the vocabulary the source itself would use. ' +
             'Prefer the technical term over the student\'s paraphrase: search ' +
             '"minimum detectable effect statistical power" rather than "how big does ' +
-            'my sample need to be".',
+            'my sample need to be". For a data source, search the subject and the ' +
+            'kind of data: "adolescent health longitudinal survey" or "municipal ' +
+            'crime open data portal", not the student\'s thesis question.',
         },
         week: {
           type: 'string',

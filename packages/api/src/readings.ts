@@ -2,16 +2,24 @@
  * Grounded retrieval over a project's assigned-reading corpus.
  *
  * A project opts in by declaring `readingsIndex` in its project.json; the value
- * is a repo-relative path to a SQLite file built by tools/build-ppol-corpus.py.
- * The index holds one row per ~500-token chunk with an FTS5 (BM25) index over
- * it and, when the build could reach an embeddings endpoint, a dense vector per
- * chunk. Retrieval fuses the two rankings; with no vectors it degrades to BM25
- * alone, which is why a failed embedding pass never fails a build.
+ * is a repo-relative path to a SQLite file. Two builders write that schema --
+ * tools/build-ppol-corpus.py for a course reading list, tools/build-legal-corpus.py
+ * for haivn_eip's library of Vietnamese legal instruments -- and this module
+ * reads either without knowing which. The index holds one row per ~500-token
+ * chunk with an FTS5 (BM25) index over it and, when the build could reach an
+ * embeddings endpoint, a dense vector per chunk. Retrieval fuses the two
+ * rankings; with no vectors it degrades to BM25 alone, which is why a failed
+ * embedding pass never fails a build.
  *
- * The index is a derived copy of copyrighted PDFs. It is gitignored, it never
- * reaches the public mirror, and nothing here serves chunk text to a browser --
- * text goes to the model, inside the chat request, and reaches the student only
- * as whatever the model quotes back under the system prompt's excerpt limits.
+ * Whether the index file is committed is the project's call, and the two
+ * projects answer it differently. ppol5013's is a derived copy of copyrighted
+ * course PDFs and is gitignored. haivn_eip's is built from published Vietnamese
+ * legal instruments and IS committed deliberately, because Railway deploys from
+ * git and the API needs the file present at runtime. Neither reaches the public
+ * mirror, which publishes only projects/demo. Nothing here serves chunk text to
+ * a browser -- text goes to the model, inside the chat request, and reaches the
+ * reader only as whatever the model quotes back under the system prompt's
+ * excerpt limits.
  */
 
 import Database from 'better-sqlite3';
@@ -49,6 +57,13 @@ interface OpenIndex {
   db: Database.Database;
   dim: number;
   hasVectors: boolean;
+  /**
+   * Whether any document in this index is assigned to a week. `weeks` is a
+   * course-schedule concept: a corpus with no schedule (the haivn_eip legal
+   * library) carries "[]" on every row, so a week filter can only ever return
+   * nothing. See searchReadingsTool.
+   */
+  hasWeeks: boolean;
   mtimeMs: number;
   filePath: string;
 }
@@ -120,13 +135,20 @@ export function openReadingsIndex(repoRoot: string, projectSlug: string,
       (db.prepare("SELECT value FROM meta WHERE key = 'embedding_dim'")
          .get() as { value?: string } | undefined)?.value ?? 0,
     );
+    const scheduled = Number(
+      (db.prepare(
+        "SELECT COUNT(*) AS n FROM documents WHERE weeks IS NOT NULL AND TRIM(weeks) NOT IN ('', '[]')",
+      ).get() as { n?: number } | undefined)?.n ?? 0,
+    );
     const opened: OpenIndex = {
       db, dim, hasVectors: embedded > 0 && dim > 0,
+      hasWeeks: scheduled > 0,
       mtimeMs: stat.mtimeMs, filePath,
     };
     openIndexes.set(projectSlug, opened);
     console.log(`[readings] ${projectSlug}: opened ${filePath} ` +
-                `(${embedded} embedded chunks, ${opened.hasVectors ? 'hybrid' : 'BM25-only'})`);
+                `(${embedded} embedded chunks, ${opened.hasVectors ? 'hybrid' : 'BM25-only'}` +
+                `${opened.hasWeeks ? '' : ', unscheduled'})`);
     return opened;
   } catch (e) {
     console.error(`[readings] ${projectSlug}: failed to open index:`, e);
@@ -284,7 +306,11 @@ export function searchReadings(index: OpenIndex, query: string,
   if (opts.docId) {
     results = results.filter(r => r.row.doc_id === opts.docId);
   }
-  if (opts.week) {
+  // A week filter against an unscheduled corpus can only empty the result set,
+  // so it is ignored there rather than silently returning nothing. The tool
+  // schema does not offer `week` for such an index either; this is the guard for
+  // a caller that passes one anyway.
+  if (opts.week && index.hasWeeks) {
     results = results.filter(r => {
       try {
         return (JSON.parse(r.row.weeks) as Array<{ date: string }>)
@@ -408,5 +434,61 @@ export const SEARCH_READINGS_TOOL = {
     },
   },
 };
+
+/**
+ * The tool definition for one opened index.
+ *
+ * `week` is only a real parameter over a corpus that has a schedule. Offering it
+ * against an unscheduled corpus is worse than useless: the model does use it,
+ * every such call filters the fused results down to nothing, and each one spends
+ * one of the three tool hops a request gets. So the parameter is withheld from
+ * the schema when no document in the index is assigned to a week.
+ *
+ * The DESCRIPTION is replaced for the same reason. The default one tells the
+ * model it is searching "the assigned course readings" and will get back "the
+ * week it is assigned" -- two promises an unscheduled corpus cannot keep, in the
+ * one piece of text the model reads when deciding whether this tool is relevant
+ * at all.
+ *
+ * Measured, so the next reader does not over-credit this: swapping the wording
+ * did NOT change gpt-4o-mini's tool-calling on haivn_eip. That model calls
+ * search_readings when the user's question names an instrument ("which article
+ * of Decree 96/2023/NĐ-CP...") and skips it on a follow-up that names none
+ * ("What section of the law says that?") -- zero calls in 22 trials before the
+ * change and zero in the trials after it. The fix here removes a false promise
+ * from the model's context; it is not a fix for that behavior. That one is a
+ * model-capability question: gpt-4o called the tool on such follow-ups, the
+ * default gpt-4o-mini does not, and haivn_eip's system prompt is what keeps the
+ * ungrounded answer honest ("no article in the Legal Library states it") rather
+ * than letting it reach for the nearest article. Do not re-pin a bigger chatModel
+ * to paper over this without pricing it first: it raises every turn on the
+ * project, not only the statute turns.
+ *
+ * A scheduled index (ppol5013) gets the same object it always got, by identity.
+ */
+const UNSCHEDULED_DESCRIPTION =
+  'Search the full text of this project\'s reference corpus and return the passages ' +
+  'that best match a query, each with its source document, citation, page range, and ' +
+  'the section or article it comes from. Call this before answering ANY question that ' +
+  'turns on what a source document actually says, including a follow-up asking which ' +
+  'provision, section, or article states something you have just said, and including ' +
+  'a question that names no document at all. Call it more than once, with different ' +
+  'wording, when the first passages miss.';
+
+export function searchReadingsTool(index: OpenIndex) {
+  if (index.hasWeeks) return SEARCH_READINGS_TOOL;
+  const { query, limit } = SEARCH_READINGS_TOOL.function.parameters.properties;
+  return {
+    ...SEARCH_READINGS_TOOL,
+    function: {
+      ...SEARCH_READINGS_TOOL.function,
+      description: UNSCHEDULED_DESCRIPTION,
+      parameters: {
+        ...SEARCH_READINGS_TOOL.function.parameters,
+        properties: { query, limit },
+      },
+    },
+  };
+}
 
 export { MAX_RESULTS as READINGS_MAX_RESULTS };

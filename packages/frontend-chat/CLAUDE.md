@@ -198,6 +198,24 @@ Headings carry `scroll-margin-top` so a contents link doesn't land underneath th
 - **Validated against the real document.** `App.tsx` derives the valid-anchor set from the loaded document tab's markdown (`extractAnchorIds`) and passes it to `buildDocRefMatcher`. A reference that doesn't resolve to an anchor present in the document (a model-invented section, or one that doesn't exist) is left as ordinary text — never a dead link. Numbered anchors are identical across the English and Vietnamese editions, so a Vietnamese answer scrolls the Vietnamese document to the same anchor.
 - **No markdown in chat.** Only this narrow affordance is introduced; the rest of the message stays plain text. Segments are rendered as plain strings and React `<a>` nodes (never `innerHTML`), and the href is a validated anchor id, so the model's text can't inject markup.
 
+### Legal-instrument citations
+
+The same matcher recognizes citations of a project's **legal library** (a `library` tab), with no new marker syntax — it reads what the model already writes:
+
+| Written in the answer | Resolves to | Rendered as |
+|---|---|---|
+| `96/2023/NĐ-CP` | the document | plain `doc-ref-link`, opens it in the library (unchanged) |
+| `96/2023/NĐ-CP, Điều 40` | document + `dieu-40` | `doc-ref-chip`: opens the library's **PDF view at the mapped page**, with a `Text` button beside it |
+| `Điều 40 của Nghị định 96/2023/NĐ-CP` | same | same (reverse order, bridged by ≤ 4 connector words) |
+| `Article 40 of Law 15/2023/QH15` | same | same (English article word, same `dieu-40` key) |
+| `Điều 40 aligns with Law 15/2023/QH15` | the document only | plain `doc-ref-link` — "aligns" is not a connector, so the article never binds |
+
+- **The number is the anchor.** Only instrument numbers present in the library registry match (`legalNumberToId`), longest-first; an article word is recognized only immediately beside one. `Điều 40` on its own, or an invented instrument number, stays plain text.
+- **The reverse-order bridge is a closed vocabulary, not a word budget** (`LEGAL_REF_CONNECTORS` in `doc-refs.ts`). Only possessives/prepositions (`của`, `of`, `trong`, `số`, `the`, `no.`) and the tokens of an instrument-type noun (`Nghị`/`định`, `Thông`/`tư`, `Luật`, `Decree`, `Circular`, `Law`, `Decision`, …) may sit between the article number and the instrument number. An earlier version allowed any four letters-only words, which bound `Điều 40 aligns with Law 15/2023/QH15` to the Law and opened that PDF at a page holding no such article. Any verb or relational phrase now ends the bridge, and the citation falls through to the whole-document link.
+- **The page comes from the document's own map.** `App.tsx` lazily fetches `maps/<id>.json` for a document an answer actually cites an article of (once per document, failures swallowed) and indexes it with `sectionPageIndex` from `src/legal-map.ts` — the *same* filter `LegalLibraryPanel` uses for its section list (`jumpableSections`: confirmed-only where a canonical text is on screen, structural allowed for a PDF-only document). One rule, one module, so a chip can never claim a page the panel beside it refuses to offer.
+- **Degradation is the default.** No article named, an article the map does not carry, a document with no map or no PDF, a map still in flight — all fall through to the whole-document link that already existed. There is no state in which a chip goes nowhere. The `Text` button is rendered only where a text edition exists.
+- **Plumbing.** `handleLegalRefClick(docId, page?)` → `legalSelectTarget={docId, page?, nonce}` → `LegalLibraryPanel`, which holds the request in a ref until the document is selected (the view-reset effect would otherwise clear it in the same commit) and then sets `view='pdf'` + `pdfJump`. Chip labels reuse `DOC_REF_UI` (EN/VI).
+
 ## Formless Mode
 
 When `/api/config` returns `formless: true`, App.tsx skips auto-adding a form tab. The project's declared tabs (from `/api/tabs`) are shown as-is. Used by Q&A chatbots that have no Kobo form.

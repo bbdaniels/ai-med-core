@@ -421,3 +421,122 @@ hides the `tsv` output config and tesseract silently emits plain text with no
 word boxes at all. Nothing under `/opt/homebrew` or any other system directory
 is modified. Without tesseract installed, the native documents still map and the
 scans are reported as skipped.
+
+## build-legal-corpus.py
+
+Builds `projects/haivn_eip/content/legal/legal-corpus.db`, the **statute tier**
+of the EIP advisor: the retrieval index that lets it answer "what does the law
+say?" from the law rather than from the legal *index* alone.
+
+```bash
+python3 tools/build-legal-corpus.py                    # hybrid (BM25 + vectors)
+python3 tools/build-legal-corpus.py --no-embeddings    # FTS5-only, no network
+python3 tools/build-legal-corpus.py --query "phạm vi hành nghề" -k 5
+npx tsx tools/legal-corpus-smoke.ts                    # verify through readings.ts
+npx tsx tools/legal-corpus-smoke.ts --bm25             # same, no embedding call
+```
+
+Rebuild it whenever `content/legal/text/*.md`, `content/legal/maps/*.json`, or
+the registry's metadata changes -- i.e. after any `fetch-legal-docs.py` or
+`build-jump-maps.py` run that moves text or pages. The database is **committed**,
+which is the difference from the PPOL index: these are Vietnamese government
+instruments already shipped in this repo as text and as PDFs, so there is nothing
+to withhold, and committing removes the post-redeploy upload step that
+`upload-readings-index.sh` exists for. `projects/haivn_eip/project.json` declares
+it as `"readingsIndex"`; that one key is the whole wiring, and
+`packages/api/src/readings.ts` does the rest.
+
+The same file also sets `"chatModel": "gpt-4o"`, and that is not optional. On
+the platform default (`gpt-4o-mini`) the model does not call `search_readings`
+at all on the question this tier exists for -- measured, four runs out of four
+on "what section of the law says that?", zero tool calls, answered from the
+legal index and flagged in scope. The tool description was ruled out as the
+cause (rewriting it project-neutral changed nothing). On `gpt-4o` the same
+question searches, and either cites the article it retrieved or says the search
+did not find one. ppol5013 sets the same key for the same reason, under a
+comment in `server.ts` that a grounded advisor attributing a claim to the right
+source needs the stronger model. It costs more per turn, on the Harvard gateway
+credits: a formless advisor whose whole job is attribution is where that is
+worth paying.
+
+**No new retrieval code.** The platform's project-generic retrieval (built for
+ppol5013) already does hybrid BM25 + embeddings, RRF fusion, and the
+`search_readings` tool loop in `POST /api/chat`. This tool only produces the
+schema that code reads, and `SCHEMA` in it is byte-identical to the one in
+`build-ppol-corpus.py` for that reason -- two writers of one shape is exactly
+how the two drift apart.
+
+Legal metadata is **mapped onto** the reading columns rather than added beside
+them: `author_short` is the instrument number, so `readings.ts` renders
+`CITE AS: 96/2023/NĐ-CP`; `section` is the citable location
+(`Chương III ... > Điều 40. ...`, plus `(part k of n)` when one article is
+split); `page_start` is the PDF page from `maps/<id>.json`, which is what a
+future doc-ref chip would need to open the Legal Library at the right page;
+`venue` carries type, agency, validity status and the language of the text;
+`weeks` is `[]`, since a course schedule has no legal analogue and an empty
+array is what stops `readings.ts` printing an "assigned" clause it cannot mean.
+
+Chunking is per Điều / Phụ lục, so a chunk is the unit a lawyer cites. Chương,
+Mục and Phần headings are context that rides along with the next article --
+unless they carry substantive text of their own, in which case they become their
+own chunk. Sections are located by matching the curated map against the text
+**globally** (a longest-increasing-subsequence over each section's candidate
+lines) rather than with a forward cursor: the first implementation used a cursor,
+and one recurrence of `Điều 17.` inside an appendix form dragged it 9,000 lines
+forward and silently lost all 131 articles after it. Documents with text but no
+map (`qd-1868-2020`, `qd-4026-2010`) fall back to heading heuristics.
+
+**The articles stop at the signature block.** What a Vietnamese instrument
+carries after it -- a promulgated plan, a technical guideline, a tariff
+schedule, a set of forms -- is enacted by the instrument but written in no
+article, and the first build gave all of it the last article's label and the
+last article's page: 233 chunks, 12% of the corpus, each one a citation the
+source does not support and the prompt instructs the model to repeat verbatim.
+35/2016/TT-BYT's technical-services payment schedule was labelled "Điều 8. Tổ
+chức thực hiện", an eight-line ministry-coordination clause a quarter of the way
+into the document, at that clause's page. The builder now closes the articles at
+the first "Nơi nhận:" / signing title / attachment heading after the last Điều,
+and labels what follows `Phần ký ban hành` or `Tài liệu ban hành kèm theo ... >
+<the attachment's own heading>` -- a label that cannot be read as an article --
+with page 0, since the maps locate articles and never the attachments. The scan
+runs only between the last Điều and the next heading of any kind, so a tail that
+already starts at a Phụ lục keeps the label it had.
+
+### Known limits, both worth fixing upstream rather than here
+
+- **A bare article number does not retrieve that article.** "Điều 40 của Nghị
+  định 96/2023/NĐ-CP" reliably returns the right *document* and the wrong
+  article. The cause is on the query side: `toFtsQuery` in `readings.ts` drops
+  every query term of two characters or fewer, so `40` -- the only
+  discriminating token -- never reaches FTS5, leaving a dense ranker to separate
+  one article from 390 on a two-character difference. The fix is in
+  `readings.ts` (keep short terms that are pure digits), not in the index; do
+  not add index-side tricks for it. Retrieval **by topic** works well and is the
+  question users actually ask: "điều kiện cấp giấy phép hoạt động" returns
+  Điều 40 with its number and PDF page attached.
+- **Two source texts contain the whole instrument twice.**
+  `text/qd-1868-2020.md` and `text/qd-4026-2010.md` are scrapes of
+  legal-reference sites that print a preview copy above the full text, plus site
+  navigation ("Văn bản liên quan" and a list of unrelated documents) in between.
+  The builder drops exact-duplicate chunks -- 71 of them in `qd-1868-2020` -- so
+  one article cannot occupy two of the six slots a search returns, but that is a
+  guard, not a fix. The duplication and the navigation boilerplate are in
+  `fetch-legal-docs.py`'s output for those two documents.
+
+- **Page precision follows map coverage, and some maps are thin.**
+  `maps/qd-4531-2021.json` carries 3 sections for a 129 KB document -- its three
+  articles and nothing else -- so its 3 article chunks sit on page 1 and its
+  other 75 are attached plan, carrying no page at all; `nd-96-2023-nd-cp`
+  carries 174 sections and its chunks span pages 1-341. A chunk's page is the
+  page of the nearest mapped section at or above it within the same article, and
+  0 where nothing was mapped, so a thin map costs precision rather than
+  correctness -- and the fix is more sections out of `build-jump-maps.py`.
+  `readings.ts` renders an unmapped chunk as `Location: p. 0`, which is honest
+  and reads oddly; suppressing it is a change to that shared file, so it belongs
+  to whoever next touches it, alongside the "assigned course readings" strings
+  below.
+
+Also note the strings `readings.ts` wraps results in still say "assigned course
+readings", which is ppol5013's vocabulary reaching a legal advisor. It is
+cosmetic and it is in shared code, so it belongs to whoever next touches that
+file, not to a per-project workaround here.

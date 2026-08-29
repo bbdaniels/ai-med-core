@@ -1,6 +1,7 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { api, apiFetch } from '../api-base';
 import DocumentPanel from './DocumentPanel';
+import { type LegalDocMap, jumpableSections } from '../legal-map';
 
 // Same code-split chunk App.tsx uses for the EIP PDF tab: pointing a second
 // lazy() at the same module path shares the chunk rather than duplicating it,
@@ -38,24 +39,6 @@ interface LegalDocument {
   mapFile?: string | null;
 }
 
-// A section of a legal document and the PDF page it starts on (1-based).
-// `confidence` records how the page was established: "confirmed" means an exact
-// normalized match of the canonical heading text against exactly one page;
-// "structural" means the heading was only detected in the page's own (possibly
-// OCR'd) text, with no canonical text to check it against.
-interface LegalMapSection {
-  key: string;
-  label: string;
-  page: number;
-  confidence?: 'confirmed' | 'structural';
-}
-
-interface LegalDocMap {
-  docId?: string;
-  source?: 'native' | 'ocr';
-  sections?: LegalMapSection[];
-}
-
 // The best human-facing source link: a specific official-document URL when we
 // have one, else the EIP's own citation. A bare domain root (some gazette
 // entries resolve only to the site homepage) is treated as no link at all.
@@ -84,8 +67,12 @@ interface LegalLibraryPanelProps {
   content: LegalLibraryContent | null;
   lang?: string;
   // When set (bumped `nonce`), select this document id — driven from the chat side
-  // where a clicked legal-document reference opens that document here.
-  selectTarget?: { docId: string; nonce: number } | null;
+  // where a clicked legal-document reference opens that document here. An optional
+  // 1-based `page` (the chat resolved the cited article through this document's
+  // own section map) additionally switches to the PDF view and jumps to it; with
+  // no page the panel behaves exactly as it did before, opening the document on
+  // its text edition.
+  selectTarget?: { docId: string; page?: number; nonce: number } | null;
 }
 
 function resolveI18n(val: I18n | undefined, lang: string): string {
@@ -175,10 +162,30 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
     }
   }, [documents, selectedId]);
 
+  // A page jump asked for by the chat, held until the document it belongs to is
+  // the selected one. Selecting a document re-runs the view-reset effect below,
+  // which would otherwise clear the jump in the same commit that set it.
+  const pendingJumpRef = useRef<{ docId: string; page: number; nonce: number } | null>(null);
+
   // Select the document a chat reference asked for (if it exists in the library).
   useEffect(() => {
     if (!selectTarget) return;
-    if (documents.some(d => d.id === selectTarget.docId)) setSelectedId(selectTarget.docId);
+    const doc = documents.find(d => d.id === selectTarget.docId);
+    if (!doc) return;
+    // A page is honored only for a document that actually ships a PDF to jump into.
+    pendingJumpRef.current =
+      typeof selectTarget.page === 'number' && selectTarget.page > 0 && doc.pdfFile
+        ? { docId: doc.id, page: selectTarget.page, nonce: selectTarget.nonce }
+        : null;
+    if (doc.id === selectedId) {
+      // Already on screen: no selection change, so the reset effect will not run
+      // and this is the only place the jump can be applied.
+      const pending = pendingJumpRef.current;
+      pendingJumpRef.current = null;
+      if (pending) { setView('pdf'); setPdfJump({ page: pending.page, nonce: pending.nonce }); }
+    } else {
+      setSelectedId(doc.id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectTarget?.nonce]);
 
@@ -191,6 +198,16 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
   // none, showing a Text button styled active above a message saying there is no
   // text, with the only readable copy hidden one click away.
   useEffect(() => {
+    // …unless the chat asked for a specific page of this document, which is the
+    // whole point of the click that selected it. This runs before the default
+    // below so a citation chip lands on its page rather than page 1.
+    const pending = pendingJumpRef.current;
+    if (pending && pending.docId === selectedId) {
+      pendingJumpRef.current = null;
+      setView('pdf');
+      setPdfJump({ page: pending.page, nonce: pending.nonce });
+      return;
+    }
     setView(selected?.pdfFile ? 'pdf' : 'text');
     setPdfJump(null);
   }, [selectedId, selected?.textFile, selected?.pdfFile]);
@@ -210,18 +227,12 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
     return () => { cancelled = true; };
   }, [selected?.mapFile]);
 
-  // Which sections are offered as jumps. Where a canonical text is on screen,
-  // only pages CONFIRMED by exact match are offered -- a structural guess must
-  // never send a reader to a page that the text beside it contradicts. A
-  // pdf-only document has nothing to confirm against, so its structural list is
-  // all there is, and all it claims to be.
-  const jumpSections = useMemo(() => {
-    const all = (docMap?.sections ?? []).filter(
-      (s): s is LegalMapSection =>
-        !!s && typeof s.key === 'string' && typeof s.page === 'number' && s.page > 0,
-    );
-    return selected?.textFile ? all.filter(s => s.confidence === 'confirmed') : all;
-  }, [docMap, selected?.textFile]);
+  // Which sections are offered as jumps -- the single rule shared with the chat
+  // side, so a page a citation chip claims is a page this list also offers.
+  const jumpSections = useMemo(
+    () => jumpableSections(docMap, !!selected?.textFile),
+    [docMap, selected?.textFile],
+  );
 
   // Fetch the full text only for documents that ship one. The file is served by
   // the existing /api/project-content route (path-guarded to projects/).

@@ -16,6 +16,7 @@ import { scrollListToBottom } from './scroll-list';
 import LanguageSwitcher from './LanguageSwitcher';
 import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
+import { type LegalDocMap, sectionPageIndex } from './legal-map';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
 
 // Heavy components are code-split so their dependencies stay out of the entry
@@ -426,8 +427,16 @@ function ChatInterface() {
   const [pdfAnchorPages, setPdfAnchorPages] = useState<Record<string, number> | null>(null);
   const pdfMapRequestedRef = useRef<string | null>(null);
   // A clicked legal-document reference asks the legal-library tab to select that
-  // document; the bumped nonce re-triggers even for the same document.
-  const [legalSelectTarget, setLegalSelectTarget] = useState<{ docId: string; nonce: number } | null>(null);
+  // document; the bumped nonce re-triggers even for the same document. An
+  // article-level citation carries the PDF page as well.
+  const [legalSelectTarget, setLegalSelectTarget] = useState<{ docId: string; page?: number; nonce: number } | null>(null);
+  // docId -> (section key -> 1-based PDF page), from each cited legal document's
+  // own section map. Populated lazily, one document at a time, and only for
+  // documents an answer actually cites an article of; a document with no map (or
+  // a map that fails to load) simply never appears here and its citations keep
+  // today's whole-document link.
+  const [legalSectionPages, setLegalSectionPages] = useState<Record<string, Record<string, number>>>({});
+  const legalMapRequestedRef = useRef<Set<string>>(new Set());
   // Drag-drop allocation widget: project-specific opt-in for transforming
   // three select_one fields into a drag-drop assignment UI.
   const [dragDropAllocation, setDragDropAllocation] = useState(false);
@@ -534,6 +543,17 @@ function ChatInterface() {
     if (docs) for (const d of docs) if (d.number && d.number.includes('/')) map.set(d.number, d.id);
     return map;
   }, [legalTab]);
+  // What each library document ships, for resolving an article citation to a page:
+  // the section map to read, whether a canonical text exists (which decides how
+  // strictly the map is filtered), and whether there is a PDF to jump into at all.
+  const legalDocFiles = useMemo(() => {
+    const map = new Map<string, { mapFile?: string | null; textFile?: string | null; pdfFile?: string | null }>();
+    const docs = (legalTab?.content as {
+      documents?: Array<{ id: string; mapFile?: string | null; textFile?: string | null; pdfFile?: string | null }>;
+    } | null | undefined)?.documents;
+    if (docs) for (const d of docs) map.set(d.id, { mapFile: d.mapFile, textFile: d.textFile, pdfFile: d.pdfFile });
+    return map;
+  }, [legalTab]);
   const docRefMatcher = useMemo(() => {
     if (!docRefs) return null;
     const tab = resolvedTabs?.find(t => t.id === docRefs.tabId);
@@ -578,6 +598,38 @@ function ChatInterface() {
   }, [pdfTabMapUrl, docRefMatcher, messages]);
   // A language switch swaps the PDF edition, and with it the page map.
   useEffect(() => { setPdfAnchorPages(null); }, [pdfTabMapUrl]);
+  // The same lazy pattern for legal instruments, per document: when an answer
+  // cites an article of a document the library carries, fetch that document's
+  // section map once and remember its section->page index. Nothing waits on the
+  // fetch — until it lands (or if it never does) the citation renders as today's
+  // whole-document link, and the failure is swallowed.
+  useEffect(() => {
+    if (!docRefMatcher || legalDocFiles.size === 0) return;
+    const wanted = new Set<string>();
+    for (const m of messages) {
+      if (m.role !== 'assistant') continue;
+      for (const seg of docRefMatcher(m.content)) {
+        if (seg.legalId && seg.sectionKey && !legalMapRequestedRef.current.has(seg.legalId)) wanted.add(seg.legalId);
+      }
+    }
+    if (wanted.size === 0) return;
+    let cancelled = false;
+    for (const docId of wanted) {
+      const files = legalDocFiles.get(docId);
+      if (!files?.mapFile || !files.pdfFile) continue;
+      legalMapRequestedRef.current.add(docId);
+      apiFetch(api(`/api/project-content/${files.mapFile}`))
+        .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+        .then((json: LegalDocMap) => {
+          if (cancelled || !json || typeof json !== 'object') return;
+          const index = sectionPageIndex(json, !!files.textFile);
+          if (Object.keys(index).length === 0) return;
+          setLegalSectionPages(prev => ({ ...prev, [docId]: index }));
+        })
+        .catch(() => { /* no map: whole-document link, as before */ });
+    }
+    return () => { cancelled = true; };
+  }, [docRefMatcher, legalDocFiles, messages]);
   const userPrefillParams = useMemo<string | null>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1167,12 +1219,15 @@ function ChatInterface() {
     setPdfScrollTarget({ tabId: pdfTab.id, page, nonce: Date.now() });
   };
 
-  // A legal-document reference: open the legal-library tab and select that document.
-  const handleLegalRefClick = (docId: string) => {
+  // A legal-document reference: open the legal-library tab and select that
+  // document. With a page (an article citation whose page the section map knows)
+  // the library also switches to the PDF view and jumps there; without one this
+  // is the whole-document open it has always been.
+  const handleLegalRefClick = (docId: string, page?: number) => {
     if (!legalTab) return;
     setActiveTabId(legalTab.id);
     setMobileActivePanel('form');
-    setLegalSelectTarget({ docId, nonce: Date.now() });
+    setLegalSelectTarget({ docId, page, nonce: Date.now() });
   };
 
   // The two renderings of a document tab. Factored out because a merged tab
@@ -1223,7 +1278,9 @@ function ChatInterface() {
     if (!docRefMatcher) return text;
     const refUi = DOC_REF_UI[selectedLanguageCode] ?? DOC_REF_UI.en;
     const segments = docRefMatcher(text);
-    if (segments.length === 1 && !segments[0].anchor) return text;
+    // Nothing resolved at all — return the original string untouched. (A lone
+    // legal reference counts as resolved: it is a link too.)
+    if (segments.length === 1 && !segments[0].anchor && !segments[0].legalId) return text;
     return segments.map((seg, i) => {
       if (seg.anchor) {
         const anchor = seg.anchor;
@@ -1266,6 +1323,40 @@ function ChatInterface() {
       }
       if (seg.legalId) {
         const legalId = seg.legalId;
+        // An article citation whose page this document's section map confirms
+        // gets the same chip a document-tab citation gets: the reference itself
+        // opens the library's PDF view at that page, with the text edition of the
+        // document one click away. Everything else — a citation with no article,
+        // an article the map does not carry, a document with no map or no PDF, a
+        // map still in flight — falls through to the whole-document link that has
+        // always been there, so a reference is never a chip that goes nowhere.
+        const page = seg.sectionKey ? legalSectionPages[legalId]?.[seg.sectionKey] : undefined;
+        if (typeof page === 'number' && page > 0) {
+          return (
+            <span key={i} className="doc-ref-chip">
+              <a
+                href="#legal"
+                className="doc-ref-link"
+                title={refUi.openPdf}
+                onClick={(e) => { e.preventDefault(); handleLegalRefClick(legalId, page); }}
+              >
+                {seg.text}
+              </a>
+              {/* Only where a text edition exists to open; a PDF-only document
+                  has nothing behind this button but the page already on screen. */}
+              {legalDocFiles.get(legalId)?.textFile && (
+                <button
+                  type="button"
+                  className="doc-ref-alt"
+                  title={refUi.openText}
+                  onClick={() => handleLegalRefClick(legalId)}
+                >
+                  {refUi.text}
+                </button>
+              )}
+            </span>
+          );
+        }
         return (
           <a
             key={i}

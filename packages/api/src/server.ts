@@ -62,7 +62,7 @@ import {
   openReadingsIndex,
   searchReadings,
   formatSearchResults,
-  SEARCH_READINGS_TOOL,
+  searchReadingsTool,
   READINGS_MAX_RESULTS,
 } from './readings.js';
 
@@ -594,6 +594,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
     let enableFollowups = false;
     let logConversations = false;
     let readingsIndexPath: string | null = null;
+    let readingsQueryLanguage: string | null = null;
     let projectChatModel: string | null = null;
     try {
       const cfgPath = path.join(REPO_ROOT, 'projects', chatProjectSlug, 'project.json');
@@ -601,6 +602,22 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
       enableFollowups = cfg.enableFollowups === true;
       logConversations = cfg.logConversations === true;
       readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
+      // The language the corpus is WRITTEN in, when that is not the language its
+      // users ask in. haivn_eip's legal library is entirely Vietnamese, so an
+      // English question searches it across a language boundary: the BM25 half
+      // matches almost nothing, and the dense half is left to separate one Điều
+      // from four hundred on a cross-lingual similarity, which returns confident
+      // near-misses — the right decree and the wrong article. Declaring the
+      // language here makes the tool loop restate every query in it before
+      // searching, so it no longer matters what language the model searched in.
+      // A project that omits the key (ppol5013) searches exactly as it did.
+      // A language NAME, as in the `language` field, since it goes into a prompt.
+      if (typeof cfg.readingsQueryLanguage === 'string'
+          && /^[A-Za-z][A-Za-z ]{1,31}$/.test(cfg.readingsQueryLanguage.trim())) {
+        readingsQueryLanguage = cfg.readingsQueryLanguage.trim();
+      } else if (typeof cfg.readingsQueryLanguage === 'string') {
+        console.warn(`[readings] ${chatProjectSlug}: unusable readingsQueryLanguage, ignoring`);
+      }
       // Per-project chat model. gpt-4o-mini is the platform default and is right
       // for the roleplay projects; a grounded advisor that must attribute a year
       // to the correct paper needs the stronger model. Restricted to models the
@@ -765,10 +782,53 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
       : null;
     const MAX_TOOL_HOPS = 3;
 
+    // Restate a search query in the language the corpus is written in.
+    //
+    // This is enforcement, not encouragement. A system prompt can ask the model
+    // to search in Vietnamese and it will, sometimes; the times it does not are
+    // indistinguishable in the answer, because a cross-lingual search returns
+    // six real articles of the right instrument and none of them the one asked
+    // about. Normalizing here means the model's own language discipline stops
+    // mattering. Cheap model, deterministic temperature, and a failure just
+    // searches the query as written — degraded, never broken.
+    //
+    // Deliberately not logged to token_usage: like the query embedding beside
+    // it, it is a fixed sub-cent overhead on a search, and logging it under the
+    // project's chatModel would misattribute both the model and the cost.
+    const toCorpusLanguage = async (raw: string): Promise<string> => {
+      if (!readingsQueryLanguage) return raw;
+      try {
+        const restated = await chatClient.chat.completions.create({
+          model: 'gpt-4o-mini',
+          max_tokens: 200,
+          temperature: 0,
+          messages: [
+            {
+              role: 'system',
+              content:
+                `Restate the search query in ${readingsQueryLanguage}, in the vocabulary ` +
+                `an official ${readingsQueryLanguage} document would use for it. Keep every ` +
+                'instrument number, article number, date, abbreviation and proper noun exactly ' +
+                'as written. Do not answer the query, do not explain, do not add context: ' +
+                'reply with the restated query and nothing else. If it is already in ' +
+                `${readingsQueryLanguage}, reply with it unchanged.`,
+            },
+            { role: 'user', content: raw },
+          ],
+        } as any);
+        const out = (restated.choices?.[0]?.message?.content || '').trim();
+        return out ? out.slice(0, 500) : raw;
+      } catch (e) {
+        console.warn('[readings] query restatement failed; searching as written:',
+                     e instanceof Error ? e.message : e);
+        return raw;
+      }
+    };
+
     let response: any;
     for (let hop = 0; ; hop++) {
       const offerTools = readingsIndex && hop < MAX_TOOL_HOPS
-        ? [SEARCH_READINGS_TOOL] : null;
+        ? [searchReadingsTool(readingsIndex)] : null;
       response = await issue(offerTools);
       if (response.usage) usages.push({ ...response.usage, _raw: response });
 
@@ -781,10 +841,13 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
         let content: string;
         try {
           const args = JSON.parse(call.function?.arguments || '{}');
-          const searchQuery = typeof args.query === 'string' ? args.query.slice(0, 500) : '';
-          if (!searchQuery) {
+          const askedQuery = typeof args.query === 'string' ? args.query.slice(0, 500) : '';
+          if (!askedQuery) {
             content = 'search_readings requires a non-empty query string.';
           } else {
+            // Both halves of the hybrid search run over the corpus's language,
+            // so the restatement has to happen before the embedding, not after.
+            const searchQuery = await toCorpusLanguage(askedQuery);
             // Embed the query with the same model the index was built with. A
             // failure here is not fatal: search falls back to BM25 alone.
             let queryVector: Float32Array | null = null;
@@ -804,7 +867,11 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
               ? Math.min(READINGS_MAX_RESULTS, Math.max(1, args.limit)) : undefined;
             const results = searchReadings(readingsIndex, searchQuery, queryVector,
                                            { week, limit });
-            console.log(`[readings] "${searchQuery}"${week ? ` week=${week}` : ''} -> ${results.length} passages`);
+            const asked = searchQuery === askedQuery ? '' : `"${askedQuery}" -> `;
+            console.log(`[readings] ${asked}"${searchQuery}"${week ? ` week=${week}` : ''} -> ${results.length} passages`);
+            // The model is shown the query that was actually run, not the one it
+            // asked for: a "no passage matches" line naming a query nobody ran is
+            // a lie, and seeing the corpus's own wording nudges the next search.
             content = formatSearchResults(searchQuery, results);
           }
         } catch (e) {

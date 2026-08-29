@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { foldQuery, foldWithMap } from '../text-search';
-import { findScrollParent } from '../scroll-parent';
+import { findScrollParent, scrollElementIntoScroller } from '../scroll-parent';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -165,6 +165,22 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
     setActiveMatch(0);
   }, [html, debouncedQuery]);
 
+  // The single way anything in this panel moves the reader: scroll the panel's
+  // own scroller, never `el.scrollIntoView()`, which would also scroll the
+  // window. See `scrollElementIntoScroller` for why that matters here.
+  //
+  // The scroller is resolved lazily rather than read from `scrollParentRef`,
+  // whose effect is keyed on `html` and so has not necessarily run for the
+  // document being scrolled.
+  const scrollPanelTo = useCallback((target: HTMLElement, block: 'start' | 'center') => {
+    const scroller = scrollParentRef.current ?? findScrollParent(panelRef.current);
+    scrollParentRef.current = scroller;
+    // No scrolling ancestor at all: nothing to move but the window, so let the
+    // browser do it.
+    if (!scroller) { target.scrollIntoView({ behavior: 'smooth', block }); return; }
+    scrollElementIntoScroller(target, scroller, { block });
+  }, []);
+
   // The single way this panel moves to an anchor — used both by a link inside the
   // document and by a reference clicked in the chat. Resolution is scoped to this
   // panel's own body rather than the whole document: more than one DocumentPanel
@@ -174,15 +190,15 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
   const scrollToAnchor = useCallback((anchor: string) => {
     // A bare `href="#"` yields an empty anchor, and `querySelector('#')` throws.
     if (!anchor) return;
-    const target = bodyRef.current?.querySelector(`#${CSS.escape(anchor)}`);
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+    const target = bodyRef.current?.querySelector<HTMLElement>(`#${CSS.escape(anchor)}`);
+    if (target) scrollPanelTo(target, 'start');
+  }, [scrollPanelTo]);
 
   // Jump to a heading anchor asked for from outside (a document reference clicked
   // in the chat). The anchor ids are laid down by the render effect above, so they
   // are present even while this tab is hidden; the switch that reveals the tab and
   // this scroll land in the same commit, so a rAF lets the panel become visible
-  // before scrollIntoView runs. Keyed on `nonce` so re-clicking the same reference
+  // before the scroll runs. Keyed on `nonce` so re-clicking the same reference
   // scrolls again.
   useEffect(() => {
     if (!scrollTarget) return;
@@ -197,8 +213,8 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
     const marks = marksRef.current;
     marks.forEach((m, i) => m.classList.toggle('is-active', i === activeMatch));
     const current = marks[activeMatch];
-    if (current) current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [activeMatch, matchCount]);
+    if (current) scrollPanelTo(current, 'center');
+  }, [activeMatch, matchCount, scrollPanelTo]);
 
   // Track scroll on the real scrolling ancestor so a back-to-top control can appear
   // once the reader has moved a meaningful distance down a long document. Re-run when

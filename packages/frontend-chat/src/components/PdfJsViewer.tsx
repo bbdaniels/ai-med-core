@@ -5,7 +5,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 // worker is served same-origin from our own bundle — no CDN, CSP-safe.
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { foldQuery, foldWithMap } from '../text-search';
-import { findScrollParent } from '../scroll-parent';
+import { findScrollParent, scrollElementIntoScroller } from '../scroll-parent';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -504,12 +504,13 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     // whatever it sticks BELOW. Reading the header's computed `top` rather than
     // assuming zero is what keeps a jump landing correctly when this viewer is
     // one of two editions under a merged tab's switcher — the switcher owns the
-    // first 2.6rem there, and a jump that ignored it would land behind it.
+    // first 2.6rem there, and a jump that ignored it would land behind it. A page
+    // canvas carries no `scroll-margin-top` to read it off, unlike a heading in
+    // the text edition, so it is measured and passed in.
     const head = headRef.current;
     const stickyTop = head ? parseFloat(getComputedStyle(head).top) || 0 : 0;
     const headroom = (head?.offsetHeight ?? 0) + stickyTop + 8;
-    const delta = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top;
-    scrollParent.scrollTo({ top: scrollParent.scrollTop + delta + offset - headroom, behavior: 'smooth' });
+    scrollElementIntoScroller(el, scrollParent, { block: 'start', headroom, offset });
   }, [pdf, scale, scrollParent]);
 
   // An outside jump must survive the document still loading and the page

@@ -110,7 +110,7 @@ Google Doc, from a single parse per language:
 
 - `projects/haivn_eip/content/eip-text.<lang>.md` -- the "EIP Text" reader tab
 - `projects/haivn_eip/cases/eip-advisor/content.md` -- the advisor's LLM grounding text
-- `projects/haivn_eip/content/eip-<lang>.pdf` -- the "EIP PDF" tab
+- `projects/haivn_eip/content/eip-<lang>.pdf` -- the EIP tab's PDF view
 - `projects/haivn_eip/content/eip-map.<lang>.json` -- the text tab's anchors
   resolved to pages of that PDF, built by `build-jump-maps.py` on the same run
 

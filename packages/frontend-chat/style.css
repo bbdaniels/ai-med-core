@@ -787,7 +787,26 @@ body {
     min-height: 0;
 }
 
-/* PDF tab: our own pdf.js-based viewer (PdfJsViewer). Rendered rather than the
+/* pdf.js measures text-layer glyphs against a scratch canvas that it creates and
+   appends to <body> itself, tagged with this class. Its own stylesheet hides it;
+   we render our own viewer and never load that stylesheet, so the canvas kept a
+   canvas's intrinsic 300x150 box and sat in <body>'s normal flow -- making the
+   DOCUMENT ~150px taller than the viewport from the first PDF render onward. The
+   app's layout otherwise fills the viewport exactly, so that stray 150px was the
+   only thing making the window scrollable, and every `scrollIntoView` in the
+   right-hand pane then scrolled the window ~48px too, taking the tab bar off
+   screen. This is pdf.js's rule, verbatim, from
+   `node_modules/pdfjs-dist/web/pdf_viewer.css`. */
+.hiddenCanvasElement {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    display: none;
+}
+
+/* PDF view: our own pdf.js-based viewer (PdfJsViewer). Rendered rather than the
    browser's built-in viewer so in-PDF links become real <a target="_blank">
    elements and there is no outline sidebar consuming panel width. */
 .pdfjs-viewer {
@@ -796,7 +815,7 @@ body {
        stick within its containing block -- so the toolbar and find bar came
        unstuck the moment the reader scrolled past one screenful. Sizing to
        content instead lets them stay pinned for the whole document, at either
-       call site (the EIP PDF tab and the Legal Library). */
+       call site (the EIP tab's PDF view and the Legal Library). */
     flex: 1 0 auto;
     display: flex;
     flex-direction: column;

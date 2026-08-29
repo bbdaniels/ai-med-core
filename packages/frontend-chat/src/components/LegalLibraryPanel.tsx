@@ -303,17 +303,15 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
           )}
 
           {/* Only documents whose source PDF was actually saved offer the choice;
-              everything else is byte-identical to the text-only panel. */}
+              everything else is byte-identical to the text-only panel.
+
+              PDF leads, because PDF is what a document with one opens on (see
+              the effect above) -- and because the merged EIP tab's switcher is
+              this same control in the same order. A toggle whose first button is
+              not its default reads as though the reader has already changed
+              something. */}
           {pdfSrc && (
             <div className="legal-doc-view-toggle" role="group" aria-label={t.viewLabel}>
-              <button
-                type="button"
-                className={`legal-doc-view-btn${view === 'text' ? ' is-active' : ''}`}
-                aria-pressed={view === 'text'}
-                onClick={() => setView('text')}
-              >
-                {t.viewText}
-              </button>
               <button
                 type="button"
                 className={`legal-doc-view-btn${view === 'pdf' ? ' is-active' : ''}`}
@@ -321,6 +319,14 @@ export default function LegalLibraryPanel({ content, lang, selectTarget }: Legal
                 onClick={() => setView('pdf')}
               >
                 {t.viewPdf}
+              </button>
+              <button
+                type="button"
+                className={`legal-doc-view-btn${view === 'text' ? ' is-active' : ''}`}
+                aria-pressed={view === 'text'}
+                onClick={() => setView('text')}
+              >
+                {t.viewText}
               </button>
             </div>
           )}

@@ -36,3 +36,65 @@ export function findScrollParent(
   }
   return null;
 }
+
+/**
+ * Bring `el` into view by scrolling `scroller` -- and ONLY `scroller`.
+ *
+ * `el.scrollIntoView()` is the obvious call and the wrong one here, for the
+ * reason already written up in `scroll-list.ts`: it does not scroll one element,
+ * it scrolls every scrollable ancestor, the window included. This app's layout
+ * fills the viewport exactly, so for a long time the window had nothing to
+ * scroll and the difference never showed. pdf.js then broke that assumption --
+ * it appends a hidden measuring `<canvas class="hiddenCanvasElement">` to
+ * `<body>`, which without pdf.js's own stylesheet keeps a canvas's intrinsic
+ * 300x150 box and makes the document ~150px taller than the viewport. From the
+ * first PDF render on, every `scrollIntoView` in the right-hand pane also
+ * dragged the WINDOW down ~48px, taking the tab bar off screen with it. The
+ * stylesheet now carries pdf.js's rule so that document never grows; asking only
+ * the scroller to move is the other half, and the half that holds even if some
+ * future dependency does the same thing again.
+ *
+ * `headroom` is the unusable strip at the top of the scrollport -- a sticky
+ * header, plus whatever it sticks below. It defaults to the target's own
+ * `scroll-margin-top`, which is exactly what `scrollIntoView` would have
+ * honoured, so CSS stays the single place that offset is declared. Callers whose
+ * targets carry no scroll-margin (a PDF page canvas) pass a measured value
+ * instead. `offset` is an extra distance INTO the target -- the y of a line
+ * within a page.
+ */
+export function scrollElementIntoScroller(
+  el: HTMLElement,
+  scroller: HTMLElement,
+  options?: {
+    block?: 'start' | 'center';
+    headroom?: number;
+    offset?: number;
+    behavior?: ScrollBehavior;
+  },
+): void {
+  const block = options?.block ?? 'start';
+  const offset = options?.offset ?? 0;
+  const behavior = options?.behavior ?? 'smooth';
+
+  const style = getComputedStyle(el);
+  const marginTop = parseFloat(style.scrollMarginTop) || 0;
+  const marginBottom = parseFloat(style.scrollMarginBottom) || 0;
+  const headroom = options?.headroom ?? marginTop;
+
+  // Where the target sits inside the scroller's content, in the scroller's own
+  // scroll coordinates. Both rects are viewport-relative, so their difference is
+  // independent of how far either has already been scrolled.
+  const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  const top =
+    block === 'center'
+      ? // Same landing as scrollIntoView's `block: 'center'`: the centre of the
+        // target's scroll-margin box aligned with the centre of the scrollport.
+        scroller.scrollTop + delta + offset - marginTop +
+        (el.offsetHeight + marginTop + marginBottom) / 2 -
+        scroller.clientHeight / 2
+      : scroller.scrollTop + delta + offset - headroom;
+
+  // scrollTo clamps to the scrollable range on its own, so a target near either
+  // end needs no special case.
+  scroller.scrollTo({ top, behavior });
+}

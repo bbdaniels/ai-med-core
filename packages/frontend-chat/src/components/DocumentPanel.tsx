@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { foldQuery, foldWithMap } from '../text-search';
 import { findScrollParent, scrollElementIntoScroller } from '../scroll-parent';
+import { BackToTopIcon, useScrolledPastThreshold } from '../back-to-top';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -47,10 +48,6 @@ const UI: Record<string, { placeholder: string; prev: string; next: string; clea
 // the PDF viewer) locates it by overflow behavior rather than a hardcoded class,
 // so the back-to-top control keeps working if the surrounding markup is
 // restructured.
-
-// How far the reader must scroll before the back-to-top control appears (roughly a
-// screenful), so it stays out of the way near the top of a document.
-const BACK_TO_TOP_THRESHOLD = 320;
 
 /**
  * Wrap every occurrence of `query` in the panel's text nodes with a <mark>.
@@ -219,15 +216,17 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
   // Track scroll on the real scrolling ancestor so a back-to-top control can appear
   // once the reader has moved a meaningful distance down a long document. Re-run when
   // `html` changes so a language switch (which swaps the document) re-syncs visibility.
-  useEffect(() => {
-    const scroller = findScrollParent(panelRef.current);
-    scrollParentRef.current = scroller;
-    if (!scroller) return;
-    const onScroll = () => setShowBackToTop(scroller.scrollTop > BACK_TO_TOP_THRESHOLD);
-    onScroll(); // sync now in case the reader is already scrolled down
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [html]);
+  // The threshold and the sampling live in `../back-to-top`, shared with the PDF
+  // edition of the same tab.
+  useScrolledPastThreshold(
+    () => {
+      const scroller = findScrollParent(panelRef.current);
+      scrollParentRef.current = scroller;
+      return scroller;
+    },
+    setShowBackToTop,
+    [html],
+  );
 
   const scrollToTop = () => {
     scrollParentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -317,10 +316,7 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
           aria-label={t.backToTop}
           title={t.backToTop}
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <path d="M8 3.5v9" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            <path d="M4 7l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <BackToTopIcon />
         </button>
       </div>
       <div

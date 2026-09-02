@@ -40,6 +40,14 @@ export interface ReadingChunk {
   pageEnd: number;
   /** Weeks this reading is assigned, from the manifest. */
   weeks: Array<{ date: string; topic: string; term: string; reference: boolean }>;
+  /**
+   * A passage-level staleness note the corpus attached to this chunk: text that
+   * is out of date even though the document carrying it is in force, keyed by
+   * language code. Null on almost every chunk, and on every chunk of an index
+   * built before the column existed. See `supersededPassages` in haivn_eip's
+   * legal registry.
+   */
+  notice: Record<string, string> | null;
   header: string;
   text: string;
   score: number;
@@ -64,6 +72,14 @@ interface OpenIndex {
    * nothing. See searchReadingsTool.
    */
   hasWeeks: boolean;
+  /**
+   * Whether this index carries the `chunks.notice` column. Both builders write
+   * it now, but an index built before it existed is still a valid index -- the
+   * PPOL one is not committed and is uploaded rather than rebuilt on deploy --
+   * so the column is read only where it is present rather than made a hard
+   * requirement that would take retrieval down entirely.
+   */
+  hasNotice: boolean;
   mtimeMs: number;
   filePath: string;
 }
@@ -140,9 +156,12 @@ export function openReadingsIndex(repoRoot: string, projectSlug: string,
         "SELECT COUNT(*) AS n FROM documents WHERE weeks IS NOT NULL AND TRIM(weeks) NOT IN ('', '[]')",
       ).get() as { n?: number } | undefined)?.n ?? 0,
     );
+    const hasNotice = (db.prepare('PRAGMA table_info(chunks)').all() as
+                       Array<{ name: string }>).some(c => c.name === 'notice');
     const opened: OpenIndex = {
       db, dim, hasVectors: embedded > 0 && dim > 0,
       hasWeeks: scheduled > 0,
+      hasNotice,
       mtimeMs: stat.mtimeMs, filePath,
     };
     openIndexes.set(projectSlug, opened);
@@ -223,10 +242,12 @@ interface ChunkRow {
   title: string;
   venue: string | null;
   weeks: string;
+  notice: string | null;
 }
 
-const CHUNK_SELECT = `
+const chunkSelect = (index: OpenIndex) => `
   SELECT c.id, c.doc_id, c.section, c.page_start, c.page_end, c.header, c.text,
+         ${index.hasNotice ? 'c.notice' : 'NULL AS notice'},
          d.authors, d.author_short, d.year, d.title, d.venue, d.weeks
   FROM chunks c JOIN documents d ON d.id = c.doc_id
 `;
@@ -263,7 +284,7 @@ export function searchReadings(index: OpenIndex, query: string,
   if (fts) {
     try {
       const lexical = index.db.prepare(
-        `${CHUNK_SELECT} JOIN chunks_fts f ON f.rowid = c.id
+        `${chunkSelect(index)} JOIN chunks_fts f ON f.rowid = c.id
          WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts, 2.0, 1.0) LIMIT ?`,
       ).all(fts, CANDIDATE_POOL) as ChunkRow[];
       addRanking(lexical);
@@ -290,7 +311,7 @@ export function searchReadings(index: OpenIndex, query: string,
       const top = scored.slice(0, CANDIDATE_POOL);
       const placeholders = top.map(() => '?').join(',');
       const fetched = index.db.prepare(
-        `${CHUNK_SELECT} WHERE c.id IN (${placeholders})`,
+        `${chunkSelect(index)} WHERE c.id IN (${placeholders})`,
       ).all(...top.map(t => t.id)) as ChunkRow[];
       const byId = new Map(fetched.map(r => [r.id, r]));
       addRanking(top.map(t => byId.get(t.id)).filter((r): r is ChunkRow => !!r));
@@ -336,6 +357,7 @@ export function searchReadings(index: OpenIndex, query: string,
       pageStart: row.page_start,
       pageEnd: row.page_end,
       weeks,
+      notice: parseNotice(row.notice),
       header: row.header,
       text: row.text,
       score,
@@ -363,18 +385,94 @@ export function listReadings(index: OpenIndex): Array<{
 }
 
 /**
+ * A chunk's notice column, as a language-keyed record.
+ *
+ * The builders write a JSON object of language code to text. A plain string is
+ * accepted too, as one English notice, so an index built before the column was
+ * bilingual still renders rather than throwing inside a tool call.
+ */
+function parseNotice(raw: string | null): Record<string, string> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === 'string' && v.trim()) out[k] = v;
+      }
+      return Object.keys(out).length ? out : null;
+    }
+  } catch { /* not JSON: an older index wrote the text directly */ }
+  return { en: raw };
+}
+
+/**
+ * The language code to render a notice in, from the language NAME the chat
+ * request carries ("English", "Tiếng Việt", "Vietnamese").
+ *
+ * A notice is an instruction to the model about the passage above it, so it is
+ * written in the language the answer is being written in and only that one:
+ * shipping every language on every search doubled the cost of the annotation
+ * for no reading the model was going to do. Unknown or absent falls back to
+ * English, which every notice carries.
+ */
+const NOTICE_LANGUAGE_PATTERNS: Array<[string, RegExp]> = [
+  ['vi', /^(vi|vie|vietnamese|tieng viet)\b/],
+];
+
+export function noticeLanguage(language?: string | null): string {
+  const norm = (language ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!norm) return 'en';
+  for (const [code, pattern] of NOTICE_LANGUAGE_PATTERNS) {
+    if (pattern.test(norm)) return code;
+  }
+  return 'en';
+}
+
+function noticeText(notice: Record<string, string>, code: string): string | null {
+  return notice[code] ?? notice.en ?? Object.values(notice)[0] ?? null;
+}
+
+/**
  * Render results as the tool message the model reads.
  *
  * Every passage carries its own citation line, so the model never has to infer
  * which reading a passage came from -- the single most common way a grounded
  * answer ends up attributed to the wrong author.
  */
-export function formatSearchResults(query: string, results: ReadingChunk[]): string {
+export function formatSearchResults(
+  query: string,
+  results: ReadingChunk[],
+  options: { language?: string | null } = {},
+): string {
   if (!results.length) {
     return `No passage in the indexed course readings matches "${query}". Say so ` +
            'plainly rather than answering from general knowledge, and if the topic ' +
            'is assigned in a week whose reading is not indexed, point the student there.';
   }
+  // A notice is a property of the ANNOTATION, not of each row that matched it,
+  // and one annotation routinely covers several passages of the same document.
+  // Emitting it per passage repeated the identical block up to five times in
+  // one tool result -- measured at 38% of the payload, and paid for on every
+  // search of a deployment running under a monthly credit cap. So each distinct
+  // notice is printed once, above the passages, naming which ones it covers.
+  const lang = noticeLanguage(options.language);
+  const notices: string[] = [];
+  const noticeOf = new Map<number, number>();
+  results.forEach((r, i) => {
+    const text = r.notice ? noticeText(r.notice, lang) : null;
+    if (!text) return;
+    let at = notices.indexOf(text);
+    if (at === -1) { notices.push(text); at = notices.length - 1; }
+    noticeOf.set(i, at);
+  });
+  const covered = notices.map((_, n) =>
+    [...noticeOf.entries()].filter(([, v]) => v === n).map(([i]) => i + 1));
+  const noticeBlocks = notices.map((text, n) =>
+    `NOTICE ${n + 1}, on passage${covered[n].length > 1 ? 's' : ''} ` +
+    `${covered[n].join(', ')}: ${text}`);
+
   const blocks = results.map((r, i) => {
     const year = r.year ? ` ${r.year}` : '';
     // Page 0 means the source has no pages to cite -- a spreadsheet row, an
@@ -388,16 +486,22 @@ export function formatSearchResults(query: string, results: ReadingChunk[]): str
     const section = r.section ? `section: ${r.section}` : '';
     const location = [pages, section, week.replace(/^ \| /, '')]
       .filter(Boolean).join(' | ');
+    // The pointer stays on the passage even though the text sits above it: the
+    // document can be in force while the passage's rule has been converted, and
+    // an answer that quotes the passage has to carry the correction with it.
+    const n = noticeOf.get(i);
     return [
       `--- passage ${i + 1} ---`,
       `CITE AS: ${r.authorShort}${year}`,
       `Full title: ${r.title}${r.venue ? ` (${r.venue})` : ''}`,
       ...(location ? [`Location: ${location}`] : []),
+      ...(n === undefined ? [] : [`NOTICE ${n + 1} above applies to this passage.`]),
       '',
       r.text,
     ].join('\n');
   });
   return `Passages from the indexed course materials matching "${query}":\n\n` +
+         (noticeBlocks.length ? `${noticeBlocks.join('\n\n')}\n\n` : '') +
          blocks.join('\n\n');
 }
 

@@ -63,11 +63,19 @@ rather than invented:
     weeks         "[]" -- a course-schedule concept with no legal analogue.
                   Empty is what keeps readings.ts from printing an "assigned"
                   clause it cannot mean here.
+    notice        (on chunks) the staleness note the registry attaches to a
+                  passage through `supersededPassages`, as a JSON object of
+                  language code to text, set on every chunk that states a
+                  restriction in the superseded vocabulary. readings.ts selects
+                  the answer language's copy and prints it once per search.
+                  NULL on every other chunk, and on every chunk of the PPOL
+                  index, whose builder never sets it.
 """
 
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import re
@@ -86,6 +94,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_DIR = REPO_ROOT / "projects" / "haivn_eip" / "content" / "legal"
 REGISTRY = LEGAL_DIR / "registry.json"
 DB_PATH = LEGAL_DIR / "legal-corpus.db"
+# Where the build happens; `DB_PATH` is only ever written by a rename. Same
+# directory, because a rename is only atomic within one filesystem.
+BUILD_PATH = LEGAL_DIR / "legal-corpus.db.build"
 
 # The query embedding is issued by packages/api/src/server.ts with the model id
 # hardcoded there. A different model here would produce vectors of a different
@@ -124,19 +135,58 @@ def est_tokens(text: str) -> int:
 # Vietnamese legal instruments head an article "Điều 40." -- number, then a
 # period. The period is load-bearing: "Điều 28 của Luật" and "Điều 12 Nghị định
 # này" are mid-sentence cross-references, and the extractor's paragraph
-# unwrapping can leave either at the start of a line. Requiring the period, and
-# then requiring the numbering to make sense, is what separates a heading from a
-# citation.
-
-DIEU_RE = re.compile(r"^Điều\s+(\d+)\s*([a-zA-ZđĐ]?)\s*\.")
-PHU_LUC_RE = re.compile(r"^(?:PHỤ\s+LỤC|Phụ\s+lục|PHU\s+LUC|Phu\s+luc)\s+([IVXLC]+|\d+)\b")
-CHUONG_RE = re.compile(r"^(?:CHƯƠNG|Chương)\s+([IVXLC]+|\d+)\b")
-MUC_RE = re.compile(r"^(?:MỤC|Mục)\s+(\d+)\b")
-PHAN_RE = re.compile(r"^(?:PHẦN|Phần)\s+([IVXLC]+|\d+)\b")
+# unwrapping can leave either at the start of a line. Telling those apart is
+# `build-jump-maps.parse_heading_parts`, and this file does not do it a second
+# time -- see the note under `jump_maps()`.
 
 # Keys in maps/<id>.json are slugs of the same headings: dieu-5, chuong-2,
 # muc-1, phu-luc-3.
 KEY_RE = re.compile(r"^(dieu|chuong|muc|phu-luc|phan)-([0-9a-z]+)$")
+
+# The heading GRAMMAR and the heading LABEL both live in
+# `tools/build-jump-maps.py`, and are borrowed rather than copied. The maps that
+# file writes are this builder's authority on which sections exist and what they
+# are called, so a second reading of the same line is a divergence waiting to
+# happen -- and it happened twice.
+#
+# The LABEL first: `nd-188-2025-nd-cp`'s publisher transcription prints
+# `Chương I` and `QUY ĐỊNH CHUNG` as two paragraphs, the map joined them into one
+# label, this file did not, every one of the twelve chapter labels failed to
+# match, and 132 chunks lost their `Chương ... > Điều ...` location.
+#
+# Then the GRAMMAR, which was left behind as a local `classify()` when the label
+# was fixed. The two regex sets disagreed on 77 lines of this corpus. Two of
+# them cost a map section outright -- `tt-30`'s `Điểu 5.` and `tt-43`'s
+# `Điêu 6.`, publisher typos that `heading_form` normalises and a literal
+# `^Điều` pattern does not. Three were worse because nothing reported them:
+# `luat-15` spells three of its `Mục` headings in decomposed (NFD) Unicode,
+# which a composed `^Mục` pattern cannot match at all, so `Điều 48` was filed
+# under the chapter instead of under `Mục 1 GIẤY PHÉP HOẠT ĐỘNG KHÁM BỆNH,
+# CHỮA BỆNH` and no unmatched count went up. One grammar, in one file.
+_JUMP_MAPS = None
+
+
+def jump_maps():
+    """`tools/build-jump-maps.py` as a module, loaded on first use (a hyphen is
+    not a legal module name, so it cannot simply be imported)."""
+    global _JUMP_MAPS
+    if _JUMP_MAPS is None:
+        import importlib.util  # noqa: PLC0415 - only this one function needs it
+
+        spec = importlib.util.spec_from_file_location(
+            "build_jump_maps", Path(__file__).with_name("build-jump-maps.py"))
+        if spec is None or spec.loader is None:
+            sys.exit("error: cannot load tools/build-jump-maps.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _JUMP_MAPS = mod
+    return _JUMP_MAPS
+
+
+# The vocabulary `parse_heading_parts` is asked about here. The order is the
+# order it tries the kinds in, and `dieu` leads because it is the overwhelming
+# majority of every document's headings.
+LABEL_KINDS = ("dieu", "phu-luc", "chuong", "muc", "phan")
 
 ANNEX_KIND = "annex"
 CONTAINER_KINDS = {"chuong", "muc", "phan"}
@@ -236,19 +286,9 @@ def norm(s: str) -> str:
 # Markdown furniture, and the opening quotation mark an amending law puts in
 # front of the article it is substituting ("Điều 7. ... " inside 51/2024/QH15).
 LEAD_CHARS = "#>*_ \t“”‘’\"'"
-
-
-def classify(line: str) -> tuple[str, str] | None:
-    """(kind, number) when this line is a heading, else None."""
-    m = DIEU_RE.match(line)
-    if m:
-        return "dieu", (m.group(1) + m.group(2).lower())
-    for kind, rx in (("phu-luc", PHU_LUC_RE), ("chuong", CHUONG_RE),
-                     ("muc", MUC_RE), ("phan", PHAN_RE)):
-        m = rx.match(line)
-        if m:
-            return kind, m.group(1).lower()
-    return None
+# An emphasis run anywhere in a line. `_` only where it is not inside a word,
+# so an identifier is left alone.
+EMPHASIS_MARKS = re.compile(r"\*+|(?<![0-9A-Za-zÀ-ỹ])_+(?![0-9A-Za-zÀ-ỹ])")
 
 
 def strip_front_matter(text: str) -> str:
@@ -285,15 +325,31 @@ def vietnamese(text: str) -> bool:
 
 
 def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str]]:
-    """Every line that reads as a heading: (line index, kind, number, clean text)."""
+    """Every line that reads as a heading: (line index, kind, number, label).
+
+    Both the grammar and the label are `build-jump-maps.py`'s, so a line reads
+    here exactly as it reads in the map this text is matched against -- down to
+    the bare marker whose title is printed on the line under it (`Chương I` /
+    `QUY ĐỊNH CHUNG`, which is how the aggregator editions set a chapter).
+
+    The number keeps its lettered variant (`48b`), which the map keys never
+    carry: an amending law's inserted article is not the article it was inserted
+    after, and pass 2 matches these numbers against the keys by string.
+    """
+    jm = jump_maps()
     out: list[tuple[int, str, str, str]] = []
     for i, raw in enumerate(lines):
         line = raw.lstrip(LEAD_CHARS).strip()
-        if not line:
+        # A line the source wrote as a list item is a contents entry, not the
+        # section it names -- see `jump_maps.list_bullet` for why this builder
+        # refuses one and the map builder does not.
+        if not line or jm.list_bullet(raw):
             continue
-        found = classify(line)
-        if found:
-            out.append((i, found[0], found[1], line))
+        hit = jm.parse_heading_parts(line, LABEL_KINDS)
+        if hit:
+            kind, number, suffix, title = hit
+            out.append((i, kind, f"{number}{suffix}",
+                        jm.heading_label(lines, i, line, title, LABEL_KINDS)))
     return out
 
 
@@ -419,7 +475,18 @@ def markers_from_headings(lines: list[str]) -> list[Marker]:
 
 
 def clean_line(raw: str) -> str:
-    return re.sub(r"\s+", " ", raw.lstrip(LEAD_CHARS)).strip()
+    """One line with its Markdown furniture taken off.
+
+    Emphasis goes from anywhere in the line, not just its front. This line
+    becomes a chunk's `section`, `readings.ts` writes that verbatim into the
+    `Location:` the advisor reads an article number off, and the advisor is
+    instructed to answer with no markdown in it -- so a `**` that survives here
+    is a marker the model is handed and told not to write. A heading whose text
+    is bold end to end loses the markers to `LEAD_CHARS` on the left and kept
+    them on the right; an attachment title with a bold name and an italic
+    parenthetical after it kept them in the middle.
+    """
+    return re.sub(r"\s+", " ", EMPHASIS_MARKS.sub("", raw.lstrip(LEAD_CHARS))).strip()
 
 
 def annex_heading(line: str) -> bool:
@@ -695,7 +762,8 @@ CREATE TABLE chunks (
   page_end    INTEGER NOT NULL,
   header      TEXT NOT NULL,     -- contextual prefix, indexed alongside the body
   text        TEXT NOT NULL,
-  tokens      INTEGER NOT NULL
+  tokens      INTEGER NOT NULL,
+  notice      TEXT               -- passage-level staleness note; NULL for most chunks
 );
 CREATE INDEX idx_chunks_doc ON chunks(doc_id);
 
@@ -720,6 +788,123 @@ def pick(value, lang: str = "en") -> str:
     return (value or "").strip() if isinstance(value, str) else ""
 
 
+# ── passage-level staleness ──────────────────────────────────────────────
+#
+# `status` describes a whole instrument, and for these documents it is right:
+# Decision 4531/QĐ-BYT is in force, and Circular 35/2016/TT-BYT has no repeal
+# statement anyone has read. What is NOT current in either is the facility
+# classification their text uses -- hạng I/II/III and tuyến, replaced from
+# 01/01/2025 by cấp ban đầu / cấp cơ bản / cấp chuyên sâu. A retrieved chunk
+# used to arrive at the model reading "Validity: In force" with nothing to say
+# its rule had been converted, and the model restated a 2021 restriction as
+# today's rule however the system prompt was worded. The signal belongs on the
+# passage, so the registry carries `supersededPassages` and every matching chunk
+# carries its notice into the tool result. Two things keep that true rather than
+# merely loud: the note comes in two tiers, so a passage that only uses the old
+# vocabulary is not told it states a restriction it does not state (see
+# passage_notices), and the shared paragraph is written once in the registry's
+# `passageNotices` topic block rather than copied per document.
+#
+# The notice is stored on the chunk and NOT written into the header, the FTS row
+# or the embedding input. It is an editorial annotation, not text of the
+# instrument: indexing it would make old-scheme passages retrievable on the new
+# scheme's vocabulary, which is the opposite of what this is for.
+
+
+def passage_notices(registry: dict, doc: dict) -> list[tuple[dict, dict[str, str], dict[str, str]]]:
+    """Compile a document's `supersededPassages` into (topic, base, full) notices.
+
+    The topic -- terms, superseding instruments, evidence, and the shared notice
+    body -- is defined ONCE in the registry's `passageNotices` block. A document
+    contributes only the closing sentence that is true of its own text. Writing
+    the shared paragraph out per document is how two annotations of one fact
+    drift apart the first time the framework wording is corrected, so it is
+    written once here and composed per language at build time.
+
+    Two notices come back per topic, and the difference between them is what
+    keeps the annotation honest:
+
+    `base` is attached to any passage that describes facilities in the
+    superseded scheme, and says only that. It has to reach that far: the 2021
+    situation analysis in qd-4531-2021 reports where hepatitis C treatment
+    happens by administrative line, and an unannotated copy of it is read back
+    as today's position.
+
+    `full` adds the restriction sentence and the document's closing, and is
+    attached only where a restriction term sits beside the classification term.
+    Those are the sentences that would be false of a passage merely naming a
+    provincial unit, which is what they were attached to before.
+    """
+    topics = registry.get("passageNotices") or {}
+    compiled: list[tuple[dict, dict[str, str], dict[str, str]]] = []
+    for entry in doc.get("supersededPassages") or []:
+        topic = topics.get(entry.get("topic"))
+        if not topic:
+            print(f"    warning: unknown passage-notice topic "
+                  f"{entry.get('topic')!r}; skipped")
+            continue
+        base: dict[str, str] = {}
+        full: dict[str, str] = {}
+        for lang in ("en", "vi"):
+            body = pick(topic.get("notice"), lang)
+            if not body:
+                continue
+            base[lang] = body
+            full[lang] = " ".join(x for x in (
+                body,
+                pick(topic.get("restrictionNotice"), lang),
+                pick(entry.get("closing"), lang),
+            ) if x)
+        if base:
+            compiled.append((topic, base, full))
+    return compiled
+
+
+def states_restriction(topic: dict, text: str) -> bool:
+    """Whether this chunk states a restriction in the superseded vocabulary.
+
+    A classification term alone is not enough for the restriction tier and must
+    not become enough. On qd-4531-2021, matching "tuyến tỉnh" anywhere put a
+    payment-restriction sentence on 31 chunks -- a safe-delivery-package
+    distribution list, a blood-donation outreach plan, the national reference
+    laboratory -- none of which contains one. Requiring a restriction term
+    within `proximityChars` leaves exactly the two chunks that do, and all
+    twelve of tt-35-2016-tt-byt's grade-expressed payment conditions.
+    """
+    hay = text.casefold()
+    window = int(topic.get("proximityChars") or 200)
+    cls_pos = [m.start() for t in (topic.get("classificationTerms") or [])
+               for m in re.finditer(re.escape(t.casefold()), hay)]
+    res_pos = [m.start() for t in (topic.get("restrictionTerms") or [])
+               for m in re.finditer(re.escape(t.casefold()), hay)]
+    return any(abs(a - b) <= window for a in cls_pos for b in res_pos)
+
+
+def uses_classification(topic: dict, text: str) -> bool:
+    hay = text.casefold()
+    return any(t.casefold() in hay
+               for t in (topic.get("classificationTerms") or []))
+
+
+def notice_for(notices, text: str) -> str | None:
+    """The notice matching this chunk, as the JSON readings.ts reads, or None.
+
+    Both languages are stored; `readings.ts` selects the one the answer is being
+    written in, so a bilingual advisor does not pay for the other copy on every
+    search.
+    """
+    hits = [full if states_restriction(topic, text) else base
+            for topic, base, full in notices if uses_classification(topic, text)]
+    if not hits:
+        return None
+    merged: dict[str, str] = {}
+    for lang in ("en", "vi"):
+        parts = [h[lang] for h in hits if h.get(lang)]
+        if parts:
+            merged[lang] = "\n\n".join(parts)
+    return json.dumps(merged, ensure_ascii=False)
+
+
 def build(args: argparse.Namespace) -> int:
     if not REGISTRY.exists():
         print(f"error: registry not found at {REGISTRY}", file=sys.stderr)
@@ -729,13 +914,64 @@ def build(args: argparse.Namespace) -> int:
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     env = load_env()
 
+    # The index is built beside the tracked file and moved onto it at the very
+    # end, in one rename. A build takes minutes -- the embedding pass alone is
+    # 2,000 chunks over the network -- and writing in place means an interrupted
+    # run leaves a HALF-BUILT database under the tracked name, which is exactly
+    # what shipped once: 2,051 chunks, 448 embeddings, an empty `meta`, and
+    # `readings.ts` reading `embedded_chunks` as 0 and silently serving the
+    # advisor BM25-only. Nothing about that file looks broken. A rename either
+    # happens or does not, so the tracked index is always a complete build, and
+    # the `-wal`/`-shm` an interrupted run strands are stranded beside the temp
+    # name (gitignored) rather than beside the database.
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    for stale in (DB_PATH, DB_PATH.with_name(DB_PATH.name + "-wal"),
+
+    # Two builds at once destroy each other, silently and expensively. Both
+    # write the same BUILD_PATH, so the second one's first act is to unlink the
+    # first one's file; the first then keeps inserting into an unlinked inode
+    # until SQLite notices the file has moved and turns the connection
+    # read-only, and the run dies at the meta INSERT with "attempt to write a
+    # readonly database" AFTER paying for every embedding. What it leaves in the
+    # tree is an index whose embeddings table is a fraction of its chunks and
+    # whose meta table is empty -- which readings.ts reads as a valid BM25-only
+    # index and serves, so retrieval quietly loses its dense half with nothing
+    # in the log to say so. Observed twice on 2026-09-02. So a build takes an
+    # exclusive lock and a second one refuses to start.
+    lock_path = BUILD_PATH.with_name(BUILD_PATH.name + ".lock")
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        holder = ""
+        try:
+            holder = lock_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+        alive = False
+        if holder.isdigit():
+            try:
+                os.kill(int(holder), 0)
+                alive = True
+            except (OSError, ProcessLookupError):
+                alive = False
+        if alive:
+            print(f"error: another build of this index is running (pid {holder}). "
+                  f"Wait for it to finish rather than racing it.", file=sys.stderr)
+            return 2
+        print(f"  note: clearing a stale build lock left by pid {holder or '?'}")
+        lock_path.unlink()
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    os.write(lock_fd, str(os.getpid()).encode())
+    os.close(lock_fd)
+    atexit.register(lambda: lock_path.exists() and lock_path.unlink())
+
+    for stale in (BUILD_PATH, BUILD_PATH.with_name(BUILD_PATH.name + "-wal"),
+                  BUILD_PATH.with_name(BUILD_PATH.name + "-shm"),
+                  DB_PATH.with_name(DB_PATH.name + "-wal"),
                   DB_PATH.with_name(DB_PATH.name + "-shm")):
         if stale.exists():
             stale.unlink()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(BUILD_PATH)
     conn.executescript(SCHEMA)
 
     indexed: list[tuple[str, str, int, int, int, str]] = []
@@ -802,6 +1038,9 @@ def build(args: argparse.Namespace) -> int:
         dates = ", ".join(x for x in [
             f"issued {issue_date}" if issue_date else "",
             f"effective {effective}" if effective else ""] if x)
+        notices = passage_notices(registry, doc)
+        annotated = 0
+        restricted = 0
         for ordinal, chunk in enumerate(res.chunks):
             where = chunk.section
             if chunk.parts > 1:
@@ -839,12 +1078,17 @@ def build(args: argparse.Namespace) -> int:
                 + f"Full title: \"{title_en}\"" + (f" ({title_vi})" if title_vi else "")
                 + (f". What this instrument covers: {scope_en}" if scope_en else "")
             )
+            notice = notice_for(notices, chunk.text)
+            if notice:
+                annotated += 1
+                if any(states_restriction(t, chunk.text) for t, _, _ in notices):
+                    restricted += 1
             tokens = est_tokens(header + chunk.text)
             conn.execute(
                 "INSERT INTO chunks (id, doc_id, ordinal, section, page_start, "
-                "page_end, header, text, tokens) VALUES (?,?,?,?,?,?,?,?,?)",
+                "page_end, header, text, tokens, notice) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (next_id, doc_id, ordinal, where, chunk.page, chunk.page,
-                 header, chunk.text, tokens),
+                 header, chunk.text, tokens, notice),
             )
             conn.execute("INSERT INTO chunks_fts (rowid, header, text) VALUES (?,?,?)",
                          (next_id, header, chunk.text))
@@ -855,7 +1099,13 @@ def build(args: argparse.Namespace) -> int:
                         res.duplicates, res.source))
         print(f"  {doc_id} ({number}): {len(res.chunks)} chunks "
               f"[{res.source}, {res.unmatched_sections} unmatched, "
-              f"{res.duplicates} duplicate, {res.language}]")
+              f"{res.duplicates} duplicate, {res.language}"
+              + (f", {annotated} passage-notice ({restricted} restriction)"
+                 if notices else "") + "]")
+        if notices and not annotated:
+            print(f"    warning: {doc_id} declares supersededPassages but no chunk "
+                  f"matched its terms -- check the topic's classificationTerms "
+                  f"and restrictionTerms against the text")
 
     conn.commit()
 
@@ -908,10 +1158,11 @@ def build(args: argparse.Namespace) -> int:
     conn.execute("PRAGMA journal_mode = DELETE")
     conn.execute("VACUUM")
     conn.close()
-    for stale in (DB_PATH.with_name(DB_PATH.name + "-wal"),
-                  DB_PATH.with_name(DB_PATH.name + "-shm")):
+    for stale in (BUILD_PATH.with_name(BUILD_PATH.name + "-wal"),
+                  BUILD_PATH.with_name(BUILD_PATH.name + "-shm")):
         if stale.exists():
             stale.unlink()
+    os.replace(BUILD_PATH, DB_PATH)
 
     print("\n" + "=" * 68)
     print(f"Index:      {DB_PATH.relative_to(REPO_ROOT)} "

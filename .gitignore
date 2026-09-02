@@ -106,3 +106,16 @@ projects/ppol5013/content/readings/readings.db-shm
 projects/ppol5013/content/readings/text/
 # Cached OCR page text -- reading text, same rules as the index itself.
 projects/ppol5013/content/readings/ocr-cache/
+
+# haivn_eip legal index: the database itself IS tracked (public government
+# instruments, already shipped here as text and PDF), but SQLite's sidecars and
+# the temp file tools/build-legal-corpus.py builds into are not. A reader that
+# opens the tracked db can leave a -wal/-shm beside it, and an interrupted build
+# leaves the .build file; neither is anybody's edit, and both would otherwise be
+# staged by `git add -A`.
+projects/haivn_eip/content/legal/legal-corpus.db-wal
+projects/haivn_eip/content/legal/legal-corpus.db-shm
+projects/haivn_eip/content/legal/legal-corpus.db.build
+projects/haivn_eip/content/legal/legal-corpus.db.build-wal
+projects/haivn_eip/content/legal/legal-corpus.db.build-shm
+projects/haivn_eip/content/legal/legal-corpus.db.build.lock

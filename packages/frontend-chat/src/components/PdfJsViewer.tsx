@@ -6,6 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { foldQuery, foldWithMap } from '../text-search';
 import { findScrollParent, scrollElementIntoScroller } from '../scroll-parent';
+import { BackToTopIcon, useScrolledPastThreshold } from '../back-to-top';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -22,10 +23,17 @@ interface PdfJsViewerProps {
   jumpTarget?: { page: number; nonce: number } | null;
 }
 
+// Every string this viewer paints, in the languages the app offers. It lives here
+// rather than in each project's languages.json for the same reason App.tsx's
+// PDF_TAB_UI and DUAL_VIEW_UI do: the viewer is project-agnostic chrome, mounted
+// by the EIP tab AND by the Legal Library (which has no project languages.json
+// to read from), so one map is the only place all of its callers share.
 const FIND_UI: Record<string, {
   placeholder: string; prev: string; next: string; clear: string;
   noMatch: string; reading: string; noText: string;
   loading: string; failed: string; openNewTab: string;
+  outline: string; expand: string; collapse: string;
+  backToTop: string; returnBack: string;
 }> = {
   en: {
     placeholder: 'Search this PDF',
@@ -38,6 +46,11 @@ const FIND_UI: Record<string, {
     loading: 'Loading document…',
     failed: 'Could not display the PDF here.',
     openNewTab: 'Open it in a new tab ↗',
+    outline: 'Contents',
+    expand: 'Show subsections',
+    collapse: 'Hide subsections',
+    backToTop: 'Back to top',
+    returnBack: 'Back to where you were',
   },
   vi: {
     placeholder: 'Tìm trong tệp PDF',
@@ -50,6 +63,11 @@ const FIND_UI: Record<string, {
     loading: 'Đang tải tài liệu…',
     failed: 'Không hiển thị được tệp PDF ở đây.',
     openNewTab: 'Mở trong tab mới ↗',
+    outline: 'Mục lục',
+    expand: 'Hiện các mục con',
+    collapse: 'Ẩn các mục con',
+    backToTop: 'Về đầu trang',
+    returnBack: 'Quay lại vị trí trước',
   },
 };
 
@@ -57,6 +75,12 @@ const FIND_UI: Record<string, {
 // expensive to paint, so the scan stops once it has found more than a reader
 // could plausibly step through.
 const MAX_MATCHES = 1000;
+
+// Below this the reader is close enough to where a jump would land (or to the top
+// of the document) that "return" has nowhere to take them, so the slot stays empty
+// rather than offering a trip of a few pixels.
+const RETURN_MIN_OFFSET = 24;
+const RETURN_MIN_DELTA = 48;
 
 // The scrolling ancestor is the tab panel (overflow-y:auto), not the window — the
 // same container DocumentPanel scrolls, and `findScrollParent` is shared with it.
@@ -426,10 +450,100 @@ function PdfPage({ pdf, pageNumber, scale, root, registerPage, resolveDest, onNa
   );
 }
 
+// ---------------------------------------------------------------------------
+// Outline (the document's own bookmarks)
+// ---------------------------------------------------------------------------
+
+/**
+ * One node of `pdf.getOutline()`. The published EIP files carry three levels, and
+ * pdf.js hands the whole tree back in one call — nesting is `items`, so nothing
+ * here has to reconstruct depth from anything.
+ */
+interface OutlineNode {
+  title: string;
+  dest: string | unknown[] | null;
+  url: string | null;
+  items?: OutlineNode[];
+}
+
+type OutlineUI = (typeof FIND_UI)[string];
+
+/**
+ * Drop nodes that carry no title, promoting their children in their place.
+ *
+ * The published EIP files really do contain them: 7 of the English file's 47
+ * bookmarks and 8 of the Vietnamese file's 48 have an empty title, and in the
+ * Vietnamese file the FIRST one does. A titleless bookmark is not something a
+ * reader can choose, so painting it as a row (with a placeholder glyph, or with
+ * nothing) puts a dead entry at the top of the contents. Its children are real
+ * entries, though, so they move up a level rather than disappearing with it.
+ */
+function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {
+  const out: OutlineNode[] = [];
+  for (const node of nodes ?? []) {
+    const kids = pruneOutline(node.items);
+    const title = node.title?.trim();
+    if (title) out.push({ ...node, title, items: kids });
+    else out.push(...kids);
+  }
+  return out;
+}
+
+function OutlineList({ nodes, t, onPick }: {
+  nodes: OutlineNode[];
+  t: OutlineUI;
+  onPick: (dest: string | unknown[] | null) => void;
+}) {
+  return (
+    <ul className="pdfjs-outline-list">
+      {nodes.map((node, i) => (
+        <OutlineEntry key={i} node={node} t={t} onPick={onPick} />
+      ))}
+    </ul>
+  );
+}
+
+function OutlineEntry({ node, t, onPick }: {
+  node: OutlineNode;
+  t: OutlineUI;
+  onPick: (dest: string | unknown[] | null) => void;
+}) {
+  // Expanded by default: a reader who opens the contents wants to see the
+  // subsections, which is the whole complaint the sidebar answers. The twisty is
+  // there for the reader who then wants a long branch out of the way.
+  const [open, setOpen] = useState(true);
+  const kids = node.items && node.items.length ? node.items : null;
+  return (
+    <li className="pdfjs-outline-item">
+      <div className="pdfjs-outline-row">
+        {kids ? (
+          <button
+            type="button"
+            className="pdfjs-outline-twisty"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-label={open ? t.collapse : t.expand}
+            title={open ? t.collapse : t.expand}
+          >{open ? '▾' : '▸'}</button>
+        ) : (
+          <span className="pdfjs-outline-twisty" aria-hidden="true" />
+        )}
+        {node.url ? (
+          <a className="pdfjs-outline-link" href={node.url} target="_blank" rel="noopener noreferrer">{node.title}</a>
+        ) : (
+          <button type="button" className="pdfjs-outline-link" onClick={() => onPick(node.dest)}>{node.title}</button>
+        )}
+      </div>
+      {kids && open && <OutlineList nodes={kids} t={t} onPick={onPick} />}
+    </li>
+  );
+}
+
 export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }: PdfJsViewerProps) {
   const t = FIND_UI[lang || 'en'] ?? FIND_UI.en;
   const rootRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
+  const pagesRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -449,6 +563,23 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   const [indexState, setIndexState] = useState<'idle' | 'building' | 'ready'>('idle');
   const [activeMatch, setActiveMatch] = useState(0);
   const indexStartedForRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // Outline (the document's bookmarks) and the two navigation aids that go with
+  // it: a back-to-top control once the reader is past the first page, and a
+  // single-slot "return" that remembers where a jump started from.
+  const [outline, setOutline] = useState<OutlineNode[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [returnTop, setReturnTop] = useState<number | null>(null);
+  // The last scroll offset observed while THIS viewer was actually on screen.
+  // Inside a merged tab the two editions share one scroller and the hidden one
+  // still receives its scroll events, so "the scroller's current offset" is not
+  // the same question as "where the reader was in this document".
+  const lastVisibleTopRef = useRef<number | null>(null);
+  // The sticky header's height, measured rather than assumed, so the outline can
+  // stick immediately below it and size itself to what is left of the scrollport.
+  const [headHeight, setHeadHeight] = useState(0);
+  const [scrollportHeight, setScrollportHeight] = useState(0);
 
   const registerPage = useCallback((pageNumber: number, el: HTMLDivElement | null) => {
     if (el) pageElsRef.current.set(pageNumber, el);
@@ -485,6 +616,20 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     return target;
   }, [pdf]);
 
+  // Unusable space at the top of the scrollport: our own sticky header, plus
+  // whatever it sticks BELOW. Reading the header's computed `top` rather than
+  // assuming zero is what keeps a jump landing correctly when this viewer is one
+  // of two editions under a merged tab's switcher — the switcher owns the first
+  // 2.6rem there, and a jump that ignored it would land behind it. A page canvas
+  // carries no `scroll-margin-top` to read it off, unlike a heading in the text
+  // edition, so it is measured. One reading, used by both the jump path and the
+  // outline sidebar's sticky offset.
+  const headroomPx = useCallback(() => {
+    const head = headRef.current;
+    const stickyTop = head ? parseFloat(getComputedStyle(head).top) || 0 : 0;
+    return (head?.offsetHeight ?? 0) + stickyTop + 8;
+  }, []);
+
   // Scroll the tab panel so the destination's page (and, where known, the exact line
   // within it) comes into view, clearing the sticky toolbar and find bar — landing a
   // target underneath them is the same as not landing on it. Falls back to
@@ -500,18 +645,69 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       } catch { /* keep the page top */ }
     }
     if (!scrollParent) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    // Unusable space at the top of the scrollport: our own sticky header, plus
-    // whatever it sticks BELOW. Reading the header's computed `top` rather than
-    // assuming zero is what keeps a jump landing correctly when this viewer is
-    // one of two editions under a merged tab's switcher — the switcher owns the
-    // first 2.6rem there, and a jump that ignored it would land behind it. A page
-    // canvas carries no `scroll-margin-top` to read it off, unlike a heading in
-    // the text edition, so it is measured and passed in.
-    const head = headRef.current;
-    const stickyTop = head ? parseFloat(getComputedStyle(head).top) || 0 : 0;
-    const headroom = (head?.offsetHeight ?? 0) + stickyTop + 8;
-    scrollElementIntoScroller(el, scrollParent, { block: 'start', headroom, offset });
-  }, [pdf, scale, scrollParent]);
+    scrollElementIntoScroller(el, scrollParent, { block: 'start', headroom: headroomPx(), offset });
+  }, [pdf, scale, scrollParent, headroomPx]);
+
+  // Every jump that teleports the reader — a citation chip from the chat, an
+  // outline bookmark, one of the document's own internal links — first records
+  // where they were, so the "return" control can put them back. One slot: the
+  // reader wants the place they just left, not a browsing history, and the slot
+  // is cleared the moment it is used so a stale offset never sits under the
+  // button.
+  //
+  // Two positions are not worth remembering and are refused rather than stored:
+  // the top of the document (there is nothing above it to go back to) and a
+  // position the jump is about to land on anyway. A refusal clears the slot, so a
+  // button can never point at where some earlier jump started from.
+  const rememberPosition = useCallback((landingTop?: number | null) => {
+    if (!scrollParent) return;
+    const top = scrollParent.scrollTop;
+    if (top <= RETURN_MIN_OFFSET) { setReturnTop(null); return; }
+    if (landingTop != null && Math.abs(landingTop - top) <= RETURN_MIN_DELTA) { setReturnTop(null); return; }
+    setReturnTop(top);
+  }, [scrollParent]);
+
+  // Where a jump to this page will leave the scroller, computed exactly the way
+  // scrollElementIntoScroller computes it (and clamped the way scrollTo clamps),
+  // so "the reader is already there" can be answered before the scroll starts.
+  const landingTopFor = useCallback((pageNumber: number): number | null => {
+    const el = pageElsRef.current.get(pageNumber);
+    if (!el || !scrollParent) return null;
+    const delta = el.getBoundingClientRect().top - scrollParent.getBoundingClientRect().top;
+    const max = Math.max(0, scrollParent.scrollHeight - scrollParent.clientHeight);
+    return Math.min(Math.max(0, scrollParent.scrollTop + delta - headroomPx()), max);
+  }, [scrollParent, headroomPx]);
+
+  const jumpTo = useCallback((target: DestTarget) => {
+    rememberPosition(landingTopFor(target.pageNumber));
+    void goToDest(target);
+  }, [rememberPosition, landingTopFor, goToDest]);
+
+  // Back to the top is a jump to page 1, so it goes through goToDest like every
+  // other move — there is one implementation of "move the viewport", and it is
+  // the one that already clears the sticky header. It deliberately does NOT arm
+  // the return slot: the Text edition's back-to-top is a plain move to the top of
+  // the document, and the two editions must behave alike.
+  const backToTop = useCallback(() => {
+    void goToDest({ pageNumber: 1, y: null });
+  }, [goToDest]);
+
+  const goBack = useCallback(() => {
+    if (returnTop == null || !scrollParent) return;
+    // Restoring a remembered offset is not "bring this element into view", which
+    // is what the shared helper does; the scroller's own scrollTo is the
+    // primitive underneath it, and the only thing that fits an absolute offset.
+    scrollParent.scrollTo({ top: returnTop, behavior: 'smooth' });
+    setReturnTop(null);
+  }, [returnTop, scrollParent]);
+
+  // An outline bookmark carries a destination in exactly the form a link
+  // annotation does, so it is resolved by the same resolveDest and moved by the
+  // same goToDest — no second resolver, no second scroll path.
+  const goToOutlineDest = useCallback(async (dest: string | unknown[] | null) => {
+    const target = await resolveDest(dest);
+    if (target) jumpTo(target);
+  }, [resolveDest, jumpTo]);
 
   // An outside jump must survive the document still loading and the page
   // placeholders still being estimated 700px tall, so it is re-run once the
@@ -519,12 +715,37 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   // rebuilds goToDest) cannot cancel a jump that is still settling.
   const goToDestRef = useRef(goToDest);
   goToDestRef.current = goToDest;
+  // Arming the return slot for a jump that arrives from outside (a citation chip
+  // in the chat). Two extra conditions apply here that do not apply to a jump
+  // started inside the viewer:
+  //
+  //  - The chip may arrive together with a switch from the Text edition to this
+  //    one. Both editions scroll one shared scroller and DualViewTab deliberately
+  //    does not restore the per-view offset when a jump comes with the switch, so
+  //    the scroller is holding the TEXT edition's position — a place the reader
+  //    has never been in this document. Comparing against the last offset seen
+  //    while this viewer was on screen is what tells the two apart.
+  //  - The generic guards in rememberPosition then drop a first chip into a
+  //    freshly opened document, whose origin is the top of page 1.
+  const armReturnForJump = useCallback((pageNumber: number) => {
+    if (!scrollParent) return;
+    const seen = lastVisibleTopRef.current;
+    if (seen == null || Math.abs(scrollParent.scrollTop - seen) > 1) { setReturnTop(null); return; }
+    rememberPosition(landingTopFor(pageNumber));
+  }, [scrollParent, rememberPosition, landingTopFor]);
+
+  const armReturnForJumpRef = useRef(armReturnForJump);
+  armReturnForJumpRef.current = armReturnForJump;
   const jumpNonceRef = useRef<number | null>(null);
   useEffect(() => {
     if (!jumpTarget || status !== 'ready' || numPages === 0) return;
     if (jumpNonceRef.current === jumpTarget.nonce) return;
     jumpNonceRef.current = jumpTarget.nonce;
     const page = Math.min(Math.max(1, Math.round(jumpTarget.page)), numPages);
+    // Recorded before the scroll starts, and only on the first run for this
+    // nonce — the two settling re-runs below must not overwrite it with the
+    // position the jump has already reached.
+    armReturnForJumpRef.current(page);
     let cancelled = false;
     const run = () => { if (!cancelled) void goToDestRef.current({ pageNumber: page, y: null }); };
     run();
@@ -541,6 +762,8 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     // A different document invalidates everything the find bar knows.
     setQuery(''); setDebouncedQuery(''); setIndex(null); setIndexState('idle');
     setWantIndex(false); setActiveMatch(0); indexStartedForRef.current = null;
+    setOutline([]); setOutlineOpen(false); setReturnTop(null); setShowBackToTop(false);
+    lastVisibleTopRef.current = null;
     const task = pdfjsLib.getDocument({ url: src });
     task.promise
       .then((doc) => { if (!cancelled) { setPdf(doc); setNumPages(doc.numPages); setStatus('ready'); } })
@@ -552,6 +775,57 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   useEffect(() => {
     setScrollParent(findScrollParent(rootRef.current, { requireOverflow: true }));
   }, [status]);
+
+  // The document's own bookmarks. One cheap metadata call; a file without an
+  // outline (most of the Legal Library) yields null and the toggle never appears.
+  useEffect(() => {
+    if (!pdf) return;
+    let cancelled = false;
+    pdf.getOutline().then((nodes) => {
+      if (cancelled) return;
+      const tree = pruneOutline(nodes as unknown as OutlineNode[]);
+      setOutline(tree);
+      // Opened by default where there is room for it. In a narrow split pane the
+      // sidebar would take more width than the page it navigates, so there it
+      // waits behind the toggle.
+      if (tree.length) setOutlineOpen((rootRef.current?.clientWidth ?? 0) >= 640);
+    }).catch(() => { /* no outline is not an error */ });
+    return () => { cancelled = true; };
+  }, [pdf]);
+
+  // Measure the sticky header and the scrollport so the outline can stick below
+  // one and fit inside the other. Both are read, never assumed, because the
+  // header grows a switcher row when this viewer is half of a merged tab.
+  useEffect(() => {
+    const head = headRef.current;
+    if (!head) return;
+    const measure = () => {
+      setHeadHeight(headroomPx());
+      setScrollportHeight(scrollParent?.clientHeight ?? 0);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(head);
+    if (scrollParent) ro.observe(scrollParent);
+    return () => ro.disconnect();
+  }, [status, scrollParent, headroomPx]);
+
+  // Whether the reader has moved far enough down for back-to-top to be worth
+  // offering, and where they were the last time this viewer was on screen. The
+  // threshold and the rAF-coalesced sampling are shared with the Text edition
+  // (`../back-to-top`); the two hooks below are this edition's own needs.
+  useScrolledPastThreshold(
+    () => scrollParent,
+    setShowBackToTop,
+    [scrollParent, status, scale],
+    {
+      // A hidden edition of a merged tab still gets the shared scroller's events;
+      // its own root has no box then, which is how it knows not to claim the
+      // offset as its reader's.
+      shouldSample: () => (rootRef.current?.clientHeight ?? 0) > 0,
+      onSample: (top) => { lastVisibleTopRef.current = top; },
+    },
+  );
 
   // Typing settles before anything is searched.
   useEffect(() => {
@@ -641,8 +915,12 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   // Fit-to-width: measure the container and the first page, derive a base scale,
   // and keep it in sync on resize. User zoom multiplies it.
   const recomputeScale = useCallback(async () => {
-    if (!pdf || !rootRef.current) return;
-    const avail = rootRef.current.clientWidth - 24; // page gutter
+    // The pages column, not the whole viewer: with the outline sidebar open the
+    // two are different widths, and fitting to the viewer would render pages
+    // wider than the space left for them.
+    const box = pagesRef.current ?? rootRef.current;
+    if (!pdf || !box) return;
+    const avail = box.clientWidth - 24; // page gutter
     if (avail <= 0) return;
     if (!baseWidthRef.current) {
       const page = await pdf.getPage(1);
@@ -652,14 +930,14 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     setScale(Math.max(0.3, fit) * zoom);
   }, [pdf, zoom]);
 
-  useEffect(() => { recomputeScale(); }, [recomputeScale]);
+  useEffect(() => { recomputeScale(); }, [recomputeScale, status, outlineOpen]);
   useEffect(() => {
-    const el = rootRef.current;
+    const el = pagesRef.current ?? rootRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => recomputeScale());
     ro.observe(el);
     return () => ro.disconnect();
-  }, [recomputeScale]);
+  }, [recomputeScale, status]);
 
   return (
     <div className="pdfjs-viewer" ref={rootRef}>
@@ -668,6 +946,25 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       <div className="pdfjs-headbar" ref={headRef}>
         <div className="pdfjs-toolbar">
           <div className="pdfjs-toolbar-group">
+            {/* Only for documents that carry bookmarks; the Legal Library's
+                scanned circulars have none, and an empty sidebar toggle would be
+                a control that does nothing. */}
+            {outline.length > 0 && (
+              <button
+                type="button"
+                className={outlineOpen ? 'pdfjs-btn pdfjs-outline-toggle is-on' : 'pdfjs-btn pdfjs-outline-toggle'}
+                onClick={() => setOutlineOpen((o) => !o)}
+                aria-pressed={outlineOpen}
+                aria-label={t.outline}
+                title={t.outline}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" width="13" height="13">
+                  <path d="M2 3.2h3.4M2 8h3.4M2 12.8h3.4M7.4 3.2H14M7.4 8H14M7.4 12.8H14"
+                    fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span className="pdfjs-outline-toggle-text">{t.outline}</span>
+              </button>
+            )}
             <button type="button" className="pdfjs-btn" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} aria-label="Zoom out">−</button>
             <span className="pdfjs-zoom">{Math.round(zoom * 100)}%</span>
             <button type="button" className="pdfjs-btn" onClick={() => setZoom((z) => Math.min(3, +(z + 0.15).toFixed(2)))} aria-label="Zoom in">+</button>
@@ -721,6 +1018,35 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
               aria-label={t.next}
               title={t.next}
             >›</button>
+            {/* Return to where a jump started, and jump to the top of the document.
+                Both live in the always-visible find bar rather than in a floating
+                overlay. Back-to-top is literally the Text edition's control: same
+                icon and same threshold, both imported from `../back-to-top`, so
+                flipping editions cannot change the affordance. Disabled rather
+                than hidden, for the same reason it is there. */}
+            <button
+              type="button"
+              className="pdfjs-find-nav pdfjs-find-return"
+              onClick={goBack}
+              disabled={returnTop == null}
+              aria-label={t.returnBack}
+              title={t.returnBack}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M6 3.5L2.5 7 6 10.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2.5 7h7.5a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="pdfjs-find-nav pdfjs-find-top"
+              onClick={backToTop}
+              disabled={!showBackToTop}
+              aria-label={t.backToTop}
+              title={t.backToTop}
+            >
+              <BackToTopIcon />
+            </button>
             {/* A scan with no text layer cannot be searched at all; saying so beats
                 a zero that looks like an answer. */}
             {hasNoText && <p className="pdfjs-find-note">{t.noText}</p>}
@@ -738,21 +1064,35 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       )}
 
       {status === 'ready' && pdf && (
-        <div className="pdfjs-pages" title={title}>
-          {Array.from({ length: numPages }, (_, i) => (
-            <PdfPage
-              key={i}
-              pdf={pdf}
-              pageNumber={i + 1}
-              scale={scale}
-              root={scrollParent}
-              registerPage={registerPage}
-              resolveDest={resolveDest}
-              onNavigate={goToDest}
-              pageMatches={matchesByPage.get(i + 1) ?? NO_MATCHES}
-              activeMatch={activeMatch}
-            />
-          ))}
+        <div className="pdfjs-body">
+          {outlineOpen && outline.length > 0 && (
+            <nav
+              className="pdfjs-outline"
+              aria-label={t.outline}
+              style={{
+                top: headHeight,
+                maxHeight: scrollportHeight ? Math.max(160, scrollportHeight - headHeight - 16) : undefined,
+              }}
+            >
+              <OutlineList nodes={outline} t={t} onPick={goToOutlineDest} />
+            </nav>
+          )}
+          <div className="pdfjs-pages" ref={pagesRef} title={title}>
+            {Array.from({ length: numPages }, (_, i) => (
+              <PdfPage
+                key={i}
+                pdf={pdf}
+                pageNumber={i + 1}
+                scale={scale}
+                root={scrollParent}
+                registerPage={registerPage}
+                resolveDest={resolveDest}
+                onNavigate={jumpTo}
+                pageMatches={matchesByPage.get(i + 1) ?? NO_MATCHES}
+                activeMatch={activeMatch}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>

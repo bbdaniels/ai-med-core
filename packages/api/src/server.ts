@@ -872,7 +872,10 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
             // The model is shown the query that was actually run, not the one it
             // asked for: a "no passage matches" line naming a query nobody ran is
             // a lie, and seeing the corpus's own wording nudges the next search.
-            content = formatSearchResults(searchQuery, results);
+            // The notice a retrieved passage may carry is an instruction about
+            // that passage, so it is rendered in the language the answer is
+            // being written in rather than in every language the corpus holds.
+            content = formatSearchResults(searchQuery, results, { language });
           }
         } catch (e) {
           console.error('[readings] tool call failed:', e);

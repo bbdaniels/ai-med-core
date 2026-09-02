@@ -260,15 +260,124 @@ run actually attempted, so `--only` leaves the rest alone. `grounding.md` and
 everything under `content/legal/text/` and `content/legal/pdf/` are generated,
 so do not hand-edit them.
 
+**Removing a document from the library** means taking it out of `documents` --
+that array IS the Legal Library listing the frontend renders -- and deleting its
+text, PDF and map. Move it into `excluded` with an `id`, which is the registry's
+own record of what it does not carry: an excluded entry carrying an `id` is one
+the library used to hold, so a `supersedes` / `supersededBy` pointer at it still
+resolves to a document NUMBER rather than a raw registry id, and `grounding.md`
+gives it a line of its own telling the advisor it has been withdrawn instead of
+listing it with the instruments the EIP never referenced. `qd-3310-2019`, which
+HAIVN asked to have removed on 2026-09-02, is the worked example. Then rebuild
+the grounding index and the corpus.
+
+### `textSource` -- an HTML full text as the text layer
+
+Text normally comes from our own extraction of the signed PDF. A registry entry
+may instead name
+
+```json
+"textSource": { "tier": "aggregator", "url": "https://...", "container": "divContentDoc" }
+```
+
+and the run then transcribes that page into `text/<id>.md` instead. It exists
+for documents our extraction cannot serve: `qd-1868-2020` has no obtainable
+signed PDF at all, `nd-188-2025-nd-cp`'s born-digital extraction recovered
+6 of the PDF's 39 tables and mangled diacritics in about forty words the
+publisher's transcription gets right, and `tt-20-2022-tt-byt`'s only official
+copy is a scan whose OCR layer garbles the drug list this circular exists for.
+HAIVN asked for it on 2026-09-02.
+
+`tt-20-2022-tt-byt` is the case where the container matters most, and the one to
+copy when a document's tables are the document. Its consolidation, 15/VBHN-BYT
+of 16/12/2024, exists born-digital nowhere official -- the gazette's hợp nhất
+series stops at 13/VBHN-BYT and datafiles.chinhphu.vn carries only the scan --
+so its text layer comes from an aggregator whose container id is `full-content`
+rather than the `divContentDoc` the thuvienphapluat pages use; the id is
+per-site, so read it off the page rather than assuming. What comes through is
+1,310 GFM table rows carrying all 1,037 Phụ lục I entries with no gaps and all
+59 Phụ lục II entries, each with its route, its four hospital-grade columns and
+its payment condition, which is exactly what the OCR layer cannot give ("1037
+Vitamin PP" extracts as "iVitamin PP"). Eight rows were checked cell by cell
+against the PDF's rendered pages before it was adopted.
+
+Four things about it are load-bearing:
+
+- **The PDF is unchanged as the source of truth.** This field decides the TEXT
+  layer only. `officialUrl` is untouched, the PDF is still fetched, saved,
+  mapped and served, and the reader still opens on it.
+- **The tier is carried, not dropped.** `tier` must be a key of
+  `TEXT_SOURCE_TIERS`, and its gloss is written into the file's own header, so
+  the reader is told in the document that this is a legal-reference publisher's
+  transcription and not an official copy.
+- **`container` is the id of the one element holding the document**, and naming
+  it is the point: these pages print a short teaser copy above the full text
+  with site navigation in between, and a whole-page conversion takes all three.
+- **The PDF's typography is not consulted for this text**, in the fetch path or
+  in `--format`. A publisher lays the document out its own way, so the style
+  ladder that names headings in an extraction is evidence about lines that do
+  not exist here.
+
+Conversion is pandoc with native divs and spans off (`build-eip-text.py` already
+requires pandoc). Before it runs, table cells are reduced to inline content and
+row/column spans are written out -- GFM has neither, and pandoc hands any table
+carrying one straight back as raw HTML, which is how the first run of this path
+put `<td style=...>` into a reader file. Images are replaced with a visible
+editorial marker: the site serves them from a per-document folder beside the
+page, so the src never resolves for us, and a testing algorithm silently deleted
+would leave a heading with nothing under it.
+
+**Emphasis that is only the site's heading typography is unwrapped before the
+structure pass runs** (`unwrap_heading_emphasis`). These pages bold a heading
+inline instead of marking it up, and markers left inside a line the structure
+pass then reads as a heading do two kinds of damage: the level is prefixed and
+the markers stay, so the reader gets `## **Chương I**`, the jump map's label
+carries the asterisks into the panel, and the corpus `section` carries them into
+the `Location:` line the advisor is told to cite from and forbidden to write
+markdown in; and where the pass splits a long heading off its body it cuts
+between `**Điều 4.` and its closing `**`, orphaning the marker onto the next
+paragraph as two literal asterisks. So a line that reads as a heading once its
+markers are gone keeps the heading and loses the markers, and a whole BLOCK
+wrapped end to end in one span is unwrapped too. It has to be the block and not
+the line: pandoc writes a hard-wrapped title as one paragraph of `\`-terminated
+lines, `reflow` joins them afterwards, and a line-at-a-time version left every
+appendix letterhead bolded. Emphasis marking a phrase inside ordinary prose, and
+a table's bold header cell, are untouched.
+
+**The escaped line break is the same defect one layer down, and the structure
+pass takes it out where it promotes a heading.** A heading is one line by
+construction, so a hard-line-break marker inside it is markup with nothing left
+to break -- but pandoc writes a publisher's wrapped title as `...ĐƯỢC HƯỞNG\`
+plus a newline, and the heading pass then borrows the continuation line onto it,
+so the marker lands at the end of the label or in the middle of it. Left there
+it rides into the reader's heading, into the jump map's panel label, and into
+the corpus `section` the advisor is told to cite verbatim: `PHỤ LỤC I DANH MỤC
+... BẢO HIỂM Y TẾ\ (part 1 of 82)` on all 82 appendix chunks of
+`tt-20-2022-tt-byt`. Only a backslash before whitespace or end of line is
+removed; one before a character is escaping that character (`\[9\]`) and stays.
+`word_stream`, which the fidelity invariant is checked in, had to learn the same
+distinction -- it stripped `*`, `_`, `|` and `#` but not this, so it read `TẾ\`
+and `TẾ` as two different words and refused a file whose words had not moved.
+
+The existing text protections all still apply, including the degraded-extraction
+guard: a `textSource` that comes back short, or with the diacritics gone, keeps
+the file already on disk. A Cloudflare interstitial is reported as
+`text-source-failed`, never written.
+
 Three behaviours worth knowing before you point a registry entry at a new PDF:
 
 - **`textFile: null` is honoured, not ignored.** Every entry carries the field;
   `null` says the document ships as metadata plus its PDF with no full text, and
   is set where the only official copy is a scan whose OCR cannot be trusted for
-  what the document is *for* (the drug tables in 20/2022/TT-BYT extract
-  "Lamivudin + tenofovir" as "Lami\,「adia + tenofovir"). The run saves the PDF
+  what the document is *for* -- the drug tables in 20/2022/TT-BYT extract
+  "Lamivudin + tenofovir" as "Lami\,「adia + tenofovir". The run saves the PDF
   and writes no text. To turn full text on, put the path in `textFile` and
-  re-run.
+  re-run. That is what 20/2022/TT-BYT itself did on 2026-09-02: `null` is the
+  right answer only while there is no readable text ANYWHERE, and once a
+  born-digital copy of the same edition was found the field was filled in and a
+  `textSource` named beside it. The documents still carrying `null` are the four
+  that ship as metadata and a link: `tt-12-2026-tt-btc`, `qd-3176-2024` and the
+  two WHO reports.
 - **An existing text file is never overwritten by a degraded extraction.** The
   documents whose text was ingested from an official HTML full text are exactly
   the ones whose signed original turns out to be a scan, so the run that adopts
@@ -577,14 +686,17 @@ already starts at a Phụ lục keeps the label it had.
   not add index-side tricks for it. Retrieval **by topic** works well and is the
   question users actually ask: "điều kiện cấp giấy phép hoạt động" returns
   Điều 40 with its number and PDF page attached.
-- **Two source texts contain the whole instrument twice.**
-  `text/qd-1868-2020.md` and `text/qd-4026-2010.md` are scrapes of
-  legal-reference sites that print a preview copy above the full text, plus site
-  navigation ("Văn bản liên quan" and a list of unrelated documents) in between.
-  The builder drops exact-duplicate chunks -- 71 of them in `qd-1868-2020` -- so
-  one article cannot occupy two of the six slots a search returns, but that is a
-  guard, not a fix. The duplication and the navigation boilerplate are in
-  `fetch-legal-docs.py`'s output for those two documents.
+- **One source text still contains the whole instrument twice.**
+  `text/qd-4026-2010.md` is a scrape of a legal-reference site that prints a
+  preview copy above the full text, plus site navigation ("Văn bản liên quan"
+  and a list of unrelated documents) in between. The builder drops
+  exact-duplicate chunks so one article cannot occupy two of the six slots a
+  search returns, but that is a guard, not a fix; the duplication is upstream,
+  in the pre-script ingest that produced the file. `qd-1868-2020` had the same
+  defect (71 duplicate chunks) and no longer does: it is now re-ingested through
+  `fetch-legal-docs.py`'s `textSource` path, which names the one container
+  carrying the document and so never sees the preview copy or the navigation.
+  `qd-4026-2010` has no `textSource` yet and is the remaining case.
 
 - **Page precision follows map coverage, and some maps are thin.**
   `maps/qd-4531-2021.json` carries 3 sections for a 129 KB document -- its three

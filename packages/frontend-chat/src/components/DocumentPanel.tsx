@@ -2,6 +2,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { api } from '../api-base';
 import { foldQuery, foldWithMap } from '../text-search';
 import { findScrollParent, scrollElementIntoScroller } from '../scroll-parent';
 import { BackToTopIcon, useScrolledPastThreshold } from '../back-to-top';
@@ -111,6 +112,38 @@ function highlightMatches(root: HTMLElement, query: string): HTMLElement[] {
   return marks;
 }
 
+/**
+ * Point a document's images at the API that serves them.
+ *
+ * A generated document may carry a figure the builder saved into the repo
+ * (`content/legal/figures/<id>/fig-01.jpg` beside the text that references it),
+ * and it writes that reference as the REPO-RELATIVE path -- the same shape as
+ * every other generated path in the registry, and the only shape that is right
+ * in the file itself, which has no idea where the API lives. A browser would
+ * resolve it against the page URL, which is a GitHub Pages origin serving no
+ * such file, so it is resolved here instead, through the very
+ * `/api/project-content/` route the text and the PDF already come down.
+ *
+ * The rewrite is done on an INERT document parsed from the sanitized HTML, not
+ * with a string replace and not in an effect after render: DOMParser does not
+ * load anything, so no request is ever made for the unresolved path, and a
+ * `projects/` prefix can never be matched inside a text node or an attribute
+ * that merely looks like one. Anything already absolute is left alone.
+ */
+function resolveContentImages(html: string): string {
+  if (!html.includes('<img')) return html;
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  let touched = false;
+  parsed.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src') || '';
+    if (!src.startsWith('projects/')) return;
+    img.setAttribute('src', api(`/api/project-content/${src}`));
+    img.setAttribute('loading', 'lazy');
+    touched = true;
+  });
+  return touched ? parsed.body.innerHTML : html;
+}
+
 export default function DocumentPanel({ content, lang, scrollTarget }: DocumentPanelProps) {
   const t = UI[lang || 'en'] ?? UI.en;
   const panelRef = useRef<HTMLDivElement>(null);
@@ -133,7 +166,7 @@ export default function DocumentPanel({ content, lang, scrollTarget }: DocumentP
       /<(h[1-6])>(.*?)\s*\{#([^}]+)\}\s*<\/\1>/g,
       '<$1 id="$3">$2</$1>'
     );
-    return DOMPurify.sanitize(raw);
+    return resolveContentImages(DOMPurify.sanitize(raw));
   }, [content]);
 
   // Typing re-renders a large document, so settle before doing the work.

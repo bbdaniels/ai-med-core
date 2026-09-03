@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useId, useRef, useState, useCallback, useMemo } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 // Vite resolves ?url to the emitted asset path (respecting VITE_BASE_PATH), so the
@@ -33,6 +33,7 @@ const FIND_UI: Record<string, {
   noMatch: string; reading: string; noText: string;
   loading: string; failed: string; openNewTab: string;
   outline: string; expand: string; collapse: string;
+  showOutline: string; hideOutline: string;
   backToTop: string; returnBack: string;
 }> = {
   en: {
@@ -49,6 +50,8 @@ const FIND_UI: Record<string, {
     outline: 'Contents',
     expand: 'Show subsections',
     collapse: 'Hide subsections',
+    showOutline: 'Show contents',
+    hideOutline: 'Hide contents — widen the document',
     backToTop: 'Back to top',
     returnBack: 'Back to where you were',
   },
@@ -66,6 +69,8 @@ const FIND_UI: Record<string, {
     outline: 'Mục lục',
     expand: 'Hiện các mục con',
     collapse: 'Ẩn các mục con',
+    showOutline: 'Hiện mục lục',
+    hideOutline: 'Ẩn mục lục — mở rộng tài liệu',
     backToTop: 'Về đầu trang',
     returnBack: 'Quay lại vị trí trước',
   },
@@ -81,6 +86,35 @@ const MAX_MATCHES = 1000;
 // rather than offering a trip of a few pixels.
 const RETURN_MIN_OFFSET = 24;
 const RETURN_MIN_DELTA = 48;
+
+/**
+ * Whether the Contents sidebar is open is a property of the READER, not of the
+ * document: someone who hides it to give the body the full pane width wants it
+ * hidden in the next document and on the next visit too. So one key for the
+ * viewer rather than one per file, and a saved choice outranks the width rule
+ * below (which is only the opening guess for a reader who has never expressed
+ * one).
+ *
+ * Both accessors are wrapped because localStorage is not merely absent-or-present
+ * here: this app is embedded in an iframe on Canvas, where Safari's tracking
+ * prevention can make a read or a write THROW for a third-party frame (the same
+ * hazard `api-base.ts` documents for the access token). A viewer that cannot
+ * remember the choice must still open.
+ */
+const OUTLINE_OPEN_KEY = 'pdf_outline_open';
+
+function readOutlinePreference(): boolean | null {
+  try {
+    const saved = localStorage.getItem(OUTLINE_OPEN_KEY);
+    if (saved === 'open') return true;
+    if (saved === 'closed') return false;
+  } catch { /* storage unavailable: fall back to the width rule */ }
+  return null;
+}
+
+function writeOutlinePreference(open: boolean): void {
+  try { localStorage.setItem(OUTLINE_OPEN_KEY, open ? 'open' : 'closed'); } catch { /* not remembering is not an error */ }
+}
 
 // The scrolling ancestor is the tab panel (overflow-y:auto), not the window — the
 // same container DocumentPanel scrolls, and `findScrollParent` is shared with it.
@@ -569,6 +603,10 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   // single-slot "return" that remembers where a jump started from.
   const [outline, setOutline] = useState<OutlineNode[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  // Names the sidebar for the toolbar toggle's aria-controls. Generated rather
+  // than a literal because a merged tab mounts two of these viewers at once, and
+  // two elements with one id would point both toggles at whichever came first.
+  const outlineId = useId();
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [returnTop, setReturnTop] = useState<number | null>(null);
   // The last scroll offset observed while THIS viewer was actually on screen.
@@ -701,6 +739,17 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     setReturnTop(null);
   }, [returnTop, scrollParent]);
 
+  // Show or hide the Contents sidebar, and remember which the reader chose. The
+  // next value is computed outside the state updater rather than written from
+  // inside it: an updater must stay pure, and React's StrictMode calls it twice.
+  // Closing frees the sidebar's width for the pages — `recomputeScale` is keyed on
+  // `outlineOpen`, so fit-to-width re-measures and the document fills the panel.
+  const toggleOutline = useCallback(() => {
+    const next = !outlineOpen;
+    setOutlineOpen(next);
+    writeOutlinePreference(next);
+  }, [outlineOpen]);
+
   // An outline bookmark carries a destination in exactly the form a link
   // annotation does, so it is resolved by the same resolveDest and moved by the
   // same goToDest — no second resolver, no second scroll path.
@@ -785,10 +834,13 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       if (cancelled) return;
       const tree = pruneOutline(nodes as unknown as OutlineNode[]);
       setOutline(tree);
-      // Opened by default where there is room for it. In a narrow split pane the
-      // sidebar would take more width than the page it navigates, so there it
-      // waits behind the toggle.
-      if (tree.length) setOutlineOpen((rootRef.current?.clientWidth ?? 0) >= 640);
+      // A saved choice wins. Failing that, opened by default where there is room
+      // for it: in a narrow split pane the sidebar would take more width than the
+      // page it navigates, so there it waits behind the toggle.
+      if (tree.length) {
+        const saved = readOutlinePreference();
+        setOutlineOpen(saved ?? (rootRef.current?.clientWidth ?? 0) >= 640);
+      }
     }).catch(() => { /* no outline is not an error */ });
     return () => { cancelled = true; };
   }, [pdf]);
@@ -946,25 +998,6 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
       <div className="pdfjs-headbar" ref={headRef}>
         <div className="pdfjs-toolbar">
           <div className="pdfjs-toolbar-group">
-            {/* Only for documents that carry bookmarks; the Legal Library's
-                scanned circulars have none, and an empty sidebar toggle would be
-                a control that does nothing. */}
-            {outline.length > 0 && (
-              <button
-                type="button"
-                className={outlineOpen ? 'pdfjs-btn pdfjs-outline-toggle is-on' : 'pdfjs-btn pdfjs-outline-toggle'}
-                onClick={() => setOutlineOpen((o) => !o)}
-                aria-pressed={outlineOpen}
-                aria-label={t.outline}
-                title={t.outline}
-              >
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" width="13" height="13">
-                  <path d="M2 3.2h3.4M2 8h3.4M2 12.8h3.4M7.4 3.2H14M7.4 8H14M7.4 12.8H14"
-                    fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-                <span className="pdfjs-outline-toggle-text">{t.outline}</span>
-              </button>
-            )}
             <button type="button" className="pdfjs-btn" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} aria-label="Zoom out">−</button>
             <span className="pdfjs-zoom">{Math.round(zoom * 100)}%</span>
             <button type="button" className="pdfjs-btn" onClick={() => setZoom((z) => Math.min(3, +(z + 0.15).toFixed(2)))} aria-label="Zoom in">+</button>
@@ -1047,6 +1080,40 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
             >
               <BackToTopIcon />
             </button>
+            {/* Show/hide the Contents sidebar, so the document body can take the
+                whole panel width. It sits here beside return and back-to-top
+                rather than up in the zoom row because those three are the
+                navigation tools a reader reaches for while reading, and the find
+                bar is the row that stays pinned to the top of the pane.
+
+                Rendered only for documents that carry bookmarks: the Legal
+                Library's scanned circulars have none, and a toggle for a sidebar
+                that never appears is a control that does nothing. The word rides
+                beside the icon (dropped on a narrow pane by the media rule in
+                style.css) because a reader looking for a way to hide the sidebar
+                is looking for the word, not for an icon to try. */}
+            {outline.length > 0 && (
+              <button
+                type="button"
+                className={outlineOpen ? 'pdfjs-find-nav pdfjs-outline-toggle is-on' : 'pdfjs-find-nav pdfjs-outline-toggle'}
+                onClick={toggleOutline}
+                aria-expanded={outlineOpen}
+                // aria-controls only while the sidebar is actually mounted: the
+                // nav below renders on `outlineOpen`, and an aria-controls
+                // naming an id that is not in the document is a dangling
+                // reference a screen reader announces as a broken control.
+                // `aria-expanded` carries the state on its own when it is shut.
+                aria-controls={outlineOpen ? outlineId : undefined}
+                aria-label={outlineOpen ? t.hideOutline : t.showOutline}
+                title={outlineOpen ? t.hideOutline : t.showOutline}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" width="13" height="13">
+                  <path d="M2 3.2h3.4M2 8h3.4M2 12.8h3.4M7.4 3.2H14M7.4 8H14M7.4 12.8H14"
+                    fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span className="pdfjs-outline-toggle-text">{t.outline}</span>
+              </button>
+            )}
             {/* A scan with no text layer cannot be searched at all; saying so beats
                 a zero that looks like an answer. */}
             {hasNoText && <p className="pdfjs-find-note">{t.noText}</p>}
@@ -1067,6 +1134,7 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
         <div className="pdfjs-body">
           {outlineOpen && outline.length > 0 && (
             <nav
+              id={outlineId}
               className="pdfjs-outline"
               aria-label={t.outline}
               style={{

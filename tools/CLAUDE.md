@@ -114,6 +114,30 @@ stands between a rebuild and a silently degraded index; do not remove it.
 
 Add an endpoint helper here rather than a second `urlopen` wrapper in a script.
 
+## lib/filelock.py
+
+One exclusive advisory lock, for every tool here that writes a file two runs
+could write at once. There are two such files and both had the same defect for
+the same reason -- read, modify, write with nothing in between, so an
+overlapping run leaves a file with one run's work silently missing:
+`legal-corpus.db`, where two builds unlink each other's temp file and leave an
+index whose embeddings table is a fraction of its chunks (twice on 2026-09-02),
+and `registry.json`, where two `fetch-legal-docs.py` runs each wrote the whole
+registry and one dropped the `vbhn-15-2024-byt` entry (2026-09-03).
+
+`acquire(path, timeout=0)` for a long job that should refuse rather than queue
+(the corpus build), `exclusive_lock(path)` as a context manager for a short
+critical section that should wait (the registry write). A pid in a file created
+`O_EXCL`; a holder that is no longer running is stale and is cleared, since the
+alternative is a crashed run wedging the tool until someone deletes a file by
+hand. **Release is conditional on the file still naming this process**, which is
+what lets a `with` block release and the process run on for another twenty
+minutes without its `atexit` handler deleting somebody else's lock.
+
+It is advisory, and it does not replace the re-read: a caller holding this lock
+still re-reads the file it is about to overwrite, because a lock cannot cover
+the run that started before it.
+
 ## build-ppol-corpus.py
 
 Builds `projects/ppol5013/content/readings/readings.db`, the PPOL 5013/5014
@@ -258,7 +282,29 @@ disk -- a failed download alone never removes it, because one gazette host drops
 the connection on most runs). It touches no other field, and only documents the
 run actually attempted, so `--only` leaves the rest alone. `grounding.md` and
 everything under `content/legal/text/` and `content/legal/pdf/` are generated,
-so do not hand-edit them.
+so do not hand-edit them. `content/legal/transcriptions/` is the opposite: it is
+hand-curated input, read and never written (see "Figure transcriptions" below).
+
+**That one write is done under a lock, onto a re-read of the file, merging only
+the ids the run touched** (`save_registry`). The obvious version -- serialise
+the registry this run loaded at startup and write it -- is a read-modify-write
+with an entire fetch in the middle of it, so a run overlapping another one
+silently reverts everything the other did. Not theoretical: a concurrent pair of
+runs dropped the `vbhn-15-2024-byt` entry on 2026-09-03, with no error anywhere,
+because one had loaded the registry before the other added it. So the write
+takes `registry.json.lock`, re-reads the file INSIDE that lock (the lock cannot
+cover a run that started before it -- re-reading is what actually makes the
+write safe), replaces only the entries in `touched`, restores any of those the
+file has since lost, and refuses outright if the merge would leave fewer
+documents than were just read from disk. A registry that gained entries while
+the run worked is merged and said so in the output, not overwritten.
+
+The lock itself is `lib/filelock.py`, shared with `build-legal-corpus.py`, which
+had the same defect for the same reason and grew the same lock first. Two files,
+one lock primitive: a pid in a file created `O_EXCL`, a live holder refused or
+waited for, a dead holder's lock cleared, and release conditional on the file
+still naming this process -- so a short critical section that releases and runs
+on for another twenty minutes cannot delete somebody else's lock at exit.
 
 **Removing a document from the library** means taking it out of `documents` --
 that array IS the Legal Library listing the frontend renders -- and deleting its
@@ -281,25 +327,44 @@ may instead name
 ```
 
 and the run then transcribes that page into `text/<id>.md` instead. It exists
-for documents our extraction cannot serve: `qd-1868-2020` has no obtainable
-signed PDF at all, `nd-188-2025-nd-cp`'s born-digital extraction recovered
+for documents our extraction cannot serve: `qd-1868-2020`'s only obtainable copy
+is a rasterised, watermarked rendering with no text layer on any of its 31 pages
+(see the PDF note below), `nd-188-2025-nd-cp`'s born-digital extraction recovered
 6 of the PDF's 39 tables and mangled diacritics in about forty words the
-publisher's transcription gets right, and `tt-20-2022-tt-byt`'s only official
-copy is a scan whose OCR layer garbles the drug list this circular exists for.
-HAIVN asked for it on 2026-09-02.
+publisher's transcription gets right, `vbhn-15-2024-byt`'s only official copy is
+a scan whose OCR layer garbles the drug list that consolidation exists for, and
+`tt-20-2022-tt-byt` has no reachable official copy at all. HAIVN asked for it on
+2026-09-02.
 
-`tt-20-2022-tt-byt` is the case where the container matters most, and the one to
-copy when a document's tables are the document. Its consolidation, 15/VBHN-BYT
-of 16/12/2024, exists born-digital nowhere official -- the gazette's hợp nhất
-series stops at 13/VBHN-BYT and datafiles.chinhphu.vn carries only the scan --
-so its text layer comes from an aggregator whose container id is `full-content`
-rather than the `divContentDoc` the thuvienphapluat pages use; the id is
-per-site, so read it off the page rather than assuming. What comes through is
-1,310 GFM table rows carrying all 1,037 Phụ lục I entries with no gaps and all
-59 Phụ lục II entries, each with its route, its four hospital-grade columns and
-its payment condition, which is exactly what the OCR layer cannot give ("1037
-Vitamin PP" extracts as "iVitamin PP"). Eight rows were checked cell by cell
-against the PDF's rendered pages before it was adopted.
+`vbhn-15-2024-byt` is the case where the container matters most, and the one to
+copy when a document's tables are the document. Consolidated text 15/VBHN-BYT of
+16/12/2024 exists born-digital nowhere official -- the gazette's hợp nhất series
+stops at 13/VBHN-BYT and datafiles.chinhphu.vn carries only the scan -- so its
+text layer comes from an aggregator whose container id is `full-content` rather
+than the `divContentDoc` the thuvienphapluat pages use; the id is per-site, so
+read it off the page rather than assuming. What comes through is 1,305 GFM table
+rows carrying all 1,037 Phụ lục I entries with no gaps and all 59 Phụ lục II
+entries, each with its route, its four hospital-grade columns and its payment
+condition, which is exactly what the OCR layer cannot give ("1037 Vitamin PP"
+extracts as "iVitamin PP"). Eight rows were checked cell by cell against the
+PDF's rendered pages before it was adopted.
+
+**A consolidated text is its own document and gets its own entry.** Round-5 hung
+15/VBHN-BYT's PDF and text on the `tt-20-2022-tt-byt` entry, because the
+consolidation was the only complete copy of the drug list anyone could reach; the
+Legal Library then displayed the consolidation's list under the 2022 circular's
+number and title, which is what HAIVN reported on 2026-09-03. Split on that date
+into `tt-20-2022-tt-byt` (the circular as signed 31/12/2022, text transcribed
+from the thuvienphapluat page the EIP itself cites, no official PDF reachable)
+and `vbhn-15-2024-byt` (the consolidation, official scan plus the thuviennhadat
+transcription). They are cross-linked by two registry fields --
+`consolidates: ["tt-20-2022-tt-byt", "tt-37-2024-tt-byt"]` on the consolidation
+and `consolidatedIn: ["vbhn-15-2024-byt"]` on each circular -- which resolve to
+document NUMBERS in `grounding.md` the same way `supersedes` does, and which
+`build_grounding` renders as "consolidated text -- restates … as amended; not a
+new instrument, cite the originals". The system prompt carries the matching rule.
+Use these fields for any future văn bản hợp nhất; do not fold one into the
+instrument it consolidates.
 
 Four things about it are load-bearing:
 
@@ -322,10 +387,165 @@ Conversion is pandoc with native divs and spans off (`build-eip-text.py` already
 requires pandoc). Before it runs, table cells are reduced to inline content and
 row/column spans are written out -- GFM has neither, and pandoc hands any table
 carrying one straight back as raw HTML, which is how the first run of this path
-put `<td style=...>` into a reader file. Images are replaced with a visible
-editorial marker: the site serves them from a per-document folder beside the
-page, so the src never resolves for us, and a testing algorithm silently deleted
-would leave a heading with nothing under it.
+put `<td style=...>` into a reader file.
+
+**How a span is written out is not symmetric, and the asymmetry is the fix HAIVN
+asked for on 2026-09-03.** A ROW span is written out by repeating the cell down
+its column, because a flat table has to let each row be read on its own -- the
+drug list gives one substance two routes as one number cell over two rows, and
+the second row still has to say which drug it is. A COLUMN span is written out
+into the FIRST column it covers, leaving the rest of the covered columns empty:
+repeating sideways says the same thing several times in one row, which is how a
+drug-section title ("1. THUỐC GÂY TÊ, GÂY MÊ…") came to fill all nine cells of
+its row and a payment condition to appear twice on every drug that has one.
+
+**Then the columns that span arithmetic invents are collapsed
+(`column_groups`).** A word-processed table's rows can disagree about how many
+columns the table has: 15/VBHN-BYT's Phụ lục I writes its header row as
+3 + colspan 5 + 1 and its numbering row as 7 + colspan 2, both claiming nine
+physical columns, and Word closes the table with a zero-height row of nine
+width-only cells, one of them a 7.2pt spacer. Expanding those spans faithfully
+lays the disagreement out as a real ninth column -- the "two column 8s". The test
+for a phantom is the same one the PDF table detector needs for a column its
+geometry split in two, so it is one function used by both paths: a column
+carrying nothing at all is not a column, and two adjacent columns that never both
+carry text in the same row, and that do not both carry a header, are one column.
+The HTML path additionally passes a `floor`, the true column count read off the
+source -- no row can hold more cells than the table has columns, counting only
+rows that carry text, so the closing width-only row cannot vouch for the column
+it invents -- and merging stops there. "Never both filled" is evidence, not
+proof, and a caller that knows the width must not let a heuristic go past it.
+Both steps only ever join cells; no text is dropped, and the check that matters
+is the one run on adoption -- every one of the 1,305 table rows carried exactly
+the same cell contents before and after.
+
+**Figures are downloaded and embedded, and `textSource.figureBase` is what says
+where from.** A testing guideline's algorithms are pictures: `qd-1868-2020`
+carries seven -- Hình 1-4, two appendix algorithms, and the whole of Bảng 2,
+which the source lays out as an image rather than as a table -- and until
+2026-09-03 every one of them was replaced by a visible editorial marker, so its
+interpretation table was missing from the text outright. HAIVN reported it. They
+are now saved to `content/legal/figures/<id>/fig-NN.<ext>` in document order and
+written into the text as Markdown images at their repo-relative paths, which
+`DocumentPanel` resolves through `/api/project-content/`; a figure that will not
+download keeps the old marker, and one that fails on a re-run keeps the copy
+already saved rather than being downgraded to it. Bytes are checked against the
+image magic numbers, so an interstitial or an error page can never be saved as a
+figure, and the Accept header deliberately omits `image/webp` -- these stores
+content-negotiate, and asking for it gets a re-encode instead of the publisher's
+own JPEG.
+
+The base is a registry field because the obvious answer is wrong, invisibly:
+thuvienphapluat ships `src="00465161_files/image001.jpg"` and a script rewrites
+it in the browser to `//files.thuvienphapluat.vn/doc2htm/...`, so resolving
+against the document URL asks the wrong host and gets a 2 KB error page.
+Executing the page's JavaScript is not a dependency worth taking for seven
+images; the base is one line of registry beside `container`, which is per-site
+for the same reason. With no `figureBase` the page URL is used, which is the
+plain HTML rule.
+
+The corpus builder strips the path back out (`strip_figure_paths`), leaving the
+alt text on the same line so the section map's line numbers do not move: the
+advisor is instructed to quote its chunks, and a repo path is not something a
+reader should ever see in an answer.
+
+**A figure's alt text is the document's own caption, found by looking either
+side of the image** (`nearest_caption`). It used to be `Figure N in the source
+document` -- keyed on the image's ordinal and written in English into a
+Vietnamese instrument, so the corpus chunk carrying 1868/QĐ-BYT's HBV
+marker-interpretation table read `[Figure 3 in the source document]`, a label
+naming nothing a reader or a model could match to anything. The document names
+its own figures, so the caption beside the image is the label. Both directions
+are searched because this corpus uses both: a `Hình` caption is printed under
+its chart, a `Bảng` caption over its table, and an appendix algorithm's only
+name is the `Phụ lục` heading above it. Three rules make that safe, and each
+comes from a case in this one document:
+
+- The forward search **stops at a heading**, marked or not. This pass runs
+  before `format_structure`, so `Phụ lục 2. ...` is still a plain paragraph at
+  this point; reading it as an ordinary caption is what first captioned the
+  Phụ lục 1 algorithm `Phụ lục 2` and the Phụ lục 2 algorithm `Phụ lục 3`.
+- A caption must carry a **number**: `Bảng trên` and `Hình vẽ minh hoạ` are
+  prose about a figure, not a caption for one. The line must also start with
+  the marker, so the mid-sentence `(Hình 2. Sơ đồ ...)` in the paragraph above
+  Hình 2 is not mistaken for its caption.
+- A whole line that is one Markdown image is **verbatim** to the structure pass
+  (`FIGURE_LINE` in `read_blocks`). Captioning with the document's own words
+  made this a live bug immediately: an appendix algorithm captioned `Phụ lục 1.
+  XÉT NGHIỆM ...` came back marked `## ![Phụ lục 1. ...]`, a second copy of the
+  real heading right above it, which would have gone into the jump map and into
+  the corpus as a section of its own. An image line is generated markup, never a
+  heading, whatever its alt text says.
+
+With no caption found, the fallback is the ordinal **in the document's
+language** (`viet_density` decides), which is what the English one should have
+been in the first place.
+
+### Figure transcriptions -- how a picture gets into the index
+
+Downloading a figure puts it in front of a reader. It does not put it in front
+of the advisor, and for this corpus that gap was most of the value: 1868/QĐ-BYT
+lays Bảng 2 out as a picture and draws six of its testing algorithms as flow
+charts, so a corpus built from the text alone carried seven markers exactly
+where the document's operative content is. "What does an HBsAg-positive,
+anti-HBc-IgM-negative result mean?" is answered by that document and was not
+answerable from the index. HAIVN reported it as "the testing flows are missing".
+
+What a flow chart says cannot be extracted; a person has to read it off the
+image. So it is **curated, per document, in
+`content/legal/transcriptions/<id>.md`**, named from that document's registry
+entry as `figureTranscriptions` -- a hand-curated field beside `textSource`, and
+one this tooling reads and never writes. `annotate_figures` splices each section
+into the text directly under the image it names. The builder writes no prose of
+its own: the whole block is the curator's, in the document's own language, and
+it is ordinary Markdown, so a reader sees it as text under the figure and
+`build-legal-corpus.py` indexes it like any other paragraph. Nothing was needed
+on the corpus side -- `strip_figure_paths` removes the image's repo path and
+keeps the alt text, and the transcription is a block of its own beside it.
+
+The sidecar's format:
+
+```md
+## fig-03 — Bảng 2: Phiên giải kết quả xét nghiệm vi rút viêm gan B
+
+*Nội dung bảng ở hình trên, chép lại thành văn bản ...:*
+
+| HBsAg | Anti-HBs | ... |
+```
+
+- The **stem is the key** (`fig-03`), because it is stable against the
+  publisher re-cropping an image.
+- The **caption after the dash is the drift detector**. Ordinals shift if the
+  source page ever gains an image, and a transcription would then attach
+  silently to the wrong figure; a caption that no longer matches what the
+  document says is reported by the run instead. It fired on its first real run,
+  which is how the `Phụ lục` heading bug above was found.
+- A transcription naming a figure that is not in the text is reported and **not
+  written**.
+- Anything above the first `## fig-NN` is the curator's note to the next
+  curator and is not emitted.
+
+The spliced block is fenced by `<!-- transcription: fig-NN -->` comments, and
+the fence does two jobs.
+
+- **The pass removes any existing fence before it runs**, which is what keeps it
+  idempotent: a transcription is several paragraphs, so once spliced it is
+  several BLOCKS, which would move every later block and leave a second run
+  captioning figures off its own output. Removing first makes the pass a
+  function of the document rather than of how many times it has run -- verified
+  both ways, two fetch runs byte-identical and `--format --dry-run` reporting
+  `unchanged`.
+- **Everything inside it is verbatim to the structure pass** (`read_blocks`).
+  This is curated Markdown, and `reflow` splits a list into one block per item
+  and de-indents the nested ones -- which took a decision list's two branches
+  and left them as loose bullets between steps 4 and 5 of the flow they belong
+  to. An unterminated fence is not treated as a fence, so a hand-edit cannot
+  swallow the rest of the document.
+
+There is a blank line inside each end of the fence on purpose: a Markdown HTML
+block runs to the next blank line, so a comment with the transcription butted
+straight underneath swallows its first paragraph and the reader gets
+`*Nội dung ...*` as literal text.
 
 **Emphasis that is only the site's heading typography is unwrapped before the
 structure pass runs** (`unwrap_heading_emphasis`). These pages bold a heading
@@ -352,8 +572,9 @@ plus a newline, and the heading pass then borrows the continuation line onto it,
 so the marker lands at the end of the label or in the middle of it. Left there
 it rides into the reader's heading, into the jump map's panel label, and into
 the corpus `section` the advisor is told to cite verbatim: `PHỤ LỤC I DANH MỤC
-... BẢO HIỂM Y TẾ\ (part 1 of 82)` on all 82 appendix chunks of
-`tt-20-2022-tt-byt`. Only a backslash before whitespace or end of line is
+... BẢO HIỂM Y TẾ\ (part 1 of 82)` on all 82 appendix chunks of the drug list
+(then filed under `tt-20-2022-tt-byt`, now `vbhn-15-2024-byt`). Only a backslash
+before whitespace or end of line is
 removed; one before a character is escaping that character (`\[9\]`) and stays.
 `word_stream`, which the fidelity invariant is checked in, had to learn the same
 distinction -- it stripped `*`, `_`, `|` and `#` but not this, so it read `TẾ\`
@@ -364,15 +585,15 @@ guard: a `textSource` that comes back short, or with the diacritics gone, keeps
 the file already on disk. A Cloudflare interstitial is reported as
 `text-source-failed`, never written.
 
-Three behaviours worth knowing before you point a registry entry at a new PDF:
+Five behaviours worth knowing before you point a registry entry at a new PDF:
 
 - **`textFile: null` is honoured, not ignored.** Every entry carries the field;
   `null` says the document ships as metadata plus its PDF with no full text, and
   is set where the only official copy is a scan whose OCR cannot be trusted for
-  what the document is *for* -- the drug tables in 20/2022/TT-BYT extract
+  what the document is *for* -- the drug tables in the 15/VBHN-BYT scan extract
   "Lamivudin + tenofovir" as "Lami\,「adia + tenofovir". The run saves the PDF
   and writes no text. To turn full text on, put the path in `textFile` and
-  re-run. That is what 20/2022/TT-BYT itself did on 2026-09-02: `null` is the
+  re-run. That is what the drug list did on 2026-09-02: `null` is the
   right answer only while there is no readable text ANYWHERE, and once a
   born-digital copy of the same edition was found the field was filled in and a
   `textSource` named beside it. The documents still carrying `null` are the four
@@ -393,6 +614,40 @@ Three behaviours worth knowing before you point a registry entry at a new PDF:
   a session cookie set there and to that page as `Referer`; a cold request gets
   the nine bytes `Wrong URL`. The Referer otherwise defaults to the file's own
   origin.
+- **A PDF that will not download no longer stops the text being rebuilt**, where
+  the entry names a `textSource`. The two layers are independent -- the docstring
+  has always said a text failure never stops the PDF being saved -- and one host
+  makes the converse matter: `qd-1868-2020`'s PDF lives on a publisher file store
+  behind a bot check that answers a browser and 403s every scripted client
+  (curl, urllib and a full browser header set were all tried; it is a TLS
+  fingerprint test). An early return there would have made every run skip that
+  document's text and its seven figures over a file already sitting on disk. The
+  run now reports `pdf download-failed ...; kept what is on disk` and carries on.
+  A multi-part gazette document's partial blobs are dropped rather than merged.
+- **`pdfFile` follows the file on disk, in both directions.** `record_pdf_files`
+  used only to ADD the field for a PDF the run itself saved, so a document whose
+  PDF cannot be re-downloaded could never acquire one and its PDF view stayed
+  hidden. The test is now the file at the document's canonical path
+  (`content/legal/pdf/<id>.pdf`): present means the field is written, absent
+  means a stale field is removed, whatever this run managed to fetch. That is
+  what lets `qd-1868-2020` serve a PDF the script cannot re-download -- **the URL
+  is still recorded in `sourcePdfs`, because that is where the file came from,
+  and the registry's `statusEvidence` records what the copy is, when it was
+  retrieved, its size and its SHA-256.** A PDF obtained by hand is a last resort
+  and must be documented that way; the field is not a licence to stop looking for
+  a fetchable official copy.
+
+**The page-map pass runs `build-jump-maps.py` as a SUBPROCESS, not as an import.**
+The builder OCRs a scan across a process pool, and a pool pickles its worker by
+name: the child is handed `("build_jump_maps", "_ocr_page")` and told to import
+it. `jump_maps()` loads that file through importlib under a name no child can
+import -- `build-jump-maps.py` is not a legal module name -- so the pool dies with
+`No module named 'build_jump_maps'` the first time a fetch touches a document
+needing OCR, which is exactly what adding `qd-1868-2020`'s scan did. Run as its
+own script the builder is `__main__`, spawn re-executes it from its path, and the
+pool works; so the fetcher invokes it the way this file tells a person to.
+`jump_maps()` stays for the heading grammar, which never crosses a process
+boundary.
 
 ### The structure pass (`format_structure`)
 
@@ -656,7 +911,7 @@ own chunk. Sections are located by matching the curated map against the text
 lines) rather than with a forward cursor: the first implementation used a cursor,
 and one recurrence of `Điều 17.` inside an appendix form dragged it 9,000 lines
 forward and silently lost all 131 articles after it. Documents with text but no
-map (`qd-1868-2020`, `qd-4026-2010`) fall back to heading heuristics.
+map (`tt-20-2022-tt-byt`, `qd-4026-2010`) fall back to heading heuristics.
 
 **The articles stop at the signature block.** What a Vietnamese instrument
 carries after it -- a promulgated plan, a technical guideline, a tariff

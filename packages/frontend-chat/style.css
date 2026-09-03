@@ -968,26 +968,6 @@ body {
     background: var(--bg-deep);
 }
 
-/* The toolbar toggle carries a word beside its icon, so it cannot take .pdfjs-btn's
-   square box. */
-.pdfjs-outline-toggle {
-    width: auto;
-    gap: 0.3rem;
-    padding: 0 0.5rem;
-    font-size: 0.78rem;
-}
-
-.pdfjs-outline-toggle.is-on {
-    color: var(--accent);
-    border-color: var(--accent-focus);
-}
-
-/* On a narrow pane the toolbar toggle keeps its icon and drops the word; the
-   tooltip still says what it does. */
-@media (max-width: 600px) {
-    .pdfjs-outline-toggle-text { display: none; }
-}
-
 .pdfjs-page {
     position: relative;
     box-shadow: var(--shadow-md);
@@ -1161,6 +1141,31 @@ body {
     cursor: default;
 }
 
+/* Show/hide the Contents sidebar. It is a .pdfjs-find-nav like return and
+   back-to-top beside it -- same box, same hover, same disabled treatment -- and
+   overrides only what a labelled control has to: the square width, so the word
+   fits next to the icon. These rules must stay AFTER .pdfjs-find-nav; equal
+   specificity means the later rule wins, and declared earlier the square width
+   would clamp the label off. `is-on` is the open state, and reads as the pressed
+   half of a toggle rather than as a heading. */
+.pdfjs-outline-toggle {
+    width: auto;
+    gap: 0.3rem;
+    padding: 0 0.5rem;
+    font-size: 0.78rem;
+}
+
+.pdfjs-outline-toggle.is-on {
+    color: var(--accent);
+    border-color: var(--accent-focus);
+}
+
+/* On a narrow pane the toggle keeps its icon and drops the word, so the find
+   input is not squeezed out; aria-label and the tooltip still say what it does. */
+@media (max-width: 600px) {
+    .pdfjs-outline-toggle-text { display: none; }
+}
+
 /* Status line under the input (reading the document, or a scan with no text at
    all). Takes its own row so it never squeezes the input on a narrow screen. */
 .pdfjs-find-note {
@@ -1276,6 +1281,23 @@ body {
 .document-panel-body li { margin-bottom: 0.35rem; }
 
 .document-panel-body a { color: var(--accent); }
+
+/* Figures a generated document carries (the testing algorithms in 1868/QĐ-BYT,
+   and Bảng 2, which its source lays out as a picture). They are scans of print
+   at a fixed pixel size, so they are capped at the column width and never
+   stretched past their own resolution, and they sit on a white card because
+   their own background is white and a dark theme would otherwise put black
+   diagram lines on black. */
+.document-panel-body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.9em auto;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+}
 
 .document-panel-body table {
     width: 100%;

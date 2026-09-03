@@ -75,7 +75,6 @@ rather than invented:
 from __future__ import annotations
 
 import argparse
-import atexit
 import json
 import os
 import re
@@ -87,6 +86,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib import filelock                             # noqa: E402
 from lib import openai_gateway as gateway            # noqa: E402
 from lib.openai_gateway import api_post, load_env, pack, unpack  # noqa: E402,F401
 
@@ -308,6 +308,19 @@ def strip_front_matter(text: str) -> str:
         if line.strip().lower().startswith(("source:", "official source:")):
             return "\n".join(lines[i + 1:])
     return "\n".join(lines[1:]) if lines and lines[0].startswith("# ") else text
+
+
+# A figure the fetcher saved beside the text, written into it as a Markdown
+# image at a repo-relative path. The path is plumbing: it means nothing to a
+# reader and the advisor is instructed to quote its chunks, so leaving it in
+# invites a file path into an answer. The alt text -- the only part that says
+# anything -- is kept in its place, on the same line, so the line numbers the
+# section map matches against do not move.
+FIGURE_IMAGE = re.compile(r"!\[([^\]]*)\]\((?:projects/)[^)\s]*\)")
+
+
+def strip_figure_paths(text: str) -> str:
+    return FIGURE_IMAGE.sub(lambda m: f"[{m.group(1)}]" if m.group(1) else "", text)
 
 
 def vietnamese(text: str) -> bool:
@@ -606,7 +619,7 @@ def split_long(body: str, target: int, overlap: int) -> list[str]:
 
 
 def chunk_document(doc_id: str, text: str, sections: list[dict] | None) -> DocResult:
-    body = strip_front_matter(text)
+    body = strip_figure_paths(strip_front_matter(text))
     lines = body.splitlines()
     result = DocResult(doc_id=doc_id, language="vi" if vietnamese(body) else "en")
 
@@ -936,33 +949,17 @@ def build(args: argparse.Namespace) -> int:
     # whose meta table is empty -- which readings.ts reads as a valid BM25-only
     # index and serves, so retrieval quietly loses its dense half with nothing
     # in the log to say so. Observed twice on 2026-09-02. So a build takes an
-    # exclusive lock and a second one refuses to start.
+    # exclusive lock and a second one refuses to start. The lock itself is
+    # `lib/filelock.py`, shared with the registry write in fetch-legal-docs.py,
+    # which had the same defect for the same reason -- one implementation, so a
+    # fix to the stale-holder handling reaches both.
     lock_path = BUILD_PATH.with_name(BUILD_PATH.name + ".lock")
     try:
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        holder = ""
-        try:
-            holder = lock_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            pass
-        alive = False
-        if holder.isdigit():
-            try:
-                os.kill(int(holder), 0)
-                alive = True
-            except (OSError, ProcessLookupError):
-                alive = False
-        if alive:
-            print(f"error: another build of this index is running (pid {holder}). "
-                  f"Wait for it to finish rather than racing it.", file=sys.stderr)
-            return 2
-        print(f"  note: clearing a stale build lock left by pid {holder or '?'}")
-        lock_path.unlink()
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.write(lock_fd, str(os.getpid()).encode())
-    os.close(lock_fd)
-    atexit.register(lambda: lock_path.exists() and lock_path.unlink())
+        filelock.acquire(lock_path)
+    except filelock.LockBusy as busy:
+        print(f"error: another build of this index is running ({busy}). "
+              f"Wait for it to finish rather than racing it.", file=sys.stderr)
+        return 2
 
     for stale in (BUILD_PATH, BUILD_PATH.with_name(BUILD_PATH.name + "-wal"),
                   BUILD_PATH.with_name(BUILD_PATH.name + "-shm"),

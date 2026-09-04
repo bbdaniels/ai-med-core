@@ -505,12 +505,22 @@ type OutlineUI = (typeof FIND_UI)[string];
 /**
  * Drop nodes that carry no title, promoting their children in their place.
  *
- * The published EIP files really do contain them: 7 of the English file's 47
- * bookmarks and 8 of the Vietnamese file's 48 have an empty title, and in the
- * Vietnamese file the FIRST one does. A titleless bookmark is not something a
- * reader can choose, so painting it as a row (with a placeholder glyph, or with
- * nothing) puts a dead entry at the top of the contents. Its children are real
- * entries, though, so they move up a level rather than disappearing with it.
+ * A titleless bookmark is not something a reader can choose, so painting it as a
+ * row (with a placeholder glyph, or with nothing) puts a dead entry in the
+ * contents. Its children are real entries, though, so they move up a level
+ * rather than disappearing with it.
+ *
+ * THE EIP FILES NO LONGER NEED THIS, and that is worth saying explicitly so the
+ * next reader does not take it as evidence they still do. Google Docs used to
+ * export 7 titleless bookmarks into the English file and 8 into the Vietnamese
+ * one, the first of them; `tools/build-jump-maps.py` now writes those PDFs'
+ * outline itself and none of its entries is blank. Hiding them here was only
+ * ever half a fix anyway -- "open in a new tab" hands the browser the same
+ * bytes, and the browser's own viewer drew every blank row we were hiding.
+ *
+ * It stays because this component also draws the Legal Library, and those are
+ * twenty-two Vietnamese government PDFs published by somebody else, whose
+ * outlines we neither write nor control.
  */
 function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {
   const out: OutlineNode[] = [];

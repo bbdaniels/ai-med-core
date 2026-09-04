@@ -87,6 +87,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import filelock                             # noqa: E402
+from lib import transcriptions                       # noqa: E402
 from lib import openai_gateway as gateway            # noqa: E402
 from lib.openai_gateway import api_post, load_env, pack, unpack  # noqa: E402,F401
 
@@ -268,6 +269,7 @@ class DocResult:
     mapped_sections: int = 0
     unmatched_sections: int = 0
     duplicates: int = 0
+    orphan_transcriptions: int = 0
     source: str = "map"          # map | heuristic
 
 
@@ -316,11 +318,26 @@ def strip_front_matter(text: str) -> str:
 # invites a file path into an answer. The alt text -- the only part that says
 # anything -- is kept in its place, on the same line, so the line numbers the
 # section map matches against do not move.
-FIGURE_IMAGE = re.compile(r"!\[([^\]]*)\]\((?:projects/)[^)\s]*\)")
+FIGURE_IMAGE = re.compile(r"!\[([^\]]*)\]\(((?:projects/)[^)\s]*)\)")
 
 
 def strip_figure_paths(text: str) -> str:
     return FIGURE_IMAGE.sub(lambda m: f"[{m.group(1)}]" if m.group(1) else "", text)
+
+
+def figure_stems(lines: list[str]) -> dict[int, list[str]]:
+    """`{line index: [fig-01, ...]}` for the figures embedded in the text.
+
+    Read BEFORE `strip_figure_paths` runs, because the stem is in the path it
+    removes -- and read by line, because the stem is how a transcription finds
+    the section its figure sits in. `strip_figure_paths` is a same-line
+    substitution, so these indices stay valid against the stripped body."""
+    out: dict[int, list[str]] = {}
+    for i, line in enumerate(lines):
+        stems = [Path(m.group(2)).stem for m in FIGURE_IMAGE.finditer(line)]
+        if stems:
+            out[i] = stems
+    return out
 
 
 def vietnamese(text: str) -> bool:
@@ -618,8 +635,48 @@ def split_long(body: str, target: int, overlap: int) -> list[str]:
     return capped or [body]
 
 
-def chunk_document(doc_id: str, text: str, sections: list[dict] | None) -> DocResult:
-    body = strip_figure_paths(strip_front_matter(text))
+# ── what a figure SAYS ───────────────────────────────────────────────────
+#
+# A figure in these instruments is often where the operative content is:
+# 1868/QĐ-BYT lays its HBV marker-interpretation table (Bảng 2) out as a picture
+# and draws six of its testing algorithms as flow charts. Nothing extracts that,
+# so it is transcribed by hand into `content/legal/transcriptions/<id>.md`,
+# named from the registry as `figureTranscriptions` (see lib/transcriptions.py).
+#
+# Round 6 got it into the index by splicing it into the DISPLAYED text, and
+# HAIVN's reviewers reported on 2026-09-04 that a transcription printed under
+# the figure duplicates what they are already looking at. The coupling was the
+# defect: the reader's text file was load-bearing for the search index. So the
+# transcription is read here, from the sidecar, and indexed as chunks of the
+# section its figure sits in -- through the SAME `emit` as every other chunk, so
+# it is split, sized, page-stamped, headed and deduped identically. There is no
+# second chunking path, and the text file is now only the text.
+#
+# A transcription whose figure is not in the text is still indexed, against the
+# document with no section of its own, because losing an algorithm from the
+# index is the failure this whole mechanism exists to prevent. `--format`
+# reports the mismatch on the curated side, which is where it can be fixed.
+def transcription_section(parent: str, stem: str,
+                          entry: tuple[str, str]) -> str:
+    """The citable location for a figure's transcription.
+
+    The figure's own caption is the label -- `Bảng 2: Phiên giải ...` is what a
+    reader would cite -- hung under the section the figure appears in. An
+    appendix algorithm's caption IS its section's heading (the `Phụ lục` line is
+    the only name it has), and `Phụ lục 1. ... > Phụ lục 1. ...` is a location
+    that reads as two places; where they are the same, one of them is enough."""
+    caption = entry[0] or stem
+    if not parent or norm(parent.rsplit(" > ", 1)[-1]) == norm(caption):
+        return parent or caption
+    return f"{parent} > {caption}"
+
+
+def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
+                   transcripts: dict[str, tuple[str, str]] | None = None) -> DocResult:
+    stripped = strip_front_matter(text)
+    figures = figure_stems(stripped.splitlines())
+    transcripts = dict(transcripts or {})
+    body = strip_figure_paths(stripped)
     lines = body.splitlines()
     result = DocResult(doc_id=doc_id, language="vi" if vietnamese(body) else "en")
 
@@ -644,29 +701,43 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None) -> DocRe
     # is the title block and the "Căn cứ" recitals -- the authority the document
     # is issued under, which is a real answer to a real question.
     bounds = [m.line for m in markers]
-    segments: list[tuple[Marker | None, str]] = []
+    segments: list[tuple[Marker | None, str, list[str]]] = []
+
+    def stems_in(start: int, end: int) -> list[str]:
+        return [s for i in range(start, end) for s in figures.get(i, ())]
+
     first = bounds[0] if bounds else len(lines)
     preamble = "\n".join(lines[:first]).strip()
     if preamble:
-        segments.append((None, preamble))
+        segments.append((None, preamble, stems_in(0, first)))
     for idx, marker in enumerate(markers):
         end = markers[idx + 1].line if idx + 1 < len(markers) else len(lines)
-        segments.append((marker, "\n".join(lines[marker.line:end]).strip()))
+        segments.append((marker, "\n".join(lines[marker.line:end]).strip(),
+                         stems_in(marker.line, end)))
 
     # Containers (Chương / Mục / Phần) are context, not citations: their heading
     # rides along with the next article rather than becoming a chunk of its own.
     pending_text: list[str] = []
+    pending_figs: list[str] = []
     parent: str = ""
     page_carry = 0
 
-    def emit(section: str, page: int, body_text: str) -> None:
+    def emit(section: str, page: int, body_text: str,
+             figs: list[str] | None = None) -> None:
         body_text = body_text.strip()
-        if not body_text:
-            return
-        parts = split_long(body_text, TARGET_TOKENS, OVERLAP_TOKENS)
-        for i, part in enumerate(parts):
-            result.chunks.append(Chunk(section=section, page=page, text=part,
-                                       part=i + 1, parts=len(parts)))
+        if body_text:
+            parts = split_long(body_text, TARGET_TOKENS, OVERLAP_TOKENS)
+            for i, part in enumerate(parts):
+                result.chunks.append(Chunk(section=section, page=page, text=part,
+                                           part=i + 1, parts=len(parts)))
+        # A figure standing in this section: its transcription is indexed here,
+        # under the figure's own caption, and through this same call so it is
+        # split, sized and page-stamped exactly like the prose around it. Popped
+        # rather than read, so what is left over at the end is the orphans.
+        for stem in figs or ():
+            entry = transcripts.pop(stem, None)
+            if entry:
+                emit(transcription_section(section, stem, entry), page, entry[1])
 
     def drain(page: int) -> None:
         """Flush whatever has accumulated under a container heading.
@@ -677,34 +748,39 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None) -> DocRe
         before its first Điều -- is content, and gluing it onto the next article
         would both mislabel it and make one 22,000-token chunk out of it.
         """
-        nonlocal pending_text
+        nonlocal pending_text, pending_figs
         blob = "\n\n".join(pending_text).strip()
-        pending_text = []
+        figs = pending_figs
+        pending_text, pending_figs = [], []
         if blob and est_tokens(blob) > MIN_SPLIT_TOKENS:
-            emit(parent or "Unnumbered provisions", page, blob)
+            emit(parent or "Unnumbered provisions", page, blob, figs)
         elif blob:
-            pending_text = [blob]
+            pending_text, pending_figs = [blob], figs
 
-    for marker, seg in segments:
+    for marker, seg, figs in segments:
         if marker is None:
             if seg:
-                emit("Preamble (title block and recitals)", 1 if sections else 0, seg)
+                emit("Preamble (title block and recitals)",
+                     1 if sections else 0, seg, figs)
             continue
         if marker.page:
             page_carry = marker.page
         if marker.kind in CONTAINER_KINDS:
             drain(page_carry)
             parent = marker.label
+            pending_figs.extend(figs)
             if seg:
                 pending_text.append(seg)
             continue
         if marker.kind not in BOUNDARY_KINDS:
             pending_text.append(seg)
+            pending_figs.extend(figs)
             continue
 
         drain(page_carry)
         full = ("\n\n".join(pending_text + [seg])).strip() if pending_text else seg
-        pending_text = []
+        figs = pending_figs + figs
+        pending_text, pending_figs = [], []
         if marker.kind == ANNEX_KIND:
             # Attached material sits on pages the map never located, and under
             # no Chương. Carrying either forward would be the same false
@@ -712,11 +788,21 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None) -> DocRe
             page_carry = 0
             parent = ""
         section = f"{parent} > {marker.label}" if parent else marker.label
-        emit(section, page_carry, full)
+        emit(section, page_carry, full, figs)
 
     drain(page_carry)
-    if pending_text:                          # a sliver drain declined to emit
-        emit(parent or "Closing provisions", page_carry, "\n\n".join(pending_text))
+    if pending_text or pending_figs:          # a sliver drain declined to emit
+        emit(parent or "Closing provisions", page_carry,
+             "\n\n".join(pending_text), pending_figs)
+
+    # Whatever `emit` never popped: a transcription curated for a figure that is
+    # not in this text. It is still indexed -- an algorithm missing from the
+    # index is the failure this mechanism exists to prevent -- but with no
+    # section borrowed from a figure it does not sit in, and no page.
+    for stem in sorted(transcripts):
+        entry = transcripts[stem]
+        result.orphan_transcriptions += 1
+        emit(transcription_section("", stem, entry), 0, entry[1])
 
     # Some source texts carry the whole instrument twice -- qd-1868-2020.md and
     # qd-4026-2010.md are scrapes of legal-reference sites that print a preview
@@ -953,9 +1039,9 @@ def build(args: argparse.Namespace) -> int:
     # `lib/filelock.py`, shared with the registry write in fetch-legal-docs.py,
     # which had the same defect for the same reason -- one implementation, so a
     # fix to the stale-holder handling reaches both.
-    lock_path = BUILD_PATH.with_name(BUILD_PATH.name + ".lock")
+    # The RESOURCE, not a lock path: `filelock` derives `<BUILD_PATH>.lock`.
     try:
-        filelock.acquire(lock_path)
+        filelock.acquire(BUILD_PATH)
     except filelock.LockBusy as busy:
         print(f"error: another build of this index is running ({busy}). "
               f"Wait for it to finish rather than racing it.", file=sys.stderr)
@@ -1000,7 +1086,20 @@ def build(args: argparse.Namespace) -> int:
             sections = json.loads((REPO_ROOT / map_rel).read_text(encoding="utf-8")
                                   ).get("sections") or None
 
-        res = chunk_document(doc_id, text_path.read_text(encoding="utf-8"), sections)
+        # The figures' hand-curated transcriptions, read from the sidecar rather
+        # than out of the displayed text. See the section comment above
+        # `chunk_document`: the reader sees the figure, the index sees what it
+        # says, and neither depends on the other.
+        transcripts, note = transcriptions.read(doc, REPO_ROOT)
+        if note:
+            print(f"  {doc_id}: {note}")
+
+        res = chunk_document(doc_id, text_path.read_text(encoding="utf-8"), sections,
+                             transcripts)
+        if transcripts:
+            print(f"  {doc_id}: indexed {len(transcripts)} figure transcription(s)"
+                  + (f", {res.orphan_transcriptions} with no figure in the text"
+                     if res.orphan_transcriptions else ""))
         if not res.chunks:
             skipped[doc_id] = "no chunks produced"
             print(f"  {doc_id}: no chunks")

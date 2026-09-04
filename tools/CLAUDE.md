@@ -125,9 +125,19 @@ index whose embeddings table is a fraction of its chunks (twice on 2026-09-02),
 and `registry.json`, where two `fetch-legal-docs.py` runs each wrote the whole
 registry and one dropped the `vbhn-15-2024-byt` entry (2026-09-03).
 
-`acquire(path, timeout=0)` for a long job that should refuse rather than queue
-(the corpus build), `exclusive_lock(path)` as a context manager for a short
-critical section that should wait (the registry write). A pid in a file created
+**Every entry point takes the RESOURCE being protected and derives the lock
+file itself** (`<resource>.lock`, beside it): `acquire(resource, timeout=0)` for
+a long job that should refuse rather than queue (the corpus build),
+`exclusive_lock(resource)` as a context manager for a short critical section
+that should wait (the registry write). It used to take the LOCK FILE's path, and
+that put one character between correct use and total data loss -- `acquire`
+opens its argument `O_CREAT|O_WRONLY` and `release` unlinks it, so a caller
+passing the file it meant to protect truncates it to nothing and then deletes
+it. That is how `registry.json` was emptied on 2026-09-04, by a caller reading
+`exclusive_lock(path)` as "lock this file", which is the only reading the name
+supported. Deriving the path removes the mistake rather than documenting it, and
+a path that already ends in `.lock` is refused with an error naming it, since
+the only way to produce one is the old call shape. A pid in a file created
 `O_EXCL`; a holder that is no longer running is stale and is cleared, since the
 alternative is a crashed run wedging the tool until someone deletes a file by
 hand. **Release is conditional on the file still naming this process**, which is
@@ -196,7 +206,9 @@ Google Doc, from a single parse per language:
 
 - `projects/haivn_eip/content/eip-text.<lang>.md` -- the "EIP Text" reader tab
 - `projects/haivn_eip/cases/eip-advisor/content.md` -- the advisor's LLM grounding text
-- `projects/haivn_eip/content/eip-<lang>.pdf` -- the EIP tab's PDF view
+- `projects/haivn_eip/content/eip-<lang>.pdf` -- the EIP tab's PDF view, with the
+  navigation chip stripped out and its **bookmark outline replaced** by one built
+  from the text tab (see below), both on the run that fetches it
 - `projects/haivn_eip/content/eip-map.<lang>.json` -- the text tab's anchors
   resolved to pages of that PDF, built by `build-jump-maps.py` on the same run
 
@@ -214,6 +226,55 @@ generated, which is two implementations of one job and is how the reader tab and
 the model's grounding ended up as separate things to keep in sync. Change the
 Google Doc, bump `DOC_IDS` / `EIP_VERSION` at the top of the script if HAIVN cut
 a new document rather than revising the old one, and re-run.
+
+### The PDF's bookmarks are ours, not Google's
+
+Google Docs exports an outline of the numbered headings only -- about forty
+entries for a forty-two-page document -- and stamps a handful of TITLELESS ones
+into it besides, an empty paragraph that happens to be styled as a heading (7 in
+the English file, 8 in the Vietnamese, and there the first one). Our own viewer's
+contents sidebar hid the blanks and expanded the rest, but **"open in a new tab"
+hands the browser the same bytes**: there is no second copy of this PDF, so the
+browser's own viewer drew nine collapsed top-level rows, some of them empty.
+HAIVN reported exactly that on 2026-09-04, having already been given the deeper
+sidebar in the app.
+
+So `build_pdf_outline` replaces the outline in the file, immediately after the
+nav-chip strip and on the same run. Sixty-four entries per language, four levels
+deep, none of them blank: the same sections, plus the structure the text tab
+already carries and the outline never did -- table and figure captions, the
+numbered items of the appendix training plans, the bold-italic subsections of
+4.1, the articles of the model contract. `eip_outline_nodes` in
+`build-jump-maps.py` reads them off the markdown by a deliberate WHITELIST of
+shapes, because the model contract's letterhead ("SOCIALIST REPUBLIC OF
+VIETNAM", "Pursuant to the Civil Code ...") is emphasised exactly the same way
+and is a heading of nothing.
+
+Four things about it are load-bearing:
+
+- **Titles are the document's own words, in the document's own language.**
+  Nothing is translated, nothing is synthesised, right down to the source's
+  `4.Methodology` missing its space.
+- **A bookmark is placed by the same confirm-on-the-page rule as a jump-map
+  anchor** (`resolve_eip_anchors`, one implementation for both), a sub-heading
+  inside the page span of its own section -- which is what makes a five-word
+  title like `Article 1: Scope of Services` safe to match at all. One that
+  cannot be confirmed is named in the run's output and left out, never guessed.
+- **The save is INCREMENTAL, and a file already carrying the outline is not
+  written at all.** The named destinations are what the document's own contents
+  links resolve through, and a rewriting save is free to garbage-collect the ones
+  only the replaced outline referred to; skipping an unchanged write is the same
+  rule `write_json` and `strip-pdf-nav-marks.py` keep, and it is what makes a
+  re-run byte-identical rather than appending a fresh copy of every outline
+  object to a 5 MB binary git tracks.
+- **The frontend's `pruneOutline` was NOT removed.** It is now dead weight for
+  the EIP -- verified, zero blank entries -- but the same viewer draws the Legal
+  Library's twenty-three government PDFs, whose outlines somebody else publishes.
+  Its comment says so, so the next reader does not take it as evidence the EIP
+  files still need it.
+
+`python3 tools/build-jump-maps.py --eip-only --eip-outline` rewrites the outlines
+of the PDFs already on disk, without re-fetching them.
 
 The build refuses to write a reader text whose own links dangle: every
 `href="#x"` and `](#x)` it emits must resolve to a `{#x}` anchor in the same
@@ -292,9 +353,10 @@ with an entire fetch in the middle of it, so a run overlapping another one
 silently reverts everything the other did. Not theoretical: a concurrent pair of
 runs dropped the `vbhn-15-2024-byt` entry on 2026-09-03, with no error anywhere,
 because one had loaded the registry before the other added it. So the write
-takes `registry.json.lock`, re-reads the file INSIDE that lock (the lock cannot
-cover a run that started before it -- re-reading is what actually makes the
-write safe), replaces only the entries in `touched`, restores any of those the
+locks `REGISTRY` itself -- `filelock` derives `registry.json.lock` from it, and
+never opens the file it is handed -- re-reads the file INSIDE that lock (the
+lock cannot cover a run that started before it -- re-reading is what actually
+makes the write safe), replaces only the entries in `touched`, restores any of those the
 file has since lost, and refuses outright if the merge would leave fewer
 documents than were just read from disk. A registry that gained entries while
 the run worked is merged and said so in the output, not overwritten.
@@ -333,8 +395,10 @@ is a rasterised, watermarked rendering with no text layer on any of its 31 pages
 6 of the PDF's 39 tables and mangled diacritics in about forty words the
 publisher's transcription gets right, `vbhn-15-2024-byt`'s only official copy is
 a scan whose OCR layer garbles the drug list that consolidation exists for, and
-`tt-20-2022-tt-byt` has no reachable official copy at all. HAIVN asked for it on
-2026-09-02.
+`tt-20-2022-tt-byt` has no reachable OFFICIAL copy at all -- its `pdfFile` is an
+unofficial re-typeset copy from a provincial hospital's file server, adopted
+2026-09-04 because it is the only COMPLETE copy of the standalone circular
+anyone has reached. HAIVN asked for the signed scan on 2026-09-02.
 
 `vbhn-15-2024-byt` is the case where the container matters most, and the one to
 copy when a document's tables are the document. Consolidated text 15/VBHN-BYT of
@@ -355,7 +419,8 @@ consolidation was the only complete copy of the drug list anyone could reach; th
 Legal Library then displayed the consolidation's list under the 2022 circular's
 number and title, which is what HAIVN reported on 2026-09-03. Split on that date
 into `tt-20-2022-tt-byt` (the circular as signed 31/12/2022, text transcribed
-from the thuvienphapluat page the EIP itself cites, no official PDF reachable)
+from the thuvienphapluat page the EIP itself cites; no official PDF reachable, so
+since 2026-09-04 it ships an unofficial complete re-typeset copy instead)
 and `vbhn-15-2024-byt` (the consolidation, official scan plus the thuviennhadat
 transcription). They are cross-linked by two registry fields --
 `consolidates: ["tt-20-2022-tt-byt", "tt-37-2024-tt-byt"]` on the consolidation
@@ -495,13 +560,40 @@ What a flow chart says cannot be extracted; a person has to read it off the
 image. So it is **curated, per document, in
 `content/legal/transcriptions/<id>.md`**, named from that document's registry
 entry as `figureTranscriptions` -- a hand-curated field beside `textSource`, and
-one this tooling reads and never writes. `annotate_figures` splices each section
-into the text directly under the image it names. The builder writes no prose of
-its own: the whole block is the curator's, in the document's own language, and
-it is ordinary Markdown, so a reader sees it as text under the figure and
-`build-legal-corpus.py` indexes it like any other paragraph. Nothing was needed
-on the corpus side -- `strip_figure_paths` removes the image's repo path and
-keeps the alt text, and the transcription is a block of its own beside it.
+one this tooling reads and never writes. Parsing is `lib/transcriptions.py`,
+shared with `build-legal-corpus.py` so the sidecar's shape cannot drift between
+the tool that validates it and the tool that indexes it.
+
+**The transcription is retrieval material and is NOT displayed.** Round 6 got it
+into the index by splicing each section into the text under its image, and on
+2026-09-04 HAIVN's reviewers -- who are looking at the figure -- reported that
+the text underneath duplicated it and asked for it to be removed. The splice was
+the defect, not just the duplication: it made the reader's text file
+load-bearing for the search index, so one audience's page could not be changed
+without the other's retrieval moving. So:
+
+- `annotate_figures` writes **nothing** from the sidecar into the text. It still
+  captions the figure and still CHECKS the sidecar -- caption drift, orphans --
+  because the run that assembles the text is the one that knows which figures
+  the document has.
+- `build-legal-corpus.py` reads the sidecar itself and indexes each
+  transcription as chunks of the section its figure sits in, through the same
+  `emit` as every other chunk, so it is split, sized, page-stamped, headed and
+  deduped identically. `figure_stems` reads the stems off the image paths before
+  `strip_figure_paths` removes them; that is the whole join. There is no second
+  chunking path.
+- A transcription whose figure is not in the text is **still indexed**, against
+  the document with no section and no page. Losing an algorithm from the index
+  is the failure the mechanism exists to prevent; the mismatch is reported on
+  the curated side, where it can be fixed.
+- Where a figure's caption IS its section's heading -- an appendix algorithm
+  whose only name is the `Phụ lục` line over it -- the section is not repeated,
+  so the location reads as one place rather than two.
+
+The builder writes no prose of its own either way: the whole block is the
+curator's, in the document's own language, and it opens with the curator's own
+"chép lại thành văn bản" line, which is what tells a reader of a retrieved
+passage that it is a transcription of a picture.
 
 The sidecar's format:
 
@@ -520,32 +612,21 @@ The sidecar's format:
   silently to the wrong figure; a caption that no longer matches what the
   document says is reported by the run instead. It fired on its first real run,
   which is how the `Phụ lục` heading bug above was found.
-- A transcription naming a figure that is not in the text is reported and **not
-  written**.
+- A transcription naming a figure that is not in the text is reported by
+  `--format` and indexed without a section (see above).
 - Anything above the first `## fig-NN` is the curator's note to the next
   curator and is not emitted.
 
-The spliced block is fenced by `<!-- transcription: fig-NN -->` comments, and
-the fence does two jobs.
-
-- **The pass removes any existing fence before it runs**, which is what keeps it
-  idempotent: a transcription is several paragraphs, so once spliced it is
-  several BLOCKS, which would move every later block and leave a second run
-  captioning figures off its own output. Removing first makes the pass a
-  function of the document rather than of how many times it has run -- verified
-  both ways, two fetch runs byte-identical and `--format --dry-run` reporting
-  `unchanged`.
-- **Everything inside it is verbatim to the structure pass** (`read_blocks`).
-  This is curated Markdown, and `reflow` splits a list into one block per item
-  and de-indents the nested ones -- which took a decision list's two branches
-  and left them as loose bullets between steps 4 and 5 of the flow they belong
-  to. An unterminated fence is not treated as a fence, so a hand-edit cannot
-  swallow the rest of the document.
-
-There is a blank line inside each end of the fence on purpose: a Markdown HTML
-block runs to the next blank line, so a comment with the transcription butted
-straight underneath swallows its first paragraph and the reader gets
-`*Nội dung ...*` as literal text.
+**Retiring round 6's splice.** `SPLICED_RE` and `desplice_transcriptions` are
+kept as the REMOVER, not the writer: a text file written by that version is
+repaired by the next run of the fetch path or of `--format`, which is the only
+route for the eight documents whose text cannot be re-extracted. It runs before
+the structure pass and is a pure function of the text, so a file with no splice
+is not touched and a second run writes the same bytes. `--format` reports the
+document as `de-spliced` and tells you to rebuild the corpus. Run on
+`qd-1868-2020` on 2026-09-04: 141 lines removed in exactly seven pure-deletion
+hunks, no additions, every deleted line either a fence comment or a line present
+verbatim in the sidecar.
 
 **Emphasis that is only the site's heading typography is unwrapped before the
 structure pass runs** (`unwrap_heading_emphasis`). These pages bold a heading
@@ -752,6 +833,10 @@ on?** It writes
   this repo's tooling writes into the hand-curated registry, after `pdfFile`);
 - `projects/haivn_eip/content/eip-map.<lang>.json`, shape
   `{"anchors": {"sec-1-2": 5, "app-2": 24}}`, 1-based pages;
+- the **bookmark outline of the two EIP PDFs**, on `--eip-outline` (which
+  `build-eip-text.py` invokes on every PDF re-export) -- see "The PDF's bookmarks
+  are ours, not Google's" above. It is the same anchor -> page resolution
+  (`resolve_eip_anchors`) as the map, extended one level down;
 - and a **canonical text layer** into the scanned legal PDFs that have a trusted
   text file, so those scans become searchable and selectable.
 
@@ -760,6 +845,7 @@ python3 tools/build-jump-maps.py                     # maps + injection + EIP an
 python3 tools/build-jump-maps.py --only tt-43-2025-tt-byt
 python3 tools/build-jump-maps.py --no-inject         # maps only, PDFs untouched
 python3 tools/build-jump-maps.py --eip-only          # just the two anchor maps
+python3 tools/build-jump-maps.py --eip-only --eip-outline   # ... and rewrite their bookmarks
 python3 tools/fetch-legal-docs.py --maps             # same legal pass, from the fetcher
 ```
 
@@ -862,10 +948,13 @@ npx tsx tools/legal-corpus-smoke.ts                    # verify through readings
 npx tsx tools/legal-corpus-smoke.ts --bm25             # same, no embedding call
 ```
 
-Rebuild it whenever `content/legal/text/*.md`, `content/legal/maps/*.json`, or
-the registry's metadata changes -- i.e. after any `fetch-legal-docs.py` or
-`build-jump-maps.py` run that moves text or pages. The database is **committed**,
-which is the difference from the PPOL index: these are Vietnamese government
+Rebuild it whenever `content/legal/text/*.md`, `content/legal/maps/*.json`,
+`content/legal/transcriptions/*.md`, or the registry's metadata changes -- i.e.
+after any `fetch-legal-docs.py` or `build-jump-maps.py` run that moves text or
+pages, and after any edit to a figure transcription, which since 2026-09-04
+reaches the index through this builder alone and no longer through the
+displayed text. The database is **committed**, which is the difference from the
+PPOL index: these are Vietnamese government
 instruments already shipped in this repo as text and as PDFs, so there is nothing
 to withhold, and committing removes the post-redeploy upload step that
 `upload-readings-index.sh` exists for. `projects/haivn_eip/project.json` declares
@@ -903,6 +992,12 @@ future doc-ref chip would need to open the Legal Library at the right page;
 `weeks` is `[]`, since a course schedule has no legal analogue and an empty
 array is what stops `readings.ts` printing an "assigned" clause it cannot mean.
 
+A document declaring `figureTranscriptions` also has its figures' hand-curated
+transcriptions indexed, read from the sidecar and attributed to the section each
+figure sits in -- see "Figure transcriptions" under `fetch-legal-docs.py` above.
+That is the only way this corpus's flow charts and 1868/QĐ-BYT's Bảng 2 are
+reachable by search at all, and it no longer goes through the displayed text.
+
 Chunking is per Điều / Phụ lục, so a chunk is the unit a lawyer cites. Chương,
 Mục and Phần headings are context that rides along with the next article --
 unless they carry substantive text of their own, in which case they become their
@@ -911,7 +1006,7 @@ own chunk. Sections are located by matching the curated map against the text
 lines) rather than with a forward cursor: the first implementation used a cursor,
 and one recurrence of `Điều 17.` inside an appendix form dragged it 9,000 lines
 forward and silently lost all 131 articles after it. Documents with text but no
-map (`tt-20-2022-tt-byt`, `qd-4026-2010`) fall back to heading heuristics.
+map (`qd-4026-2010`) fall back to heading heuristics.
 
 **The articles stop at the signature block.** What a Vietnamese instrument
 carries after it -- a promulgated plan, a technical guideline, a tariff

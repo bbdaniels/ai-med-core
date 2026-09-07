@@ -26,6 +26,22 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * One chunk's staleness note: its text per language, and its strength.
+ *
+ * `rank` is the whole ordering contract with the builders. A corpus may write
+ * several tiers of note -- haivn_eip's legal index writes three, from one that
+ * is true of any chunk of an instrument up to one that corrects a restriction
+ * the chunk itself states -- and this file must never render a weaker note's
+ * claims over a stronger note's passages. It compares ranks and knows none of
+ * the tier names; naming them here would be a second copy of an ordering the
+ * builder already owns. An index written before ranks existed reads as rank 1.
+ */
+export interface ChunkNotice {
+  rank: number;
+  text: Record<string, string>;
+}
+
 export interface ReadingChunk {
   chunkId: number;
   docId: string;
@@ -41,13 +57,14 @@ export interface ReadingChunk {
   /** Weeks this reading is assigned, from the manifest. */
   weeks: Array<{ date: string; topic: string; term: string; reference: boolean }>;
   /**
-   * A passage-level staleness note the corpus attached to this chunk: text that
-   * is out of date even though the document carrying it is in force, keyed by
-   * language code. Null on almost every chunk, and on every chunk of an index
-   * built before the column existed. See `supersededPassages` in haivn_eip's
-   * legal registry.
+   * A staleness note the corpus attached to this chunk: content that is out of
+   * date even though the document carrying it is in force. `text` is keyed by
+   * language code; `rank` says how strong the note is, and a higher rank is a
+   * stronger claim about the passage. Null on an unannotated chunk, and on
+   * every chunk of an index built before the column existed. See
+   * `supersededPassages` in haivn_eip's legal registry.
    */
-  notice: Record<string, string> | null;
+  notice: ChunkNotice | null;
   header: string;
   text: string;
   score: number;
@@ -385,25 +402,41 @@ export function listReadings(index: OpenIndex): Array<{
 }
 
 /**
- * A chunk's notice column, as a language-keyed record.
+ * A chunk's notice column, as text per language plus a rank.
  *
- * The builders write a JSON object of language code to text. A plain string is
- * accepted too, as one English notice, so an index built before the column was
- * bilingual still renders rather than throwing inside a tool call.
+ * The builders write `{"tier": name, "rank": n, "text": {lang: text}}`. Two
+ * older shapes still parse rather than throwing inside a tool call: a bare
+ * language-keyed object (written before notices were tiered) and a plain string
+ * (written before they were bilingual). Both read as rank 1, the weakest, which
+ * is the only rank that cannot make an unranked note outrank a ranked one.
+ * `tier` is deliberately not read: the builder owns the ordering, this file
+ * only compares ranks.
  */
-function parseNotice(raw: string | null): Record<string, string> | null {
+function parseNotice(raw: string | null): ChunkNotice | null {
+  const textMap = (value: unknown): Record<string, string> | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) out[k] = v;
+    }
+    return Object.keys(out).length ? out : null;
+  };
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof v === 'string' && v.trim()) out[k] = v;
+      const record = parsed as Record<string, unknown>;
+      const tiered = textMap(record.text);
+      if (tiered) {
+        const rank = typeof record.rank === 'number' && Number.isFinite(record.rank)
+          ? record.rank : 1;
+        return { rank, text: tiered };
       }
-      return Object.keys(out).length ? out : null;
+      const flat = textMap(record);
+      return flat ? { rank: 1, text: flat } : null;
     }
   } catch { /* not JSON: an older index wrote the text directly */ }
-  return { en: raw };
+  return { rank: 1, text: { en: raw } };
 }
 
 /**
@@ -430,8 +463,9 @@ export function noticeLanguage(language?: string | null): string {
   return 'en';
 }
 
-function noticeText(notice: Record<string, string>, code: string): string | null {
-  return notice[code] ?? notice.en ?? Object.values(notice)[0] ?? null;
+function noticeText(notice: ChunkNotice, code: string): string | null {
+  const t = notice.text;
+  return t[code] ?? t.en ?? Object.values(t)[0] ?? null;
 }
 
 /**
@@ -457,11 +491,27 @@ export function formatSearchResults(
   // one tool result -- measured at 38% of the payload, and paid for on every
   // search of a deployment running under a monthly credit cap. So each distinct
   // notice is printed once, above the passages, naming which ones it covers.
+  //
+  // ONLY THE STRONGEST RANK IN THE RESULT SET IS RENDERED, and the weaker ones
+  // are dropped rather than stacked. A corpus may annotate at several strengths
+  // -- haivn_eip's legal index stamps a note on every chunk of a pre-2025
+  // instrument, a stronger one where the passage itself uses the superseded
+  // vocabulary, and a stronger one still where it states a restriction in it --
+  // and the strong text says things ("each passage this notice names describes
+  // facilities in the old scheme") that are false of the passages the weak one
+  // covers. Merging them would either repeat one correction three times over or
+  // attach a claim to a passage that does not support it, and the strongest
+  // note already carries the weaker one's correction inside it. So: highest
+  // rank wins, its distinct texts are printed once each, and a passage below
+  // that rank carries no pointer.
   const lang = noticeLanguage(options.language);
+  const topRank = results.reduce(
+    (best, r) => (r.notice && r.notice.rank > best ? r.notice.rank : best), -Infinity);
   const notices: string[] = [];
   const noticeOf = new Map<number, number>();
   results.forEach((r, i) => {
-    const text = r.notice ? noticeText(r.notice, lang) : null;
+    if (!r.notice || r.notice.rank < topRank) return;
+    const text = noticeText(r.notice, lang);
     if (!text) return;
     let at = notices.indexOf(text);
     if (at === -1) { notices.push(text); at = notices.length - 1; }

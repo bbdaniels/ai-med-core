@@ -903,73 +903,137 @@ def pick(value, lang: str = "en") -> str:
 
 # ── passage-level staleness ──────────────────────────────────────────────
 #
-# `status` describes a whole instrument, and for these documents it is right:
-# Decision 4531/QĐ-BYT is in force, and Circular 35/2016/TT-BYT has no repeal
-# statement anyone has read. What is NOT current in either is the facility
+# `status` describes a whole instrument, it is curated per document, and it is
+# the ONLY thing here that speaks to whether an instrument is in force: Decision
+# 4531/QĐ-BYT is recorded `in-force`, and Circular 35/2016/TT-BYT is recorded
+# `unknown` because nobody has read a repeal statement for it either way. What
+# is NOT current in either is the facility
 # classification their text uses -- hạng I/II/III and tuyến, replaced from
 # 01/01/2025 by cấp ban đầu / cấp cơ bản / cấp chuyên sâu. A retrieved chunk
 # used to arrive at the model reading "Validity: In force" with nothing to say
 # its rule had been converted, and the model restated a 2021 restriction as
 # today's rule however the system prompt was worded. The signal belongs on the
-# passage, so the registry carries `supersededPassages` and every matching chunk
-# carries its notice into the tool result. Two things keep that true rather than
-# merely loud: the note comes in two tiers, so a passage that only uses the old
-# vocabulary is not told it states a restriction it does not state (see
-# passage_notices), and the shared paragraph is written once in the registry's
-# `passageNotices` topic block rather than copied per document.
+# passage, so the registry carries `supersededPassages` and every chunk of a
+# document that opts in carries a notice into the tool result.
+#
+# THREE TIERS, weakest first, and the tiering is what keeps the annotation
+# honest rather than merely loud. Each is true of exactly the chunks it is
+# stamped on, and a chunk carries the STRONGEST one that applies to it, never
+# several:
+#
+#   document    -- every chunk of an opted-in instrument. Says only what is true
+#                  of any chunk of it: the instrument predates the 2025
+#                  reclassification, so any hạng or tuyến it names anywhere is
+#                  the old scheme, and an answer about which facilities may
+#                  provide or be paid for a service must name the current
+#                  framework. It asserts nothing about THIS passage's content,
+#                  which is what lets it reach every chunk.
+#   passage     -- a chunk whose own text uses the superseded vocabulary.
+#   restriction -- a chunk that states a restriction or condition in it.
+#
+# The document tier exists because coverage was the binding constraint, not
+# wording. Before it, 43 of 2,209 chunks carried a notice (31 in qd-4531-2021,
+# 12 in tt-35-2016-tt-byt), so a six-passage Vietnamese search on qd-4531 could
+# return no stamped chunk at all and the correction never reached the model:
+# measured 2026-09-07, 8 of 9 answers that retrieved a notice named the current
+# framework and 0 of 3 that did not. Stamping the PASSAGE notice everywhere was
+# tried first and reverted, correctly -- its first sentence says the passage
+# describes facilities in the old scheme, which is false of most chunks. The fix
+# is a weaker sentence, not a wider stamp.
+#
+# The shared paragraphs are written ONCE in the registry's `passageNotices`
+# topic block (`documentNotice`, `notice`, `restrictionNotice`) rather than
+# copied per document; a document contributes only the closing sentence that is
+# true of its own text.
+#
+# NO TIER ASSERTS THAT AN INSTRUMENT IS IN FORCE, and `statusCaveat` -- appended
+# to every tier here, so the sentence exists once rather than in each of the
+# three texts -- is what says so out loud: the notice corrects the facility
+# classification, and the instrument's own validity is the curated `status`
+# field, which already reaches the model as the `Validity:` line in the header
+# and the status term in the document's `venue`. `documentNotice` and `notice`
+# both used to end "The instrument as a whole is still in force", which was a
+# guess the registry itself refuses to make: `tt-35-2016-tt-byt` is recorded
+# `unknown`, and widening the stamp to every chunk put that guess on all 83 of
+# them, contradicting the `Status not verified` printed beside the same passage
+# in the same tool result -- with the system prompt telling the model the notice
+# outranks the passage it covers. A shared topic block describes a topic; only
+# the document's own record describes the document.
 #
 # The notice is stored on the chunk and NOT written into the header, the FTS row
 # or the embedding input. It is an editorial annotation, not text of the
 # instrument: indexing it would make old-scheme passages retrievable on the new
 # scheme's vocabulary, which is the opposite of what this is for.
 
+# Weakest first. The 1-based position in this tuple is the RANK stored on the
+# chunk, and it is the only ordering `readings.ts` is given: that file renders
+# the highest rank present in a result set and knows none of these names. So
+# "which notice is stronger" is decided here, once, and a fourth tier is a line
+# in this tuple rather than a second ordering to keep in sync.
+NOTICE_TIERS = ("document", "passage", "restriction")
 
-def passage_notices(registry: dict, doc: dict) -> list[tuple[dict, dict[str, str], dict[str, str]]]:
-    """Compile a document's `supersededPassages` into (topic, base, full) notices.
 
-    The topic -- terms, superseding instruments, evidence, and the shared notice
-    body -- is defined ONCE in the registry's `passageNotices` block. A document
-    contributes only the closing sentence that is true of its own text. Writing
-    the shared paragraph out per document is how two annotations of one fact
-    drift apart the first time the framework wording is corrected, so it is
-    written once here and composed per language at build time.
+def passage_notices(registry: dict, doc: dict) -> list[tuple[dict, list[dict[str, str]]]]:
+    """Compile a document's `supersededPassages` into (topic, texts-by-tier).
 
-    Two notices come back per topic, and the difference between them is what
-    keeps the annotation honest:
+    The topic -- terms, superseding instruments, evidence, the three shared
+    notice bodies and the `statusCaveat` appended to all of them -- is defined
+    ONCE in the registry's `passageNotices` block. A
+    document contributes only the closing sentence that is true of its own text.
+    Writing the shared paragraphs out per document is how two annotations of one
+    fact drift apart the first time the framework wording is corrected, so they
+    are written once there and composed per language here at build time.
 
-    `base` is attached to any passage that describes facilities in the
-    superseded scheme, and says only that. It has to reach that far: the 2021
-    situation analysis in qd-4531-2021 reports where hepatitis C treatment
-    happens by administrative line, and an unannotated copy of it is read back
-    as today's position.
-
-    `full` adds the restriction sentence and the document's closing, and is
-    attached only where a restriction term sits beside the classification term.
-    Those are the sentences that would be false of a passage merely naming a
-    provincial unit, which is what they were attached to before.
+    The returned list is indexed by `NOTICE_TIERS`: [document, passage,
+    restriction]. What each says, and why each is true of what it is stamped on,
+    is in the section comment above.
     """
     topics = registry.get("passageNotices") or {}
-    compiled: list[tuple[dict, dict[str, str], dict[str, str]]] = []
+    compiled: list[tuple[dict, list[dict[str, str]]]] = []
     for entry in doc.get("supersededPassages") or []:
         topic = topics.get(entry.get("topic"))
         if not topic:
             print(f"    warning: unknown passage-notice topic "
                   f"{entry.get('topic')!r}; skipped")
             continue
-        base: dict[str, str] = {}
-        full: dict[str, str] = {}
+        texts: list[dict[str, str]] = [{} for _ in NOTICE_TIERS]
         for lang in ("en", "vi"):
             body = pick(topic.get("notice"), lang)
+            document = pick(topic.get("documentNotice"), lang)
+            # Appended to every tier, and written once in the topic block: the
+            # notice corrects the classification and says nothing about whether
+            # the instrument is in force, which is the document's own curated
+            # `status`. See the section comment.
+            caveat = pick(topic.get("statusCaveat"), lang)
+            if document:
+                texts[0][lang] = " ".join(x for x in (document, caveat) if x)
             if not body:
                 continue
-            base[lang] = body
-            full[lang] = " ".join(x for x in (
+            texts[1][lang] = " ".join(x for x in (body, caveat) if x)
+            texts[2][lang] = " ".join(x for x in (
                 body,
                 pick(topic.get("restrictionNotice"), lang),
                 pick(entry.get("closing"), lang),
+                caveat,
             ) if x)
-        if base:
-            compiled.append((topic, base, full))
+        if not any(texts):
+            print(f"    warning: passage-notice topic {entry.get('topic')!r} "
+                  f"defines no notice text at any tier; skipped")
+            continue
+        if not texts[1]:
+            print(f"    warning: passage-notice topic {entry.get('topic')!r} "
+                  f"defines no `notice` text; chunks using the classification "
+                  f"vocabulary fall back to the strongest tier that has one")
+        if not texts[0]:
+            print(f"    warning: passage-notice topic {entry.get('topic')!r} "
+                  f"defines no `documentNotice`; only chunks using the "
+                  f"classification vocabulary will be annotated")
+        if not pick(topic.get("statusCaveat")):
+            print(f"    warning: passage-notice topic {entry.get('topic')!r} "
+                  f"defines no `statusCaveat`; the notice will not tell the "
+                  f"model that it speaks to the classification only and not to "
+                  f"the instrument's validity")
+        compiled.append((topic, texts))
     return compiled
 
 
@@ -999,23 +1063,58 @@ def uses_classification(topic: dict, text: str) -> bool:
                for t in (topic.get("classificationTerms") or []))
 
 
-def notice_for(notices, text: str) -> str | None:
-    """The notice matching this chunk, as the JSON readings.ts reads, or None.
+def notice_tier(topic: dict, text: str) -> int:
+    """This chunk's tier under this topic, as an index into `NOTICE_TIERS`.
+
+    The one implementation of tier selection. It used to be inlined in
+    `notice_for` and then recomputed a second time in `build` to count the
+    restriction chunks for the run report, which is two answers to one question
+    and one edit away from disagreeing.
+    """
+    if not uses_classification(topic, text):
+        return 0
+    return 2 if states_restriction(topic, text) else 1
+
+
+def notice_for(notices, text: str) -> tuple[str, str] | None:
+    """This chunk's notice as `(tier name, JSON)`, or None if none applies.
+
+    Per topic the strongest applicable tier wins, so a chunk carries one notice
+    per topic rather than a stack of them. Where a document declares several
+    topics their texts are joined, and the chunk's rank is the strongest among
+    them.
 
     Both languages are stored; `readings.ts` selects the one the answer is being
     written in, so a bilingual advisor does not pay for the other copy on every
-    search.
+    search. `rank` is 1-based so that a stored notice never reads as rank 0, and
+    it is the whole ordering contract with that file: it renders the highest
+    rank in a result set and never looks at `tier`, which is there for the run
+    report and for anyone reading the database.
     """
-    hits = [full if states_restriction(topic, text) else base
-            for topic, base, full in notices if uses_classification(topic, text)]
-    if not hits:
+    # A tier's existence is independent of the others': a chunk takes the
+    # strongest tier at or below its own that the topic actually defines, so a
+    # topic written with only `documentNotice` still annotates every chunk.
+    ranked = []
+    for topic, texts in notices:
+        r = notice_tier(topic, text)
+        while r >= 0 and not texts[r]:
+            r -= 1
+        if r >= 0:
+            ranked.append((r, texts))
+    if not ranked:
         return None
+    top = max(r for r, _ in ranked)
     merged: dict[str, str] = {}
     for lang in ("en", "vi"):
-        parts = [h[lang] for h in hits if h.get(lang)]
+        parts = [texts[r][lang] for r, texts in ranked
+                 if r == top and texts[r].get(lang)]
         if parts:
             merged[lang] = "\n\n".join(parts)
-    return json.dumps(merged, ensure_ascii=False)
+    if not merged:
+        return None
+    return NOTICE_TIERS[top], json.dumps(
+        {"tier": NOTICE_TIERS[top], "rank": top + 1, "text": merged},
+        ensure_ascii=False)
 
 
 def build(args: argparse.Namespace) -> int:
@@ -1073,6 +1172,10 @@ def build(args: argparse.Namespace) -> int:
 
     indexed: list[tuple[str, str, int, int, int, str]] = []
     skipped: dict[str, str] = {}
+    # Per-document notice counts by tier, for the run report. Coverage is what
+    # this annotation is for and a total hides it: 43 stamped chunks and 194
+    # stamped chunks read the same as "annotated" if the tiers are added up.
+    annotated_tiers: list[tuple[str, str, int, dict[str, int]]] = []
     # Explicit, monotone chunk ids assigned in registry order then text order:
     # a rebuild from unchanged inputs reproduces the same id for the same Điều,
     # so a diff of two builds is about content rather than renumbering.
@@ -1149,8 +1252,7 @@ def build(args: argparse.Namespace) -> int:
             f"issued {issue_date}" if issue_date else "",
             f"effective {effective}" if effective else ""] if x)
         notices = passage_notices(registry, doc)
-        annotated = 0
-        restricted = 0
+        by_tier: dict[str, int] = {name: 0 for name in NOTICE_TIERS}
         for ordinal, chunk in enumerate(res.chunks):
             where = chunk.section
             if chunk.parts > 1:
@@ -1188,11 +1290,14 @@ def build(args: argparse.Namespace) -> int:
                 + f"Full title: \"{title_en}\"" + (f" ({title_vi})" if title_vi else "")
                 + (f". What this instrument covers: {scope_en}" if scope_en else "")
             )
-            notice = notice_for(notices, chunk.text)
-            if notice:
-                annotated += 1
-                if any(states_restriction(t, chunk.text) for t, _, _ in notices):
-                    restricted += 1
+            # One call decides the tier and composes the stored payload; the
+            # count for the run report is read off that answer rather than
+            # recomputed from the terms a second time.
+            tiered = notice_for(notices, chunk.text)
+            notice = None
+            if tiered:
+                by_tier[tiered[0]] += 1
+                notice = tiered[1]
             tokens = est_tokens(header + chunk.text)
             conn.execute(
                 "INSERT INTO chunks (id, doc_id, ordinal, section, page_start, "
@@ -1207,12 +1312,20 @@ def build(args: argparse.Namespace) -> int:
 
         indexed.append((doc_id, number, len(res.chunks), res.unmatched_sections,
                         res.duplicates, res.source))
+        tier_report = "/".join(f"{by_tier[name]} {name}" for name in NOTICE_TIERS)
+        if notices:
+            annotated_tiers.append((doc_id, number, len(res.chunks), dict(by_tier)))
         print(f"  {doc_id} ({number}): {len(res.chunks)} chunks "
               f"[{res.source}, {res.unmatched_sections} unmatched, "
               f"{res.duplicates} duplicate, {res.language}"
-              + (f", {annotated} passage-notice ({restricted} restriction)"
-                 if notices else "") + "]")
-        if notices and not annotated:
+              + (f", notices {tier_report}" if notices else "") + "]")
+        # Every chunk of an opted-in document now carries at least the document
+        # notice, so "nothing was annotated" no longer says anything about the
+        # terms. What the terms are checked by is the tier they select: a topic
+        # whose classificationTerms match nothing in this document's text is a
+        # topic pointed at the wrong document or written against the wrong
+        # vocabulary, and it looks identical to a working one in the totals.
+        if notices and not (by_tier["passage"] + by_tier["restriction"]):
             print(f"    warning: {doc_id} declares supersededPassages but no chunk "
                   f"matched its terms -- check the topic's classificationTerms "
                   f"and restrictionTerms against the text")
@@ -1287,6 +1400,14 @@ def build(args: argparse.Namespace) -> int:
         print(f"{doc_id:26} {number:20} {n:>6}  {source}"
               + (f" ({unmatched} unmatched)" if unmatched else "")
               + (f" ({dupes} exact duplicates dropped)" if dupes else ""))
+    if annotated_tiers:
+        print("-" * 68)
+        print("Passage notices (chunks by tier, weakest first):")
+        print(f"  {'document':26} {'number':20} {'chunks':>6} "
+              + " ".join(f"{name:>12}" for name in NOTICE_TIERS))
+        for doc_id, number, n, counts in annotated_tiers:
+            print(f"  {doc_id:26} {number:20} {n:>6} "
+                  + " ".join(f"{counts[name]:>12}" for name in NOTICE_TIERS))
     if skipped:
         print("-" * 68)
         print("Skipped:")

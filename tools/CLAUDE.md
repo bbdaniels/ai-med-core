@@ -1298,8 +1298,12 @@ traces, the 3 runs that retrieved no notice failed all 3, and the 12 that
 retrieved one or more passed 11. `gpt-4o` searched once like the small model but
 worded the query differently (`hạng bệnh viện ...`, `bệnh viện nào được bảo hiểm
 y tế thanh toán ...`) and drew 2 stamped chunks every time; the small model's
-Vietnamese queries drew 0 to 2. Only 31 of `qd-4531-2021`'s chunks are stamped,
-so a single six-passage search misses them all a fair fraction of the time.
+Vietnamese queries drew 0 to 2. Only 31 of `qd-4531-2021`'s 111 chunks were
+stamped at the time, so a single six-passage search missed them all a fair
+fraction of the time. **That is the coverage gap the document tier closes** --
+see below; every chunk of both annotated documents has carried a notice since
+2026-09-07, and the sentence to read next about this measurement is the one at
+the end of that section.
 
 The annotation pipeline itself is symmetric and was verified so from the
 traces, not inferred: the notice is stamped, composed and rendered identically
@@ -1315,6 +1319,100 @@ Whether re-pinning `gpt-4o` is worth its price is a cost decision and not one to
 make here -- but state the reason honestly if it is raised: on these traces the
 stronger model's advantage is query wording, hence retrieval luck, not a deeper
 search.
+
+### The staleness notice, in three tiers
+
+`status` describes a whole instrument. `supersededPassages` describes content
+inside one that is out of date whatever that status says -- here, the
+hospital-grade (hạng) and administrative-line (tuyến) scheme, replaced from
+01/01/2025 by Điều 104 of Law 15/2023/QH15 and converted by Điều 13 of Circular
+01/2025/TT-BYT. Two documents opt in: `qd-4531-2021` and `tt-35-2016-tt-byt`.
+
+**The two fields do not overlap, and the notice must not reach across.** No tier
+says whether an instrument is in force, in either direction; `statusCaveat`,
+appended to all three by `passage_notices` so the sentence exists once rather
+than three times, says so in the notice itself and points the model at the
+validity the registry actually curates. `documentNotice` and `notice` both used
+to end "The instrument as a whole is still in force" -- fine on the 43 chunks the
+content tiers reached, a false claim the moment the document tier widened it to
+every chunk of `tt-35-2016-tt-byt`, whose `status` this registry records as
+`unknown` on its own evidence ("No explicit repeal statement was read"). All 83
+chunks then carried a notice contradicting the `Status not verified` printed on
+the same passage in the same tool result, with the system prompt telling the
+model the notice outranks the passage. The registry's curation rule is that an
+unevidenced status is `unknown` and not a guess; a shared topic block is the one
+place that cannot honour it, because it does not know which document it is
+about.
+
+The notice comes in three tiers, and the tiering is the whole of what keeps it
+honest: each tier is true of exactly the chunks it is stamped on, and a chunk
+carries the STRONGEST tier that applies to it, never several. All three texts,
+and the `statusCaveat` appended to each of them, are written once, bilingually,
+in the registry's `passageNotices` topic block; a document contributes only the
+`closing` sentence that is true of its own text.
+
+| rank | registry key | stamped on | 4531 / 35 at the 2026-09-07 build |
+|---|---|---|---|
+| 1 | `documentNotice` | every chunk of an opted-in document | 80 / 71 |
+| 2 | `notice` | a chunk whose own text uses the superseded vocabulary | 29 / 0 |
+| 3 | `restrictionNotice` + the document's `closing` | a chunk that states a restriction or condition in that vocabulary | 2 / 12 |
+
+`qd-4531-2021` has 111 chunks and `tt-35-2016-tt-byt` 83, so every chunk of both
+now carries a notice: 194 of the corpus's 2,209, up from 43.
+
+**The document tier is a WEAKER SENTENCE, not a wider stamp, and that
+distinction is the design.** Stamping the passage notice on every chunk was
+tried and reverted, correctly: its first sentence says the passage describes
+facilities in the old scheme, which is false of most chunks of either document.
+What is true of any chunk of these instruments is only that the instrument was
+issued before the reclassification -- so that is all the document tier says,
+plus the instruction to name the current framework and put any grade or line in
+the past tense where the question turns on which facilities may provide or be
+paid for a service. It asserts nothing about the passage in front of it, which
+is exactly what lets it reach every chunk.
+
+It exists because COVERAGE was the binding constraint, not wording: with the two
+content tiers alone a six-passage Vietnamese search on `qd-4531-2021` could come
+back with no stamped chunk at all and the correction never reached the model.
+
+**Tier selection is `notice_tier`, and it is one function.** It used to be
+inlined in `notice_for` and then recomputed a second time in `build` to count
+the restriction chunks for the run report -- two answers to one question, one
+edit away from disagreeing. `build` now reads the tier off the same call that
+composes the stored payload, and the run report prints the per-document counts
+by tier, because a total hides the thing this annotation is for: 43 stamped
+chunks and 194 stamped chunks read the same once the tiers are added up.
+
+**The stored value carries a RANK, and the rank is the whole contract with
+`readings.ts`:** `{"tier": name, "rank": n, "text": {"en": ..., "vi": ...}}`.
+`readings.ts` renders **only the strongest rank present in a result set**, in
+the answer language, and knows none of the tier names -- naming them there would
+be a second copy of an ordering `NOTICE_TIERS` already owns. A fourth tier is a
+line in that tuple, not an edit in two files. Two older shapes still parse as
+rank 1 (a bare language-keyed object, and a plain string), so an index built
+before either change renders rather than throwing inside a tool call.
+
+Weaker notices in the same result set are DROPPED, not stacked, and that is
+deliberate: the strong text says things ("each passage this notice names
+describes facilities in the old scheme") that are false of the passages the weak
+one covers, so merging them would either repeat one correction three times over
+or attach a claim to a passage that does not support it -- and the strongest
+text already contains the weaker one's correction. A passage below the top rank
+therefore carries no `NOTICE n above applies` pointer. What is still printed
+once *per distinct annotation* is the notice itself: two documents both
+returning a rank-3 chunk print two blocks, because the restriction tier ends in
+each document's own closing sentence.
+
+Measured after the change, 2026-09-07, `node tools/probe-facility-levels.mjs
+--runs 3` against local dev with the working-tree prompt pushed: 26 of 27 runs
+pass; probes 7 and 8 -- the English and Vietnamese question about 4531/QĐ-BYT
+that this tier was built for -- pass 3 of 3 each, as do probes 1 through 6; the
+single failure is probe 9, the transitional-rule probe, which the notice tiers
+do not address. Replaying the fifteen `search_readings` queries the dev server
+logged for probes 7 and 8 through this index: every one of the fifteen returned
+at least one annotated chunk and rendered exactly one notice block -- and every
+one of the fifteen came back with passages spanning two or three ranks, so that
+is the mixed case, not an edge of it.
 
 **No new retrieval code.** The platform's project-generic retrieval (built for
 ppol5013) already does hybrid BM25 + embeddings, RRF fusion, and the
@@ -1497,7 +1595,9 @@ one round, "9 of 9" the next, and a deterministic four-of-four failure the round
 after. Probe 8 -- the Vietnamese half of the 4531/QĐ-BYT pair -- was passing
 4 times in 8 on `gpt-4o-mini` when all three of those were recorded (3 of 5
 counting only unmodified-code runs), so every one of those three records was a
-draw reported as a rate. Report a pass COUNT from this flag, and **keep the run's output** -- it prints
+draw reported as a rate. It came back 3 of 3 on 2026-09-07 with the document
+notice tier in place ("The staleness notice, in three tiers", above); that is
+three draws, not a rate either. Report a pass COUNT from this flag, and **keep the run's output** -- it prints
 every answer verbatim, so a saved transcript is the only thing that makes a
 count checkable afterwards, and a count with no transcript behind it is not a
 measurement either. Do not report a single run as a rate, and do not loosen a

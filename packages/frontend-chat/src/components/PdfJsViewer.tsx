@@ -519,7 +519,7 @@ type OutlineUI = (typeof FIND_UI)[string];
  * bytes, and the browser's own viewer drew every blank row we were hiding.
  *
  * It stays because this component also draws the Legal Library, and those are
- * twenty-two Vietnamese government PDFs published by somebody else, whose
+ * twenty-three Vietnamese government PDFs published by somebody else, whose
  * outlines we neither write nor control.
  */
 function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {

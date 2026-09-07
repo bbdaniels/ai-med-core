@@ -240,26 +240,40 @@ HAIVN reported exactly that on 2026-09-04, having already been given the deeper
 sidebar in the app.
 
 So `build_pdf_outline` replaces the outline in the file, immediately after the
-nav-chip strip and on the same run. Sixty-four entries per language, four levels
-deep, none of them blank: the same sections, plus the structure the text tab
-already carries and the outline never did -- table and figure captions, the
-numbered items of the appendix training plans, the bold-italic subsections of
-4.1, the articles of the model contract. `eip_outline_nodes` in
-`build-jump-maps.py` reads them off the markdown by a deliberate WHITELIST of
-shapes, because the model contract's letterhead ("SOCIALIST REPUBLIC OF
-VIETNAM", "Pursuant to the Civil Code ...") is emphasised exactly the same way
-and is a heading of nothing.
+nav-chip strip and on the same run. Forty entries per language, three levels
+deep, none of them blank: **the document's own heading structure and nothing
+else**, which is exactly the export's outline with the titleless entries gone.
+`eip_text_sections` in `build-jump-maps.py` reads the anchored `##`/`###`
+headings off the markdown; the appendices get one extra level so `Appendix 3`
+hangs under `5. Appendices` the way the export hung it.
+
+A round in between went deeper -- sixty-four entries at four levels, adding table
+captions, the numbered items of the appendix training plans and the articles of
+the model contract, read off the emphasised lines of the markdown. **HAIVN asked
+on 2026-09-07 for the major-section level back**, so that parse and its whitelist
+were DELETED rather than left behind a flag. Do not reintroduce them without a
+request; the blank-title cleanup is the part that was wanted.
 
 Four things about it are load-bearing:
 
 - **Titles are the document's own words, in the document's own language.**
-  Nothing is translated, nothing is synthesised, right down to the source's
-  `4.Methodology` missing its space.
+  Nothing is translated and nothing is invented, right down to the stray full
+  stop in `2.2. Requirements for providing hepatitis B and C services.` -- that
+  is how the heading reads on page 10. The one systematic difference is our own:
+  the titles come from the text tab, and `label_for` in `build-eip-text.py`
+  rebuilds every numbered heading as `<number>. <title>`, so the source's
+  `Appendix 1:` (still what page 23 prints, and what Google's export bookmarked)
+  becomes `Appendix 1.` in the bookmark, and `Appendix 7.  Templates` loses its
+  double space. No editor renumbered anything; one entry per language is
+  punctuated by us. It is cosmetic only -- `norm()` drops punctuation, so the
+  confirm-on-the-page rule below is unaffected -- but do not describe these
+  titles as byte-for-byte the page's.
 - **A bookmark is placed by the same confirm-on-the-page rule as a jump-map
-  anchor** (`resolve_eip_anchors`, one implementation for both), a sub-heading
-  inside the page span of its own section -- which is what makes a five-word
-  title like `Article 1: Scope of Services` safe to match at all. One that
+  anchor** (`resolve_eip_anchors`, one implementation for both): the heading's
+  own words, normalised, must appear on the page the resolution claims. One that
   cannot be confirmed is named in the run's output and left out, never guessed.
+  (`contents`, the document's own table of contents, is the one section dropped
+  in both languages, and the export never bookmarked it either.)
 - **The save is INCREMENTAL, and a file already carrying the outline is not
   written at all.** The named destinations are what the document's own contents
   links resolve through, and a rewriting save is free to garbage-collect the ones
@@ -267,11 +281,11 @@ Four things about it are load-bearing:
   rule `write_json` and `strip-pdf-nav-marks.py` keep, and it is what makes a
   re-run byte-identical rather than appending a fresh copy of every outline
   object to a 5 MB binary git tracks.
-- **The frontend's `pruneOutline` was NOT removed.** It is now dead weight for
-  the EIP -- verified, zero blank entries -- but the same viewer draws the Legal
-  Library's twenty-three government PDFs, whose outlines somebody else publishes.
-  Its comment says so, so the next reader does not take it as evidence the EIP
-  files still need it.
+- **The frontend's `pruneOutline` was NOT removed.** It is still dead weight for
+  the EIP -- verified again after the 2026-09-07 revert, zero blank entries -- but
+  the same viewer draws the Legal Library's twenty-three government PDFs, whose
+  outlines somebody else publishes. Its comment says so, so the next reader does
+  not take it as evidence the EIP files still need it.
 
 `python3 tools/build-jump-maps.py --eip-only --eip-outline` rewrites the outlines
 of the PDFs already on disk, without re-fetching them.
@@ -395,10 +409,15 @@ is a rasterised, watermarked rendering with no text layer on any of its 31 pages
 6 of the PDF's 39 tables and mangled diacritics in about forty words the
 publisher's transcription gets right, `vbhn-15-2024-byt`'s only official copy is
 a scan whose OCR layer garbles the drug list that consolidation exists for, and
-`tt-20-2022-tt-byt` has no reachable OFFICIAL copy at all -- its `pdfFile` is an
-unofficial re-typeset copy from a provincial hospital's file server, adopted
-2026-09-04 because it is the only COMPLETE copy of the standalone circular
-anyone has reached. HAIVN asked for the signed scan on 2026-09-02.
+`tt-20-2022-tt-byt`'s `pdfFile` is the SIGNED ORIGINAL scan, supplied by HAIVN
+on 2026-09-07 out of their thuvienphapluat.vn member account (the "Văn bản gốc"
+download for document 548898). It replaced the unofficial re-typeset copy from a
+provincial hospital's file server that this entry shipped from 2026-09-04, which
+had been adopted only because it was the first COMPLETE copy of the standalone
+circular anyone reached. The entry keeps its `textSource` even so: the scan's own
+OCR layer garbles the tone marks, so the text a reader sees is still the
+publisher's transcription -- and injection writes that transcription back into
+the scan.
 
 `vbhn-15-2024-byt` is the case where the container matters most, and the one to
 copy when a document's tables are the document. Consolidated text 15/VBHN-BYT of
@@ -419,8 +438,8 @@ consolidation was the only complete copy of the drug list anyone could reach; th
 Legal Library then displayed the consolidation's list under the 2022 circular's
 number and title, which is what HAIVN reported on 2026-09-03. Split on that date
 into `tt-20-2022-tt-byt` (the circular as signed 31/12/2022, text transcribed
-from the thuvienphapluat page the EIP itself cites; no official PDF reachable, so
-since 2026-09-04 it ships an unofficial complete re-typeset copy instead)
+from the thuvienphapluat page the EIP itself cites; it shipped an unofficial
+re-typeset copy from 2026-09-04 and the signed original scan since 2026-09-07)
 and `vbhn-15-2024-byt` (the consolidation, official scan plus the thuviennhadat
 transcription). They are cross-linked by two registry fields --
 `consolidates: ["tt-20-2022-tt-byt", "tt-37-2024-tt-byt"]` on the consolidation
@@ -717,6 +736,18 @@ Five behaviours worth knowing before you point a registry entry at a new PDF:
   retrieved, its size and its SHA-256.** A PDF obtained by hand is a last resort
   and must be documented that way; the field is not a licence to stop looking for
   a fetchable official copy.
+- **`tt-20-2022-tt-byt` is the one entry that records NO URL at all**, and that
+  is deliberate rather than an omission. Its PDF is the signed original scan out
+  of a member-gated publisher download; nobody has a direct file URL for it that
+  can be verified, and writing a guessed one in would be a fabricated provenance
+  claim. So `sourcePdfs` is `[]`, `officialUrl` is `""`, and `pdf_sources()`
+  therefore returns nothing for it, which is what makes a `--fetch` keep the file
+  on disk instead of replacing it. **The corollary is a trap: `pdf_sources()`
+  falls back to `officialUrl` whenever it ends in `.pdf`, so filling either field
+  with a PDF link is on its own enough to have the next fetch overwrite the
+  signed scan.** Anyone who finds an official copy has to swap the file
+  deliberately and re-run the map pass, not just record a URL. The provenance
+  lives in `statusEvidence`, which says so in both languages.
 
 **The page-map pass runs `build-jump-maps.py` as a SUBPROCESS, not as an import.**
 The builder OCRs a scan across a process pool, and a pool pickles its worker by
@@ -836,7 +867,7 @@ on?** It writes
 - the **bookmark outline of the two EIP PDFs**, on `--eip-outline` (which
   `build-eip-text.py` invokes on every PDF re-export) -- see "The PDF's bookmarks
   are ours, not Google's" above. It is the same anchor -> page resolution
-  (`resolve_eip_anchors`) as the map, extended one level down;
+  (`resolve_eip_anchors`) as the map, over the same sections;
 - and a **canonical text layer** into the scanned legal PDFs that have a trusted
   text file, so those scans become searchable and selectable.
 
@@ -861,6 +892,19 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   text file, longest first (14 tokens down to 6), and accepted only when exactly
   one page contains it. Ambiguous or absent means the section is **dropped and
   named in the run's output**, never guessed.
+- **The n-gram's anchor may slide, but only inside the heading's own line.** The
+  window used to start at token 0 and nowhere else, so a single misread glyph
+  INSIDE a heading made the section unlocatable however unique the forty tokens
+  behind it were. That is what dropped `PHỤ LỤC III` from `tt-20-2022-tt-byt`:
+  tesseract read its numeral as `II`, every window from token 0 carried the
+  canonical `iii`, and the section went missing -- which is not a cosmetic loss,
+  because `build-legal-corpus.py` builds its markers from the map, so the
+  appendix's content was then filed and cited under Phụ lục II. The prefix is
+  still tried first and on its own terms, so nothing that already confirms can
+  move; only when it names no page do windows starting at tokens 1..n get their
+  turn, n being the length of the heading line, and a page one of them names
+  must also carry the heading's kind word (`phụ lục`, `điều`) so that a window
+  made only of context cannot pull a section onto the following page.
 - A heading with no canonical text behind it can still be located
   **structurally**, and is labelled `confidence: "structural"`. For a scanned
   document the label is then SYNTHESISED (`Điều 12`) rather than copied out of
@@ -897,7 +941,12 @@ read through the misreads tesseract makes of `I` (`Chương J`, `Chương H`);
 contents pages are excluded from matching entirely, because they are the one
 page carrying every heading and so are a magnet for a "unique" match (that is
 how `PHỤ LỤC 6` landed on page 6 of a guideline whose appendix six starts on page
-41); and a kind whose detections collapse under the monotone filter is dropped
+41) -- and a contents page is recognised by the contents ENTRY, a dot leader
+CLOSED BY THE PAGE NUMBER it leads to, not by the dot leader alone: a blank form
+is nothing but dotted fill-in rules and OCR reads a ruled table as runs of dots,
+which between them had 75 body pages across eight documents excluded from matching
+as tables of contents, `tt-20-2022-tt-byt`'s Phụ lục III form among them; and a
+kind whose detections collapse under the monotone filter is dropped
 as a repeating label rather than shipped (one circular's appendix FORMS are
 headed `Mục I`..`Mục IV`, restarting on each of two dozen forms).
 
@@ -911,6 +960,24 @@ invisible run (PDF render mode 3) at that line's box, in an embedded Noto Sans
 whole -- half a canonical line beside half an OCR line is the mixture this exists
 to prevent -- and a pre-Unicode garbage layer is redacted first, or it is what
 search would hit.
+
+Two rules keep "aligned" from meaning "coincided", and both were written after
+the first injection of the 20/2022/TT-BYT scan shipped text that was canonical
+word by word and wrong on the page:
+
+- **A HEADING'S OWN WORDS ARE PART OF THE CANONICAL STREAM.** `canonical_words`
+  used to delete whole `#` lines as Markdown furniture, which took out of the
+  stream exactly the words the boxes under a heading were about to be matched
+  against; the aligner then found those tokens elsewhere in the document and the
+  injected layer read `Phụ lục II` across Phụ lục III's heading and
+  `thuốc phạm vi` across Phụ lục I's title. Only the `#` marker is furniture.
+- **A match shorter than `MIN_ALIGN_RUN` (4) words pairs nothing.** One token
+  agreeing on its stripped form is a coincidence the size of the document:
+  tesseract read the printed page number `66` as `606`, the aligner found the
+  drug-list ordinal 606 in Phụ lục I, and `606` went into the page's text layer.
+  Same shape for `85` over the printed `83`. Requiring a RUN costs about 200 of
+  2,724 lines on that document -- short table cells, mostly -- and those lines
+  are now silent rather than wrong, which is the trade this whole file makes.
 
 Lines, not words, is the unit, and that is the one non-obvious part: per-word
 injection also renders invisibly and also carries correct diacritics, but the

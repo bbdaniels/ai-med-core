@@ -1027,27 +1027,119 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   says a section EXISTS and never says where it BEGINS. It also repaired
   `qd-2855-2024`, whose five appendices were placed from its page-1 contents
   list and are now confirmed at pages 24-30.
-- **KNOWN LIMIT, and it is a wrong page shipping today: neither that tie-break
-  nor the order rule can tell THIS document's appendix from the appendix of a
-  document it ANNEXES.** `tt-40-2025-tt-byt` is a circular whose Phụ lục II is a
-  complete model bidding document, and that model document has appendices of its
-  own. Six `PHỤ LỤC` headings parse under three keys: the circular's own
-  `## PHỤ LỤC II` (line 977) and `## PHỤ LỤC III` (4053, page 172, "Ban hành kèm
-  theo Thông tư số /2025/TT-BYT"), and the model document's `## PHỤ LỤC 2:` /
-  `## PHỤ LỤC 3:` at 3510/3568 and again at 6598/6618 ("Kèm theo Thỏa thuận khung
-  số __"). All six are `##`, so the marked-heading tier is a no-op and document
-  order decides -- which for `phu-luc-3` picks line 3568, page 157, the model
-  agreement's sub-appendix. `phu-luc-2` escapes only because the circular's own
-  heading happens to come first. The circular's real Phụ lục III, on page 172, is
-  in no map at all, and a reader jumping to "40/2025/TT-BYT, Phụ lục III" lands
-  fifteen pages early on another instrument's annex -- `confirmed`, because the
-  label's words genuinely are on page 157. This is not new: HEAD's own builder
-  produces it, and the round-8 sliding anchor is what raised it from `structural`
-  to `confirmed`. Fixing it needs a discriminator the map does not have -- the
-  numeral form each series is written in, or the `Ban hành kèm theo Thông tư`
-  promulgation clause that says which instrument an appendix belongs to -- and
-  that is a new tie-break tier with corpus-wide reach. Do not add one without
-  measuring every document's map before and after.
+- **A heading belongs to whichever document the text says it belongs to, and
+  for a `Phụ lục` that is its own ISSUING CLAUSE while for a `Chương`/`Mục`/
+  `Điều` it is WHERE THE HEADING IS PRINTED** (`annexed_scanner`,
+  `annexed_appendix`, `issuing_clause`, `clause_names_instrument`). Neither the
+  marked-heading tie-break above nor the order rule can tell THIS document's
+  section from a section of a document it CARRIES, and until 2026-09-07 that
+  shipped wrong pages and wrong `Location:` lines. `tt-40-2025-tt-byt` is a
+  circular whose Phụ lục II and III are complete model bidding documents, and
+  each of those annexes a model framework agreement and a model contract with
+  chapters and appendices of their own, numbered from one.
+
+  **The appendices.** Six `PHỤ LỤC` headings parse under two keys -- the
+  circular's own `## PHỤ LỤC II` (line 977) and `## PHỤ LỤC III` (4055,
+  page 172), and the model documents' `## PHỤ LỤC 2:` / `## PHỤ LỤC 3:` at
+  3512/3570 and again at 6600/6620 -- and all six are `##`, so the marked tier
+  was a no-op and document order decided. For `phu-luc-3` that picked line 3570,
+  page 157, the framework agreement's sub-appendix; the circular's real
+  Phụ lục III was in no map at all, and a reader jumping to
+  "40/2025/TT-BYT, Phụ lục III" landed fifteen pages early on another
+  instrument's annex -- `confirmed`, because the label's words genuinely are on
+  page 157. `phu-luc-2` escaped only because the circular's own heading happens
+  to come first.
+
+  The clause is what the document itself says: `(Ban hành kèm theo Thông tư số
+  /2025/TT-BYT ...)` under one and `(Kèm theo Thỏa thuận khung số __)` under the
+  other. So a `Phụ lục` heading is read as the instrument's own where the clause
+  printed under it names an INSTRUMENT (`Luật`, `Pháp lệnh`, `Nghị quyết`,
+  `Nghị định`, `Quyết định`, `Thông tư`, `Chỉ thị`, `văn bản hợp nhất`), and as
+  a carried document's sub-appendix where it names one of the documents an
+  instrument carries as a model (`Thỏa thuận`, `Hợp đồng`, `Quy chế`, `Mẫu`,
+  `Biểu mẫu`, `Đơn`, `Phiếu`, `Biên bản`, `Điều lệ`). The clause is looked for in
+  the first six non-blank lines under the heading and the scan stops at the next
+  line that parses as a SECTION heading, so an appendix with no clause cannot
+  borrow the next one's; it does not stop at any other heading, because the
+  model documents print their own title as a second `##` line in between. **The
+  clause must OPEN its line or open a parenthesis** -- 45 of this corpus's 56 do
+  the first and 11 the second -- because without that the window is a six-line
+  net for the words `kèm theo`, and one sentence of prose reading `... tài liệu
+  kèm theo Hợp đồng ...` would silently take an appendix out of the map.
+
+  **The chapters.** The clause rule fixes appendices and nothing else, and the
+  identical confusion sits one kind-word over: `tt-40`'s map also keyed
+  `Chương VI`, `Chương VII`, `Chương VIII` and `Mục 5`, which are sections of
+  the model bidding document its Phụ lục II carries. The circular's own body is
+  Chương I-V and Điều 1-39. Three of those four were located on page 46, which
+  is the model document's own `MỤC LỤC` contents page -- a contents entry says a
+  section EXISTS and never says where it BEGINS, the same rule the marked tier
+  rests on -- and `muc-5` on page 92, a bolded sub-clause of that document's
+  E-CDNT evaluation criteria. `muc-5` then became the corpus `Location:` parent
+  of every chunk of the circular's real Phụ lục III.
+
+  These carry no issuing clause, so the evidence is position: **an instrument's
+  body ends where its appendices begin, and a `Chương`/`Mục`/`Điều` printed
+  after that is a section of an annexed or quoted document.** Only a heading the
+  structure pass MARKED opens the appendix region, for the contents-entry reason
+  above -- `qd-1740-2026` and `qd-2855-2024` both print an unmarked `PHỤ LỤC`
+  line hundreds of lines above their first real appendix, and an unguarded rule
+  would decapitate their bodies. Measured over all 23 mappable documents, this
+  removes exactly four keys, all in `tt-40`; the only other document with
+  post-appendix body headings is `vbhn-15-2024-byt`, whose `“Điều 20` / `Điều 21`
+  are amending text it quotes, which the order rule was already dropping for a
+  weaker reason.
+
+  Both shapes of evidence answer one question, so they are one function
+  (`annexed_scanner`) threaded down the document in reading order, and both
+  builders call it rather than keeping a copy.
+
+  Four parts of the rule are load-bearing, and each is a case in this corpus:
+
+  - **The test is the clause's KIND WORD, never its number.** Identity matching
+    -- "does the clause name THIS document?" -- reads as the obvious rule and is
+    a regression: `vbhn-15-2024-byt` is a consolidated text whose Phụ lục I and
+    II print 20/2022/TT-BYT's clause verbatim, because a consolidation restates
+    the circular it consolidates. Those two are its map's only confirmed
+    appendix jumps, and the drug list is what the document is for.
+  - **A clause that names neither list is NO EVIDENCE, and keeps today's
+    behaviour**, exactly as a heading with no clause at all does. Sixteen of
+    this corpus's 72 `PHỤ LỤC` headings print no clause -- all of `qd-678-2025`'s
+    four, three of `qd-1740-2026`'s -- and dropping an appendix on a word the
+    lists have not seen trades a wrong page for a missing one.
+  - **A carried document's section is EXCLUDED from the map, not re-keyed under
+    its parent.** The key space is `<kind>-<number>`: `KEY_RE` in
+    `build-legal-corpus.py` parses it, `doc-refs.ts` constructs it and
+    `legal-map.ts` indexes by it as an opaque string; a child key would be a
+    second key scheme across all three. The
+    heading stays in the reader's text, where it is a real heading of a real
+    document -- this decides the KEY, not the text.
+  - **What the run reports is filtered, because the raw list is noise.** A key
+    with no surviving occurrence is named (it is gone from the jump list), and
+    so is every excluded `Phụ lục`, since that is the collision the clause rule
+    exists to resolve. The rest -- 82 citations and contents entries inside
+    `tt-40`'s annexes, 27 inside `nd-96`'s, whose keys the instrument's own text
+    supplies anyway -- are counted on one line.
+
+  Measured across all 23 mappable documents before and after: 72 `PHỤ LỤC`
+  headings, 52 whose clause names an instrument, 4 whose clause names a carried
+  document (all four in `tt-40-2025-tt-byt`), 16 with no clause, none
+  unclassified. **One map moved**, and the other 22 are byte-identical:
+  `tt-40-2025-tt-byt` loses `chuong-6`, `chuong-7`, `chuong-8` and `muc-5`, and
+  its `phu-luc-3` moves from page 157 to 172, label `PHỤ LỤC 3: PHẠM VI CUNG
+  CẤP ...` -> `PHỤ LỤC III HỒ SƠ MỜI THẦU ...`, still `confirmed`. Corpus-wide
+  the run goes from 764 sections / 730 confirmed to 760 / 729.
+
+  `build-legal-corpus.py` calls the same function rather than carrying its own:
+  `heading_candidates` flags each line with it, pass 1's label match and pass
+  2's fill-by-number both refuse a flagged line, and the no-map fallback
+  (`markers_from_headings`) ignores the flag, because a document with no map is
+  being chunked as it stands and that section is a real section of it. Without
+  the pass-2 refusal a gap in the label match would re-anchor the circular's own
+  `phu-luc-3` on the framework agreement's -- the map bug, one tool later, with
+  nothing said. **What it does to the index is in that script's section below**,
+  under "What a chunk claims about its page"; a map change is not finished until
+  the numbers it moves in the corpus have been read.
 - A heading with no canonical text behind it can still be located
   **structurally**, and is labelled `confidence: "structural"`. For a scanned
   document the label is then SYNTHESISED (`Điều 12`) rather than copied out of
@@ -1282,6 +1374,49 @@ with page 0, since the maps locate articles and never the attachments. The scan
 runs only between the last Điều and the next heading of any kind, so a tail that
 already starts at a Phụ lục keeps the label it had.
 
+### What a chunk claims about its page, and what it may not
+
+`page_start` is the only number in a chunk the reader sees as a fact about the
+PDF, and `readings.ts` prints it into the `Location:` line the advisor is
+instructed to repeat verbatim. Two rules keep it honest, and both were wrong in
+the same document until 2026-09-07.
+
+**A container's body is stamped with the page it STARTS on, never the page of
+the marker that closes it.** The segment loop accumulates the text under a
+Chương/Mục heading and flushes it (`drain`) when the next boundary arrives, so
+`drain` has to be called BEFORE `page_carry` advances to that boundary's page.
+It was called after. In `tt-40-2025-tt-byt` the effect was two blocks of text
+carrying a page they are nowhere near: 108 chunks of the model bidding
+document's `Chương VIII` block, which begins around PDF page 46, stamped 92 --
+the page of the `Mục 5` that follows them -- and 124 chunks of the `Mục 5` block
+itself, running to page 171, stamped 172, the page of the appendix that follows
+IT and a page none of their text is printed on. Measured against the PDF's own
+text layer, 182 of `tt-40`'s 493 locatable chunks claimed a page LATER than the
+page their text is printed on, which is a claim the document cannot support
+under any convention; after the fix, 9 do, and all 9 are artefacts of the check
+itself -- the two model bidding documents share boilerplate, so a "unique"
+n-gram can land on the twin passage.
+
+**An appendix is not filed under a chapter.** `parent` is dropped at an appendix
+boundary, for the located `phu-luc` exactly as for the synthesised `annex` where
+this rule was already right and had stayed for one kind only. `Chương V ĐIỀU
+KHOẢN THI HÀNH > Phụ lục I` and `Mục 5 ... > PHỤ LỤC III` are `Location:` lines
+the source does not support: an appendix is attached to the instrument, not to
+whichever Chương happened to come last before it. That correction dropped a chapter
+prefix from 169 chunks across five documents -- `nd-96-2023-nd-cp` 90,
+`tt-05-2024-tt-byt` 51, `tt-40-2025-tt-byt` 21, `tt-37-2024-tt-byt` 6,
+`qd-4026-2010` 1 (the no-map fallback, which gets the same rule) -- and not one
+of the 169 changed page.
+
+Measured end to end for the 2026-09-07 map change, HEAD to working tree, with
+chunks matched by the SHA-1 of their text so a re-split cannot be read as a
+move: 2,211 chunks to 2,209; **every page move in the corpus is in
+`tt-40-2025-tt-byt`** -- 197 chunks 157 -> 172 (the circular's real Phụ lục III,
+which is where page 172 is), 117 chunks 157 -> 44 and 108 chunks 92 -> 44 (the
+two container blocks, now inside Phụ lục II, which begins on page 44). No other
+document moved a page. Per-document chunk counts are unchanged everywhere except
+`tt-40`, 533 -> 531.
+
 ### Known limits, both worth fixing upstream rather than here
 
 - **A bare article number does not retrieve that article.** "Điều 40 của Nghị
@@ -1306,6 +1441,18 @@ already starts at a Phụ lục keeps the label it had.
   carrying the document and so never sees the preview copy or the navigation.
   `qd-4026-2010` has no `textSource` yet and is the remaining case.
 
+- **Every chunk of a section carries that SECTION's start page**, so a long
+  section's chunks all cite one page and the longer the section the further the
+  last chunk is from it. `tt-40-2025-tt-byt`'s Phụ lục III spans PDF pages
+  172-301 and all 199 of its chunks cite 172; its Phụ lục II spans 44-171 and
+  all 236 cite 44. The claim is never impossible -- a chunk is always at or
+  after the page it names, which is the invariant the drain fix above restored
+  -- but it is coarse, and it is coarse by construction: the map answers "which
+  page does this SECTION begin on?" and there is no page evidence anywhere in
+  this pipeline for a line in the middle of one. Fixing it means locating each
+  chunk in the PDF rather than inheriting its section's page, which is a new
+  measurement pass in `build-jump-maps.py`, not a change here. Do not paper over
+  it by widening `page_end`, which is set from the same single number.
 - **Page precision follows map coverage, and some maps are thin.**
   `maps/qd-4531-2021.json` carries 3 sections for a 129 KB document -- its three
   articles and nothing else -- so its 3 article chunks sit on page 1 and its

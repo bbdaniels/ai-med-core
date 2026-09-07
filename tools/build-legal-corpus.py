@@ -193,6 +193,9 @@ LABEL_KINDS = ("dieu", "phu-luc", "chuong", "muc", "phan")
 ANNEX_KIND = "annex"
 CONTAINER_KINDS = {"chuong", "muc", "phan"}
 BOUNDARY_KINDS = {"dieu", "phu-luc", ANNEX_KIND}
+# What ends the run of chapters: an appendix is attached to the instrument, not
+# filed under whichever Chương or Mục happened to come last.
+APPENDIX_KINDS = {"phu-luc", ANNEX_KIND}
 
 
 # ── where the articles stop ──────────────────────────────────────────────
@@ -355,8 +358,9 @@ def vietnamese(text: str) -> bool:
 # ── locating the sections ────────────────────────────────────────────────
 
 
-def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str]]:
-    """Every line that reads as a heading: (line index, kind, number, label).
+def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str, bool]]:
+    """Every line that reads as a heading: (line index, kind, number, label,
+    annexed).
 
     Both the grammar and the label are `build-jump-maps.py`'s, so a line reads
     here exactly as it reads in the map this text is matched against -- down to
@@ -366,9 +370,21 @@ def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str]]:
     The number keeps its lettered variant (`48b`), which the map keys never
     carry: an amending law's inserted article is not the article it was inserted
     after, and pass 2 matches these numbers against the keys by string.
+
+    `annexed` is `jump_maps.annexed_scanner` -- the heading is a section of a
+    document this instrument CARRIES rather than one of its own: a `Phụ lục`
+    whose own issuing clause names an annexed document, or a `Chương`/`Mục`/
+    `Điều` printed after the appendices begin. It is the map builder's
+    discriminator, called rather than reimplemented, and it is a FLAG rather
+    than a filter because the two callers below want opposite answers:
+    `markers_from_map` must not anchor one of this instrument's keys on a
+    carried document's section, while `markers_from_headings` -- the fallback
+    for a document with no map -- is chunking the text as it stands, where that
+    section is a real section.
     """
     jm = jump_maps()
-    out: list[tuple[int, str, str, str]] = []
+    annexed = jm.annexed_scanner(LABEL_KINDS)
+    out: list[tuple[int, str, str, str, bool]] = []
     for i, raw in enumerate(lines):
         line = raw.lstrip(LEAD_CHARS).strip()
         # A line the source wrote as a list item is a contents entry, not the
@@ -380,7 +396,8 @@ def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str]]:
         if hit:
             kind, number, suffix, title = hit
             out.append((i, kind, f"{number}{suffix}",
-                        jm.heading_label(lines, i, line, title, LABEL_KINDS)))
+                        jm.heading_label(lines, i, line, title, LABEL_KINDS),
+                        annexed(lines, i, kind)))
     return out
 
 
@@ -424,8 +441,8 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
         prefix = norm(label)[:20]
         if not prefix:
             continue
-        strong[i] = [ln for ln, k, _, text in cands
-                     if k == kind and norm(text).startswith(prefix)]
+        strong[i] = [ln for ln, k, _, text, annexed in cands
+                     if k == kind and not annexed and norm(text).startswith(prefix)]
     assigned = monotone_assignment(strong, len(parsed), strict=True)
 
     # Pass 2 -- fill the gaps by number, bounded by the anchors on either side.
@@ -435,8 +452,14 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
         lo = max((assigned[j] for j in range(i) if j in assigned), default=-1)
         hi = min((assigned[j] for j in range(i + 1, len(parsed)) if j in assigned),
                  default=len(lines))
-        hit = next((ln for ln, k, num, _ in cands
-                    if k == kind and num == number and lo < ln < hi), None)
+        # An annexed document's sub-appendix is refused here for the same
+        # reason the map refuses to key it: `tt-40-2025-tt-byt`'s model
+        # framework agreement prints `PHỤ LỤC 2` and `PHỤ LỤC 3` of its own,
+        # and filling a gap by number alone is exactly how the circular's own
+        # Phụ lục III would be anchored on one of them -- the map bug, one tool
+        # later, with nothing said.
+        hit = next((ln for ln, k, num, _, annexed in cands
+                    if k == kind and num == number and not annexed and lo < ln < hi), None)
         if hit is not None:
             assigned[i] = hit
 
@@ -459,7 +482,7 @@ def markers_from_headings(lines: list[str]) -> list[Marker]:
     """
     markers: list[Marker] = []
     last = 0
-    for i, kind, number, line in heading_candidates(lines):
+    for i, kind, number, line, _annexed in heading_candidates(lines):
         if kind == "dieu":
             digits = int(re.match(r"\d+", number).group(0))
             letter = number[len(str(digits)):]
@@ -715,6 +738,12 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
         which happens in the procurement Thông tư, where a Mục runs for pages
         before its first Điều -- is content, and gluing it onto the next article
         would both mislabel it and make one 22,000-token chunk out of it.
+
+        `page` is the page of the material being flushed -- the page carried by
+        the marker that OPENED this accumulation, not the one that closes it.
+        Every caller is on the closing marker, so every caller has to drain
+        BEFORE it advances `page_carry`; draining after was a wrong page claim
+        shipping in this corpus (see the loop below).
         """
         nonlocal pending_text, pending_figs
         blob = "\n\n".join(pending_text).strip()
@@ -731,10 +760,17 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
                 emit("Preamble (title block and recitals)",
                      1 if sections else 0, seg, figs)
             continue
-        if marker.page:
-            page_carry = marker.page
+        # THE DRAIN COMES FIRST, AND `page_carry` ADVANCES AFTER IT. What has
+        # accumulated is the text between the PREVIOUS marker and this one, so
+        # it is on the previous marker's page; stamping it with the page of the
+        # marker that closes it is a page claim the document does not support.
+        # Not theoretical: `tt-40-2025-tt-byt`'s Mục 5 block -- text running
+        # from PDF page 92 to page 171 -- carried the page of the appendix that
+        # follows it, so 124 chunks cited page 172, a page none of their text
+        # is printed on, and 110 more cited 92 for text beginning on 46.
         if marker.kind in CONTAINER_KINDS:
             drain(page_carry)
+            page_carry = marker.page or page_carry
             parent = marker.label
             pending_figs.extend(figs)
             if seg:
@@ -746,15 +782,25 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
             continue
 
         drain(page_carry)
+        page_carry = marker.page or page_carry
         full = ("\n\n".join(pending_text + [seg])).strip() if pending_text else seg
         figs = pending_figs + figs
         pending_text, pending_figs = [], []
-        if marker.kind == ANNEX_KIND:
-            # Attached material sits on pages the map never located, and under
-            # no Chương. Carrying either forward would be the same false
-            # precision in a different field.
-            page_carry = 0
+        if marker.kind in APPENDIX_KINDS:
+            # An appendix is attached to the instrument, not filed inside its
+            # last chapter: `Chương V ĐIỀU KHOẢN THI HÀNH > Phụ lục I` and
+            # `Mục 5 ... > PHỤ LỤC III` are `Location:` lines the source does
+            # not support, and the advisor is told to cite that field verbatim.
+            # So the container is dropped at an appendix boundary -- for the
+            # located `phu-luc` as well as for the synthesised `annex`, which
+            # is where this rule was already right and stayed for one kind
+            # only.
             parent = ""
+        if marker.kind == ANNEX_KIND:
+            # Attached material the map never located sits on no page it can
+            # name. Carrying one forward would be the same false precision in a
+            # different field.
+            page_carry = 0
         section = f"{parent} > {marker.label}" if parent else marker.label
         emit(section, page_carry, full, figs)
 

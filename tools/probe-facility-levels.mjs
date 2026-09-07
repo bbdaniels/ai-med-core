@@ -16,15 +16,40 @@
  * and this rule is the part a human was reading for. Exit code is 1 if any
  * probe fails, so a run can gate a change.
  *
+ * ONE SAMPLE IS NOT A MEASUREMENT, and this file used to pretend otherwise.
+ * The advisor's answer is a sample from a distribution, not a fixed string:
+ * on gpt-4o-mini the Vietnamese half of probes 7/8 named the current framework
+ * 4 times in 8 on 2026-09-07 (3 of 5 counting only the runs made with
+ * unmodified code) while its English twin named it 4 times in 4, and
+ * a single-sample gate reports either of those as a clean pass or a clean fail
+ * depending on which draw it got. That is how the same probe came to be written
+ * down as "8 of 9" one round and "9 of 9" the next, and then as a deterministic
+ * failure the round after. `--runs N` asks each probe N times and reports the
+ * pass COUNT per probe, so flakiness is a number rather than an anecdote; the
+ * exit code then requires every run of every probe to pass. It costs N times the
+ * gateway credits, so the default is still 1.
+ *
  * Usage:
  *   node tools/probe-facility-levels.mjs                       # local dev API
  *   node tools/probe-facility-levels.mjs https://api.ai-med.live
+ *   node tools/probe-facility-levels.mjs --runs 5              # measure flakiness
+ *   node tools/probe-facility-levels.mjs https://api.ai-med.live --runs 3
  *
  * NOTE: a run against production tests the prompt CI last pushed, not the
  * working tree. Only a local run tests an uncommitted system-prompt.md.
  */
 
-const BASE = (process.argv[2] || 'http://localhost:3001').replace(/\/$/, '');
+const args = process.argv.slice(2);
+const runsAt = args.indexOf('--runs');
+const RUNS = runsAt === -1 ? 1 : Number(args[runsAt + 1]);
+if (!Number.isInteger(RUNS) || RUNS < 1) {
+  console.error('--runs takes a positive integer');
+  process.exit(2);
+}
+const positional = runsAt === -1
+  ? args
+  : args.filter((a, i) => i !== runsAt && i !== runsAt + 1);
+const BASE = (positional[0] || 'http://localhost:3001').replace(/\/$/, '');
 const PROJECT = 'haivn_eip';
 const VIGNETTE = 'eip_advisor';
 
@@ -92,21 +117,35 @@ function check(probe, answer) {
   return fails;
 }
 
-console.log(`Probing ${BASE} (X-Project: ${PROJECT})\n`);
-let failed = 0;
+console.log(`Probing ${BASE} (X-Project: ${PROJECT})`);
+console.log(RUNS === 1 ? '' : `${RUNS} runs per probe\n`);
+let failedRuns = 0;
+const passes = new Map();
 for (const p of PROBES) {
-  const r = await ask(p);
-  console.log('='.repeat(78));
-  console.log(`PROBE ${p.id} [${p.framing} / ${p.lang}]`);
-  console.log(`Q: ${p.q}`);
-  console.log('-'.repeat(78));
-  console.log(r.error ? `ERROR: ${r.error}` : r.answer);
-  if (r.beyondScope !== undefined) console.log(`\n(beyondScope: ${r.beyondScope})`);
-  const fails = r.error ? ['request failed'] : check(p, r.answer);
-  if (fails.length) failed += 1;
-  console.log(fails.length ? `RESULT: FAIL -- ${fails.join('; ')}` : 'RESULT: PASS');
-  console.log();
+  let passed = 0;
+  for (let run = 1; run <= RUNS; run++) {
+    const r = await ask(p);
+    console.log('='.repeat(78));
+    console.log(`PROBE ${p.id} [${p.framing} / ${p.lang}]${RUNS === 1 ? '' : ` run ${run}/${RUNS}`}`);
+    console.log(`Q: ${p.q}`);
+    console.log('-'.repeat(78));
+    console.log(r.error ? `ERROR: ${r.error}` : r.answer);
+    if (r.beyondScope !== undefined) console.log(`\n(beyondScope: ${r.beyondScope})`);
+    const fails = r.error ? ['request failed'] : check(p, r.answer);
+    if (fails.length) failedRuns += 1; else passed += 1;
+    console.log(fails.length ? `RESULT: FAIL -- ${fails.join('; ')}` : 'RESULT: PASS');
+    console.log();
+  }
+  passes.set(p.id, passed);
 }
 console.log('='.repeat(78));
-console.log(`${PROBES.length - failed}/${PROBES.length} probes pass`);
-process.exit(failed ? 1 : 0);
+if (RUNS === 1) {
+  const clean = [...passes.values()].filter(Boolean).length;
+  console.log(`${clean}/${PROBES.length} probes pass`);
+} else {
+  for (const p of PROBES) {
+    console.log(`probe ${p.id} [${p.framing} / ${p.lang}]: ${passes.get(p.id)}/${RUNS}`);
+  }
+  console.log(`${PROBES.length * RUNS - failedRuns}/${PROBES.length * RUNS} runs pass`);
+}
+process.exit(failedRuns ? 1 : 0);

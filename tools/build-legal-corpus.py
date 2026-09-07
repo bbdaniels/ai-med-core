@@ -90,6 +90,7 @@ from lib import filelock                             # noqa: E402
 from lib import transcriptions                       # noqa: E402
 from lib import openai_gateway as gateway            # noqa: E402
 from lib.openai_gateway import api_post, load_env, pack, unpack  # noqa: E402,F401
+from lib.section_order import monotone_assignment    # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_DIR = REPO_ROOT / "projects" / "haivn_eip" / "content" / "legal"
@@ -383,49 +384,6 @@ def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str]]:
     return out
 
 
-def align(sections: list[tuple[str, str, str]],
-          options: dict[int, list[int]]) -> dict[int, int]:
-    """Assign map sections to heading lines, in order, matching as many as possible.
-
-    Naive forward-only matching was the first implementation and it was wrong in
-    a way that hid: one bad match -- 96/2023/NĐ-CP's "Điều 17." recurring inside
-    an appendix form -- dragged the cursor 9,000 lines forward and silently cost
-    every one of the 131 articles after it. So the assignment is chosen globally
-    instead: a longest-increasing-subsequence over each section's candidate
-    lines, which is the largest set of matches that can all be true at once. A
-    single misleading recurrence now loses at most itself.
-
-    `sections` is the ordered list of (key, kind, number); `options[i]` the
-    sorted candidate line indexes for section i. Returns {section index -> line}.
-    """
-    # dp[k] = (last line used, section index, previous k's chain id) for the
-    # cheapest way to match k sections; chains are reconstructed from `back`.
-    dp: list[int] = [-1]                     # dp[0]: nothing matched yet
-    chain: list[int] = [-1]                  # index into `back` for dp[k]
-    back: list[tuple[int, int, int]] = []    # (line, section index, parent chain id)
-    for i, _ in enumerate(sections):
-        for k in range(len(dp) - 1, -1, -1):
-            lines_ = options.get(i, ())
-            nxt = next((ln for ln in lines_ if ln > dp[k]), None)
-            if nxt is None:
-                continue
-            if k + 1 == len(dp):
-                dp.append(nxt)
-                back.append((nxt, i, chain[k]))
-                chain.append(len(back) - 1)
-            elif nxt < dp[k + 1]:
-                dp[k + 1] = nxt
-                back.append((nxt, i, chain[k]))
-                chain[k + 1] = len(back) - 1
-    assigned: dict[int, int] = {}
-    node = chain[len(dp) - 1]
-    while node >= 0:
-        line, sec_i, parent = back[node]
-        assigned[sec_i] = line
-        node = parent
-    return assigned
-
-
 def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marker], int]:
     """Locate each curated section in the text.
 
@@ -436,6 +394,16 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
     already-fixed neighbours -- the heading's own number, which is what the key
     encodes. Number matching alone is far too weak to be trusted globally: the
     string "Điều 5." occurs in most of these documents more than once.
+
+    Pass 1 assigns globally rather than with a forward cursor
+    (`lib.section_order.monotone_assignment`), because a label can match several
+    lines and one misleading recurrence must lose only itself. The map's own
+    section order is what the assignment runs against, and since round 9 that
+    order is guaranteed monotone by `build-jump-maps.py`, which runs the same
+    function over the pages before it writes the file -- so a section this pass
+    cannot place is one this TEXT does not support, not one the map ordered
+    wrongly. Lines are STRICTLY increasing: two sections cannot begin on the
+    same line, which is the one place this differs from the map builder's call.
     """
     parsed: list[tuple[str, str, str, str, int]] = []   # key, kind, number, label, page
     unparsed = 0
@@ -458,7 +426,7 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
             continue
         strong[i] = [ln for ln, k, _, text in cands
                      if k == kind and norm(text).startswith(prefix)]
-    assigned = align([(p[0], p[1], p[2]) for p in parsed], strong)
+    assigned = monotone_assignment(strong, len(parsed), strict=True)
 
     # Pass 2 -- fill the gaps by number, bounded by the anchors on either side.
     for i, (_, kind, number, _, _) in enumerate(parsed):

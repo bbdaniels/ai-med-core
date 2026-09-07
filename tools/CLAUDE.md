@@ -148,6 +148,45 @@ It is advisory, and it does not replace the re-read: a caller holding this lock
 still re-reads the file it is about to overwrite, because a lock cannot cover
 the run that started before it.
 
+## lib/section_order.py
+
+**A document is read in one order, and everything that locates its sections has
+to agree with that order.** `build-jump-maps.py` locates a heading on a PDF
+PAGE, `build-legal-corpus.py` locates a map section at a TEXT LINE, and both
+have to refuse a location that runs backwards -- because a backwards location is
+a mismatch (an n-gram that hit the wrong page, a recurrence of `Điều 17.` inside
+an appendix form), never an out-of-order document.
+
+Both had the problem and until 2026-09-07 only one of them solved it, which is
+the worst of the three possible states: the corpus builder ran its own
+longest-increasing-subsequence and **silently discarded** whatever contradicted
+the rest, so the MAP could ship a page claim the very next tool in the pipeline
+threw away, with nothing anywhere saying so. `luat-15-2023-qh15` shipped
+`chuong-10` on page 1 -- Điều 1's scope sentence enumerates every chapter's
+subject, so the sliding n-gram of Chương X's title words matched page 1 and the
+kind-word guard passed on `Chương I` -- the corpus builder dropped that section,
+and Điều 104 to 114 were re-parented under Chương IX: eleven chunks whose
+`Location:` the source does not support, from a map that looked fine.
+
+So the rule is here, once, and both builders call it:
+
+- `monotone_assignment(options, count, strict)` -- each item offers ASCENDING
+  candidate positions; returns the largest set of items placeable without going
+  backwards. The corpus builder's pass 1 is this call over candidate lines.
+- `monotone_subset(positions, strict)` -- the same call for one candidate each.
+  The map builder runs this over the confirmed pages, in canonical text order,
+  before it writes the file.
+
+`strict` is the difference between the two callers and it is not cosmetic: two
+sections cannot BEGIN on the same text line (strict), and two sections routinely
+start on the same PDF page (non-strict). Passing the wrong one throws away every
+section that shares a page with its neighbour.
+
+What each caller does with the items left out is its own business, and they
+differ: the corpus builder fills them in by number inside the window between
+surviving anchors, and the map builder demotes them to their structural page
+where that page fits the window, dropping them only where it does not.
+
 ## build-ppol-corpus.py
 
 Builds `projects/ppol5013/content/readings/readings.db`, the PPOL 5013/5014
@@ -799,6 +838,52 @@ is computed per document from the kinds it actually uses, anchored at the bottom
 so that Mục and Điều keep their distinction and it is the outer pair that shares
 a level when a decree nests four deep.
 
+**Unwrapping asks two questions, not one, and for a long time it only asked the
+first.** `NEW_LINE_RE` says whether a line OPENS a unit -- a bullet, a numbered
+clause, `Điều 5.` -- and everything else was read as the continuation of the line
+above it. `closes_unit` is the other half: a heading is one line by construction,
+so the line under it starts a new paragraph whether or not it opens a unit of its
+own, and a descriptive paragraph opens nothing. Without it, `tt-40-2025-tt-byt`'s
+MÔ TẢ TÓM TẮT block -- which prints `Chương VI. Điều kiện chung của hợp đồng`
+over its own description -- came back as one 204-character line, `promote_headings`
+had to split it at `Chương VI.` because it was past `HEADING_MAX`, and the chapter
+TITLE went into the body: the reader's text got `## Chương VI.` with the title
+glued to the front of the description, `heading_label`'s one-line borrow carried
+the whole run-on into the jump map's label, and 111 corpus `Location:` lines cited
+a sentence that is not printed on the page the map names. Same defect in `tt-35`
+(`## Điều 13.` over `Tổ chức thực hiện Chánh Văn phòng Bộ ...`), and in the
+promulgation clause dragged into `tt-01`'s Phụ lục V and `tt-37`'s Phụ lục 2
+headings, one of which then shipped with an unclosed parenthesis.
+
+Three things decide it, and the third is the one that matters:
+
+- **A BARE MARKER has not ended.** `Chương I` is titled by the banner printed
+  under it, and breaking there leaves `## Chương I` over `## NHỮNG QUY ĐỊNH
+  CHUNG` -- two headings where the law has one. Measured across this corpus that
+  is 100 of the 132 lines the test is asked about, so this is the common case,
+  not the edge.
+- **A bullet or numbered clause is not a heading**, whatever the grammar makes of
+  the words after its marker. `_LEADING_NOISE` admits a leading dash only because
+  it exists to read `- Điều4.` off a SCAN, and `- Mục 1 (Đánh giá tính hợp lệ của
+  E-HSDT) thực hiện theo Mục 1 Chương III` is one sentence of a bidding form.
+- **The test is the line's WIDTH IN ITS OWN BLOCK**, and it has to be. A title
+  that wraps is set to the full measure and breaks wherever the measure runs out,
+  so neither the case of the next line nor the punctuation of this one separates a
+  wrap from an ending: `nd-96`'s `Điều 111. ... quy định tại Điều 116 của Luật` /
+  `Khám bệnh, chữa bệnh` and its `PHẦN II. ... DANH MỤC KỸ` / `THUẬT` both break
+  on a capital, and `THUẬT` is not a word on its own. A heading that has ENDED
+  stops short of the measure -- the endings in this corpus sit at 0.3-0.6 of it
+  and the wraps at 0.9-1.0, so `CLOSED_LINE_MAX` is not a delicate number. This
+  is the same class of evidence as everything else in this pass: the original PDF
+  is what says which line is a heading.
+
+Measured end to end over every PDF-sourced document, with the rule applied and
+the whole structure pass re-run: 14 of the 18 come out byte-identical, and the
+four that move (`tt-01`, `tt-35`, `tt-37`, `tt-40`) each recover a heading's own
+title and hand the body prose back to the body. `reflow` carries the same pair of
+punctuation tests on the scraped side, so the two paths cannot disagree about
+where a title ends.
+
 **The original PDF is what says which line is a heading.** On a born-digital
 text layer nearly every heading candidate is bold somewhere (nd-96: 225 of 226),
 so a candidate the PDF never sets bold is a cross-reference and is dropped; and
@@ -905,6 +990,64 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   turn, n being the length of the heading line, and a page one of them names
   must also carry the heading's kind word (`phụ lục`, `điều`) so that a window
   made only of context cannot pull a section onto the following page.
+- **A confirmation that contradicts the document's own order is not a
+  confirmation, and the LAST thing the canonical pass does is enforce that.**
+  The kind-word guard above is not enough on its own: `luat-15-2023-qh15`'s
+  Điều 1 enumerates every chapter's subject in one sentence on page 1, so a
+  slid window of Chương X's title words matched there and the guard passed on
+  the `Chương I` printed on the same page -- and `chuong-10` shipped as
+  `confirmed` on page 1, ahead of the hundred and twenty-six sections it is
+  printed after. The map's sections are therefore run through
+  `lib/section_order.monotone_subset` in canonical text order, over their pages,
+  NON-strictly (sections share pages routinely). A section whose page breaks
+  that order is **demoted to its structural page** where the detection spine
+  names exactly one and it falls inside the window its surviving neighbours
+  leave -- `chuong-10` comes back on page 61 that way, and both the demotion and
+  its two pages are named in the run's output -- and is **dropped**, also named,
+  where it does not. Two of these are dropped today: `vbhn-15-2024-byt`'s
+  `dieu-20` and `dieu-21`, the two articles of 37/2024/TT-BYT that the
+  consolidation quotes in a footnote to page 4, which are not articles of a
+  nine-article consolidated text. This rule is not new work; it is the rule
+  `build-legal-corpus.py` was already applying ALONE, silently discarding
+  whatever the map claimed and the text contradicted -- so the map shipped a
+  page claim the next tool threw away, and eleven of luat-15's articles were
+  re-parented under Chương IX because of it. See `lib/section_order.py`.
+- **A key that reads as a heading in more than one place resolves to the
+  occurrence the structure pass MARKED, then to document order** -- not to the
+  first one seen, which is what it used to be. `qd-1740-2026` prints
+  `- PHỤ LỤC 2. ĐÁNH GIÁ ... 26` inside its folded contents list, a line whose
+  dot leaders an earlier fold had absorbed so `TOC_LEADER` no longer recognised
+  it, 790 lines above the real `## PHỤ LỤC 2.` and above `## PHỤ LỤC 1.` as
+  well. It confirmed to the same page as the real heading, so nothing looked
+  wrong -- until `phu-luc-2` carried the contents line's POSITION, landed ahead
+  of `phu-luc-1` in the document's own order, and the order rule above had to
+  drop one of the two. An `##` was written by reading the PDF's own typography;
+  an unmarked line that parses as the same heading is a contents entry or a
+  citation. Same fix, same reason as `list_bullet`'s note that a contents entry
+  says a section EXISTS and never says where it BEGINS. It also repaired
+  `qd-2855-2024`, whose five appendices were placed from its page-1 contents
+  list and are now confirmed at pages 24-30.
+- **KNOWN LIMIT, and it is a wrong page shipping today: neither that tie-break
+  nor the order rule can tell THIS document's appendix from the appendix of a
+  document it ANNEXES.** `tt-40-2025-tt-byt` is a circular whose Phụ lục II is a
+  complete model bidding document, and that model document has appendices of its
+  own. Six `PHỤ LỤC` headings parse under three keys: the circular's own
+  `## PHỤ LỤC II` (line 977) and `## PHỤ LỤC III` (4053, page 172, "Ban hành kèm
+  theo Thông tư số /2025/TT-BYT"), and the model document's `## PHỤ LỤC 2:` /
+  `## PHỤ LỤC 3:` at 3510/3568 and again at 6598/6618 ("Kèm theo Thỏa thuận khung
+  số __"). All six are `##`, so the marked-heading tier is a no-op and document
+  order decides -- which for `phu-luc-3` picks line 3568, page 157, the model
+  agreement's sub-appendix. `phu-luc-2` escapes only because the circular's own
+  heading happens to come first. The circular's real Phụ lục III, on page 172, is
+  in no map at all, and a reader jumping to "40/2025/TT-BYT, Phụ lục III" lands
+  fifteen pages early on another instrument's annex -- `confirmed`, because the
+  label's words genuinely are on page 157. This is not new: HEAD's own builder
+  produces it, and the round-8 sliding anchor is what raised it from `structural`
+  to `confirmed`. Fixing it needs a discriminator the map does not have -- the
+  numeral form each series is written in, or the `Ban hành kèm theo Thông tư`
+  promulgation clause that says which instrument an appendix belongs to -- and
+  that is a new tie-break tier with corpus-wide reach. Do not add one without
+  measuring every document's map before and after.
 - A heading with no canonical text behind it can still be located
   **structurally**, and is labelled `confidence: "structural"`. For a scanned
   document the label is then SYNTHESISED (`Điều 12`) rather than copied out of
@@ -1028,18 +1171,58 @@ to withhold, and committing removes the post-redeploy upload step that
 it as `"readingsIndex"`; that one key is the whole wiring, and
 `packages/api/src/readings.ts` does the rest.
 
-The same file also sets `"chatModel": "gpt-4o"`, and that is not optional. On
-the platform default (`gpt-4o-mini`) the model does not call `search_readings`
-at all on the question this tier exists for -- measured, four runs out of four
-on "what section of the law says that?", zero tool calls, answered from the
-legal index and flagged in scope. The tool description was ruled out as the
-cause (rewriting it project-neutral changed nothing). On `gpt-4o` the same
-question searches, and either cites the article it retrieved or says the search
-did not find one. ppol5013 sets the same key for the same reason, under a
-comment in `server.ts` that a grounded advisor attributing a claim to the right
-source needs the stronger model. It costs more per turn, on the Harvard gateway
-credits: a formless advisor whose whole job is attribution is where that is
-worth paying.
+**`projects/haivn_eip/project.json` no longer sets `"chatModel"`, and this
+paragraph used to say it did.** It was pinned to `gpt-4o` when this tier was
+built, because on the platform default (`gpt-4o-mini`) the model did not call
+`search_readings` at all on the question the tier exists for -- measured, four
+runs out of four on "what section of the law says that?", zero tool calls,
+answered from the legal index and flagged in scope; the tool description was
+ruled out as the cause. Ben unpinned it on 2026-08-28 (`30468ce`) because the
+$10/month L3 ceiling is a hard capacity limit and heavy classroom usage could
+exhaust it mid-month, accepting "the Vietnamese edge case's occasional
+adjacent-article citation" as the tradeoff. **The advisor therefore runs on
+`gpt-4o-mini` today.** ppol5013 still sets the key, under a comment in
+`server.ts` that a grounded advisor attributing a claim to the right source
+needs the stronger model.
+
+What that tradeoff costs was measured on 2026-09-07 against the working tree,
+with `tools/probe-facility-levels.mjs` and single-probe replays of its probes 7
+and 8 (the same question about 4531/QĐ-BYT in English and in Vietnamese), full
+request traces kept for every turn. Fifteen traces, all on the pre-fix prompt:
+
+- `gpt-4o-mini`, English: three `search_readings` hops in each of 4 runs, 18
+  passages, named the current facility framework 4 of 4.
+- `gpt-4o-mini`, Vietnamese: exactly one hop in each of 8 runs, 6 passages,
+  named it 4 of 8 -- and 3 of 5 counting only the runs made with unmodified
+  code, the other 3 being an experiment described below.
+- `gpt-4o`, Vietnamese: **also exactly one hop, in each of 3 runs**, and named
+  all of it -- the three cấp and Điều 104 Luật 15/2023/QH15 -- 3 of 3.
+
+**Hop count is what differs between the two LANGUAGES, and it is not what
+differs between the two MODELS**, so it cannot be what re-pinning `gpt-4o`
+would buy. What the traces do show tracking the outcome is whether a
+notice-stamped chunk was among the passages that came back: across all fifteen
+traces, the 3 runs that retrieved no notice failed all 3, and the 12 that
+retrieved one or more passed 11. `gpt-4o` searched once like the small model but
+worded the query differently (`hạng bệnh viện ...`, `bệnh viện nào được bảo hiểm
+y tế thanh toán ...`) and drew 2 stamped chunks every time; the small model's
+Vietnamese queries drew 0 to 2. Only 31 of `qd-4531-2021`'s chunks are stamped,
+so a single six-passage search misses them all a fair fraction of the time.
+
+The annotation pipeline itself is symmetric and was verified so from the
+traces, not inferred: the notice is stamped, composed and rendered identically
+(`formatSearchResults` picks the language with `noticeLanguage`, and nothing
+else in the chat route branches on language), and the `vi` text names Điều 104,
+all three cấp, the date and Điều 13 exactly as the `en` text does. Rendering the
+Vietnamese turn's notice in English was tried as a falsification and **proved
+nothing**: 2 of its 3 runs retrieved no notice at all, so the variable under
+test was not present in them, and the one run where an English notice did reach
+the model passed. Do not cite that experiment as evidence either way.
+
+Whether re-pinning `gpt-4o` is worth its price is a cost decision and not one to
+make here -- but state the reason honestly if it is raised: on these traces the
+stronger model's advantage is query wording, hence retrieval luck, not a deeper
+search.
 
 **No new retrieval code.** The platform's project-generic retrieval (built for
 ppol5013) already does hybrid BM25 + embeddings, RRF fusion, and the
@@ -1069,11 +1252,19 @@ Chunking is per Điều / Phụ lục, so a chunk is the unit a lawyer cites. Ch
 Mục and Phần headings are context that rides along with the next article --
 unless they carry substantive text of their own, in which case they become their
 own chunk. Sections are located by matching the curated map against the text
-**globally** (a longest-increasing-subsequence over each section's candidate
-lines) rather than with a forward cursor: the first implementation used a cursor,
-and one recurrence of `Điều 17.` inside an appendix form dragged it 9,000 lines
-forward and silently lost all 131 articles after it. Documents with text but no
-map (`qd-4026-2010`) fall back to heading heuristics.
+**globally** rather than with a forward cursor: the first implementation used a
+cursor, and one recurrence of `Điều 17.` inside an appendix form dragged it 9,000
+lines forward and silently lost all 131 articles after it. The global assignment
+is `lib/section_order.monotone_assignment`, over each section's candidate lines,
+STRICTLY increasing -- two sections cannot begin on the same line. **That
+function used to be a private copy here, and being private was the bug**: the map
+builder had the same problem, did not solve it, and this file quietly discarded
+whatever the map claimed and the text contradicted -- so a wrong page could ship
+in `maps/<id>.json` and be thrown away one tool later with nothing said. Since
+2026-09-07 `build-jump-maps.py` calls the same function over its pages before it
+writes a map, so a map is ordered BY CONSTRUCTION and a section this pass cannot
+place is one the text does not support. Documents with text but no map
+(`qd-4026-2010`) fall back to heading heuristics.
 
 **The articles stop at the signature block.** What a Vietnamese instrument
 carries after it -- a promulgated plan, a technical guideline, a tariff
@@ -1132,3 +1323,38 @@ Also note the strings `readings.ts` wraps results in still say "assigned course
 readings", which is ppol5013's vocabulary reaching a legal advisor. It is
 cosmetic and it is in shared code, so it belongs to whoever next touches that
 file, not to a per-project workaround here.
+
+## probe-facility-levels.mjs
+
+Asks the `haivn_eip` advisor nine questions about facility classification --
+old-scheme framed, new-scheme framed and legal-text framed, in English and in
+Vietnamese -- and checks each answer against three regexes: an answer stating
+the pre-2025 hospital-grade or administrative-line scheme must also say it was
+replaced, and every answer must name the current framework. Exit code 1 on any
+failure, so it can gate a change.
+
+```bash
+node tools/probe-facility-levels.mjs                  # local dev API, one sample each
+node tools/probe-facility-levels.mjs --runs 5         # five samples each, pass count per probe
+node tools/probe-facility-levels.mjs https://api.ai-med.live --runs 3
+```
+
+A local run is the only one that tests an uncommitted `system-prompt.md`, and it
+tests the prompt in the DEV DATABASE, not the file: run
+`ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts haivn_eip --local`
+first or you are re-measuring the prompt from last time.
+
+**`--runs` exists because one sample is not a measurement**, and reading this
+probe as if it were is how the same question came to be written down as "8 of 9"
+one round, "9 of 9" the next, and a deterministic four-of-four failure the round
+after. Probe 8 -- the Vietnamese half of the 4531/QĐ-BYT pair -- was passing
+4 times in 8 on `gpt-4o-mini` when all three of those were recorded (3 of 5
+counting only unmodified-code runs), so every one of those three records was a
+draw reported as a rate. Report a pass COUNT from this flag, and **keep the run's output** -- it prints
+every answer verbatim, so a saved transcript is the only thing that makes a
+count checkable afterwards, and a count with no transcript behind it is not a
+measurement either. Do not report a single run as a rate, and do not loosen a
+regex because one draw missed. The checks assert the
+substantive rule (the answer names the law or the three cấp), and an answer that
+says only "the classification changed on 01/01/2025" genuinely has not stated
+the current framework.

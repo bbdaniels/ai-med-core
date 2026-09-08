@@ -279,19 +279,64 @@ HAIVN reported exactly that on 2026-09-04, having already been given the deeper
 sidebar in the app.
 
 So `build_pdf_outline` replaces the outline in the file, immediately after the
-nav-chip strip and on the same run. Forty entries per language, three levels
-deep, none of them blank: **the document's own heading structure and nothing
-else**, which is exactly the export's outline with the titleless entries gone.
-`eip_text_sections` in `build-jump-maps.py` reads the anchored `##`/`###`
-headings off the markdown; the appendices get one extra level so `Appendix 3`
-hangs under `5. Appendices` the way the export hung it.
+nav-chip strip and on the same run. Sixty-six entries per language, none of them
+blank: the sections the export carried, plus **the structure below them that the
+text tab already carries and the outline never did** -- table, figure and diagram
+captions, the numbered items of the appendix training plans, the bold-italic
+subsections of 4.1, the articles of the model contract and the clauses numbered
+inside them.
 
-A round in between went deeper -- sixty-four entries at four levels, adding table
-captions, the numbered items of the appendix training plans and the articles of
-the model contract, read off the emphasised lines of the markdown. **HAIVN asked
-on 2026-09-07 for the major-section level back**, so that parse and its whitelist
-were DELETED rather than left behind a flag. Do not reintroduce them without a
-request; the blank-title cleanup is the part that was wanted.
+`eip_outline_nodes` in `build-jump-maps.py` is the ONE parse behind all of it: it
+walks the markdown once and returns the anchored `##`/`###` headings and the
+structural lines below them in a single list, and `eip_text_sections` is a
+two-line projection of that list for the jump map. Do not add a second parse of
+either kind. Which non-anchored lines count is a deliberate WHITELIST of shapes,
+because the model contract's letterhead ("SOCIALIST REPUBLIC OF VIETNAM",
+"Pursuant to the Civil Code ...") is emphasised exactly the same way and is a
+heading of nothing.
+
+Depth follows the DOCUMENT'S OWN numbering rather than a fixed rank per kind, so
+it is not a fixed number of levels and nothing should assert one: a heading's own
+`##`/`###` depth, one more for the appendices (so `Appendix 3` hangs under
+`5. Appendices` the way the export hung it), one more for a structural line under
+its heading, and one more again for a clause numbered inside an article, because
+`1.`, `2.` and `3.` are children of `Article 1` and not its siblings. Today that
+bottoms out at five levels, `{1:7, 2:23, 3:27, 4:6, 5:3}` in both languages.
+
+**Both halves of that are a HAIVN request, and the second one is the reason the
+first is not enough.** They reported the blank rows on 2026-09-04. A round on
+2026-09-07 read a follow-up as asking for the major-section level only and
+deleted the deeper parse; on **2026-09-08 Thuy clarified that the bookmarks in
+the browser's own PDF viewer show the main sections only and that she wants the
+SUBSECTIONS there too**, and the parse was restored. Only the files served
+between those two dates carried the shallow outline; do not shorten it again
+without a request that says so.
+
+**Two things the restored parse gets right that the 2026-09-07 version did not,
+and both were EN/VI asymmetries a reader would have seen:**
+
+- **The emphasis is a PREFIX of the line, not the whole of it.** The Vietnamese
+  contract closes its bold before the parenthetical that qualifies Article 2
+  (`**Điều 2. ... của bên A** (đơn vị ...)`) where the English closes it after,
+  so a whole-line rule gave Vietnamese readers five of the contract's six
+  articles and English readers all six. The same rule dropped the run-in first
+  clause of Article 1 in BOTH languages, so both panes showed a `2.` and a `3.`
+  with no `1.`. The run is read greedily, to the last closing mark on the line,
+  because one Google Docs run comes out as `**2.** **Sample Handover ...**` and
+  both halves are the one heading; the plain text after it is body, not title.
+- **A caption is admitted with or without the emphasis.** Every caption in both
+  files is bold except the English `Diagram 1: Integrated HBV and HCV screening
+  ...`, which is plain -- and `diagram` was missing from the caption pattern
+  besides, so the same object was bookmarked in Vietnamese (`Sơ đồ 1`) and not in
+  English. A caption names itself; the other two shapes still require the
+  emphasis, which is what separates a heading from a sentence opening the same
+  way.
+
+**EN/VI structural parity is the check that catches this class of bug.** The two
+documents are translations of one document, so their outlines must have the same
+level sequence, entry for entry -- 66 and 66, identical, is the assertion to
+re-run after any change to the parse. A difference is an extraction gap until
+proven to be a difference between the documents.
 
 Four things about it are load-bearing:
 
@@ -309,10 +354,14 @@ Four things about it are load-bearing:
   titles as byte-for-byte the page's.
 - **A bookmark is placed by the same confirm-on-the-page rule as a jump-map
   anchor** (`resolve_eip_anchors`, one implementation for both): the heading's
-  own words, normalised, must appear on the page the resolution claims. One that
-  cannot be confirmed is named in the run's output and left out, never guessed.
-  (`contents`, the document's own table of contents, is the one section dropped
-  in both languages, and the export never bookmarked it either.)
+  own words, normalised, must appear on the page the resolution claims. A
+  sub-heading is confirmed the same way but inside the page span of its own
+  section, which is what makes a five-word title like `Article 1: Scope of
+  Services` safe to match at all -- five words are unique because we are looking
+  at four pages rather than forty. One that cannot be confirmed is named in the
+  run's output and left out, never guessed. (`contents`, the document's own table
+  of contents, is the one section dropped in both languages, and the export never
+  bookmarked it either.)
 - **The save is INCREMENTAL, and a file already carrying the outline is not
   written at all.** The named destinations are what the document's own contents
   links resolve through, and a rewriting save is free to garbage-collect the ones
@@ -321,10 +370,10 @@ Four things about it are load-bearing:
   re-run byte-identical rather than appending a fresh copy of every outline
   object to a 5 MB binary git tracks.
 - **The frontend's `pruneOutline` was NOT removed.** It is still dead weight for
-  the EIP -- verified again after the 2026-09-07 revert, zero blank entries -- but
-  the same viewer draws the Legal Library's twenty-three government PDFs, whose
-  outlines somebody else publishes. Its comment says so, so the next reader does
-  not take it as evidence the EIP files still need it.
+  the EIP -- verified again after the 2026-09-08 restore, zero blank entries in
+  either language -- but the same viewer draws the Legal Library's twenty-three
+  government PDFs, whose outlines somebody else publishes. Its comment says so,
+  so the next reader does not take it as evidence the EIP files still need it.
 
 `python3 tools/build-jump-maps.py --eip-only --eip-outline` rewrites the outlines
 of the PDFs already on disk, without re-fetching them.
@@ -952,7 +1001,8 @@ on?** It writes
 - the **bookmark outline of the two EIP PDFs**, on `--eip-outline` (which
   `build-eip-text.py` invokes on every PDF re-export) -- see "The PDF's bookmarks
   are ours, not Google's" above. It is the same anchor -> page resolution
-  (`resolve_eip_anchors`) as the map, over the same sections;
+  (`resolve_eip_anchors`) as the map, extended down through the structure below
+  the numbered headings;
 - and a **canonical text layer** into the scanned legal PDFs that have a trusted
   text file, so those scans become searchable and selectable.
 

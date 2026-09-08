@@ -489,9 +489,12 @@ function PdfPage({ pdf, pageNumber, scale, root, registerPage, resolveDest, onNa
 // ---------------------------------------------------------------------------
 
 /**
- * One node of `pdf.getOutline()`. The published EIP files carry three levels, and
- * pdf.js hands the whole tree back in one call — nesting is `items`, so nothing
- * here has to reconstruct depth from anything.
+ * One node of `pdf.getOutline()`. pdf.js hands the whole tree back in one call —
+ * nesting is `items`, so nothing here has to reconstruct depth from anything, and
+ * nothing here depends on how deep a document goes. Do not write a level count
+ * into this file: the EIP outlines are rebuilt from the documents' own numbering
+ * by `eip_outline_nodes` in `tools/build-jump-maps.py`, so their depth follows
+ * the source and has already changed three times.
  */
 interface OutlineNode {
   title: string;

@@ -112,10 +112,14 @@ projects/ppol5013/content/readings/ocr-cache/
 # the temp file tools/build-legal-corpus.py builds into are not. A reader that
 # opens the tracked db can leave a -wal/-shm beside it, and an interrupted build
 # leaves the .build file; neither is anybody's edit, and both would otherwise be
-# staged by `git add -A`.
+# staged by `git add -A`. The last line is the same rule for the OTHER file
+# tools/lib/filelock.py protects: fetch-legal-docs.py locks registry.json, and
+# filelock derives registry.json.lock beside it. A crashed run leaves that lock
+# on disk for the next run to clear as stale -- it is tool state, never content.
 projects/haivn_eip/content/legal/legal-corpus.db-wal
 projects/haivn_eip/content/legal/legal-corpus.db-shm
 projects/haivn_eip/content/legal/legal-corpus.db.build
 projects/haivn_eip/content/legal/legal-corpus.db.build-wal
 projects/haivn_eip/content/legal/legal-corpus.db.build-shm
 projects/haivn_eip/content/legal/legal-corpus.db.build.lock
+projects/haivn_eip/content/legal/registry.json.lock

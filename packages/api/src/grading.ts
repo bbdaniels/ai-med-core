@@ -301,10 +301,9 @@ CRITICAL: ALL text in your response MUST be written in the language with ISO 639
         response_format: { type: 'json_object' },
       });
 
-      // Log token usage (including Harvard gateway credit fields if present)
+      // Log token usage
       if (response.usage) {
         const u = response.usage;
-        const raw = response as any;
         const costPerPrompt = 0.15 / 1_000_000;
         const costPerCompletion = 0.60 / 1_000_000;
         logTokenUsage({
@@ -314,8 +313,6 @@ CRITICAL: ALL text in your response MUST be written in the language with ISO 639
           prompt_tokens: u.prompt_tokens || 0,
           completion_tokens: u.completion_tokens || 0,
           estimated_cost: (u.prompt_tokens || 0) * costPerPrompt + (u.completion_tokens || 0) * costPerCompletion,
-          harvard_credits_used: raw.your_harvard_credits_used_this_transaction ?? null,
-          harvard_credits_remaining: raw.your_harvard_credits_still_available ?? null,
         });
       }
 

@@ -46,6 +46,15 @@ Other CSS patterns:
 - Required asterisk: hide `span.required`, inject via `.question:has(> span.required) > .question-label.active::after`
 - `.or-required-msg` hidden by default, shown only when `.invalid-required` present on question
 
+`.document-panel` / `.document-panel-body` are defined ONCE, in `style.css` next to
+the `.document-search` find-bar rules. Until 2026-09-08 a second, unscoped copy of
+the whole set sat ~500 lines further down and won the cascade property by property
+(later block, equal specificity), so the rendered panel was the union of two blocks
+neither of which described it -- for instance the reading padding came from the
+first copy and the 0.9rem body size from the second. The blocks were merged into
+the surviving one and verified byte-identical: 21 elements x 37 computed properties,
+zero differences. Do not reintroduce a second block; extend the existing one.
+
 ### Toggle appearance (iOS-style yes/no pill)
 
 Any `select_one` question with `appearance: "toggle"` renders as a compact row: question label on the left, segmented pill on the right. The selected option is highlighted in `--accent-glow`. Works with any two-option choice list — not just Yes/No. TEECH uses this pattern for both `yes_no_general` toggles and binary demographic pickers (`Man | Woman`, `Black | White`, `70s | 80s`). Implementation lives in `enketo-form.css` under the `.or-appearance-toggle` block.
@@ -107,6 +116,21 @@ Structural change to remember: to convert a multi-select checklist into forced-c
 ## Language Localization
 
 **Translation System** powered by `languages.json`:
+
+**The API is the only source of translations at runtime.** `App.tsx` fetches
+`GET /api/languages`, which reads the copy stored in the database -- the same copy
+the admin Translations tab uploads and edits. If that fetch fails, `langs` is set
+to `null` and every `t()` call degrades to the component's hardcoded default; there
+is deliberately no static-file fallback. One used to sit in the catch, fetching
+`${BASE_URL}languages.json`, but no build ever published that file (verified
+2026-09-08: `ai-med.live/demo/languages.json` and `ai-med.live/haivn-eip/languages.json`
+both return 404), so it only delayed the null. Publishing it was rejected rather
+than fixed: a build-time copy of `projects/<slug>/languages.json` would diverge
+silently from the admin-edited database copy the moment anyone used the
+Translations tab, which is exactly the second-source-of-truth problem the DB copy
+exists to avoid. The API's matching DB-to-filesystem mirror (it used to write
+`languages.json` into `frontend-chat/public` at startup and on every Translations
+save) went with it -- the deleted fallback was its only reader.
 
 ```typescript
 interface LanguageUISection {

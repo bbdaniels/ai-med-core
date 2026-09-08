@@ -780,11 +780,16 @@ body {
     overflow-y: auto;
 }
 
-/* Document tab: a long reference document with a find bar */
+/* Document tab: a long reference document with a find bar. Scrolling is handled
+   by the parent .tab-panel. No horizontal padding here: the sticky find bar spans
+   the full pane width, and the body (.document-panel-body) carries its own
+   reading padding. */
 .document-panel {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    padding: 0;
+    background: var(--bg-app);
 }
 
 /* pdf.js measures text-layer glyphs against a scratch canvas that it creates and
@@ -1309,7 +1314,9 @@ body {
 .document-panel-body {
     padding: 1rem 1.25rem 3rem;
     color: var(--text-body);
+    font-size: 0.9rem;
     line-height: 1.6;
+    max-width: 100%;
     overflow-wrap: break-word;
 }
 
@@ -1318,27 +1325,63 @@ body {
 .document-panel-body h3,
 .document-panel-body h4 {
     color: var(--text-heading);
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 600;
+    margin: 1.2em 0 0.5em;
     line-height: 1.3;
-    margin: 1.5rem 0 0.5rem;
     /* Clears the sticky find bar when a contents link scrolls to a heading. */
     scroll-margin-top: 3.5rem;
 }
 
-.document-panel-body h1 { font-size: 1.35rem; }
-.document-panel-body h2 { font-size: 1.15rem; }
-.document-panel-body h3 { font-size: 1rem; }
+.document-panel-body h1 { font-size: 1.4rem; }
+.document-panel-body h2 { font-size: 1.2rem; }
+.document-panel-body h3 { font-size: 1.05rem; }
 .document-panel-body h4 { font-size: 0.95rem; }
 
-.document-panel-body p,
-.document-panel-body ul,
-.document-panel-body ol { margin: 0 0 0.75rem; }
+.document-panel-body h1:first-child,
+.document-panel-body h2:first-child {
+    margin-top: 0;
+}
+
+.document-panel-body p { margin: 0 0 0.75em; }
+
+.document-panel-body strong { color: var(--text-heading); font-weight: 600; }
+.document-panel-body em { font-style: italic; }
 
 .document-panel-body ul,
-.document-panel-body ol { padding-left: 1.25rem; }
+.document-panel-body ol {
+    margin: 0.5em 0 0.75em;
+    padding-left: 1.5em;
+}
 
-.document-panel-body li { margin-bottom: 0.35rem; }
+.document-panel-body li { margin-bottom: 0.25em; }
 
-.document-panel-body a { color: var(--accent); }
+.document-panel-body blockquote {
+    border-left: 3px solid var(--border);
+    margin: 0.5em 0;
+    padding: 0.5em 1em;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.document-panel-body code {
+    background: var(--bg-card);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+}
+
+.document-panel-body a {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.document-panel-body hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1.5em 0;
+}
 
 /* Figures a generated document carries (the testing algorithms in 1868/QĐ-BYT,
    and Bảng 2, which its source lays out as a picture). They are scans of print
@@ -1382,6 +1425,7 @@ body {
     color: var(--text-heading);
 }
 
+
 .document-search-hit {
     background: var(--accent-glow);
     color: #ffffff;
@@ -1395,8 +1439,12 @@ body {
 }
 
 .document-panel-empty {
-    padding: 1.5rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
     color: var(--text-muted);
+    padding: 20px;
 }
 
 /* Legal Library tab: document picker + metadata card + reused DocumentPanel.
@@ -1868,100 +1916,6 @@ body {
     justify-content: center;
     height: 100%;
     color: var(--text-muted);
-}
-
-/* Document tab (raw markdown rendering) — scrolling handled by parent .tab-panel.
-   No horizontal padding here: the sticky find bar spans the full pane width, and
-   the body (.document-panel-body) carries its own reading padding. */
-.document-panel {
-    padding: 0;
-    background: var(--bg-app);
-}
-
-.document-panel-body {
-    color: var(--text-body);
-    font-size: 0.9rem;
-    line-height: 1.6;
-    max-width: 100%;
-}
-
-.document-panel-body h1,
-.document-panel-body h2,
-.document-panel-body h3,
-.document-panel-body h4 {
-    color: var(--text-heading);
-    font-family: 'Newsreader', Georgia, serif;
-    font-weight: 600;
-    margin: 1.2em 0 0.5em;
-    line-height: 1.3;
-}
-
-.document-panel-body h1 { font-size: 1.4rem; }
-.document-panel-body h2 { font-size: 1.2rem; }
-.document-panel-body h3 { font-size: 1.05rem; }
-.document-panel-body h4 { font-size: 0.95rem; }
-
-.document-panel-body h1:first-child,
-.document-panel-body h2:first-child {
-    margin-top: 0;
-}
-
-.document-panel-body p {
-    margin: 0 0 0.75em;
-}
-
-.document-panel-body strong { color: var(--text-heading); font-weight: 600; }
-.document-panel-body em { font-style: italic; }
-
-.document-panel-body ul,
-.document-panel-body ol {
-    margin: 0.5em 0 0.75em;
-    padding-left: 1.5em;
-}
-
-.document-panel-body li {
-    margin-bottom: 0.25em;
-}
-
-.document-panel-body blockquote {
-    border-left: 3px solid var(--border);
-    margin: 0.5em 0;
-    padding: 0.5em 1em;
-    color: var(--text-secondary);
-    font-style: italic;
-}
-
-.document-panel-body code {
-    background: var(--bg-card);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85em;
-}
-
-.document-panel-body a {
-    color: var(--accent);
-    text-decoration: underline;
-}
-
-.document-panel-body hr {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 1.5em 0;
-}
-
-.document-panel-body img {
-    max-width: 100%;
-    height: auto;
-}
-
-.document-panel-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-muted);
-    padding: 20px;
 }
 
 /* Inline follow-up chips — sticky overlay at the bottom of the conversation area.

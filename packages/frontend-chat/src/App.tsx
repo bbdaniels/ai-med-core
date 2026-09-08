@@ -669,20 +669,16 @@ function ChatInterface() {
     return found?.name || list[0]?.name || 'English';
   }, [langs, selectedLanguageCode]);
 
-  // Load languages on mount (via API, with static file fallback)
+  // Load languages on mount. The API is the ONLY source: the served copy lives in
+  // the database and the admin Translations tab edits it there, so a build-time
+  // static copy would be a second source that silently goes stale. (A fallback to
+  // `${BASE_URL}languages.json` used to sit here; no build ever published that
+  // file, so it 404'd on every project and only delayed setLangs(null).)
   useEffect(() => {
     apiFetch(api('/api/languages'))
       .then(res => res.json())
       .then((data: LanguagesJson) => setLangs(data))
-      .catch(() => {
-        // Fallback to static file for backward compatibility.
-        // Base-aware: under per-project GitHub Pages builds BASE_URL is
-        // "/<project>/" and a root-absolute path would 404; in dev it is "/".
-        fetch(`${import.meta.env.BASE_URL}languages.json`)
-          .then(res => res.json())
-          .then((data: LanguagesJson) => setLangs(data))
-          .catch(() => setLangs(null));
-      });
+      .catch(() => setLangs(null));
   }, []);
 
   // Load case template on mount

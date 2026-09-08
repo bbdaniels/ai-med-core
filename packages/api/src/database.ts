@@ -348,15 +348,9 @@ function initSqliteSchema() {
       prompt_tokens INTEGER NOT NULL DEFAULT 0,
       completion_tokens INTEGER NOT NULL DEFAULT 0,
       estimated_cost REAL NOT NULL DEFAULT 0,
-      harvard_credits_used REAL,
-      harvard_credits_remaining REAL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-
-  // Migration: add Harvard credit columns if missing
-  try { db.exec('ALTER TABLE token_usage ADD COLUMN harvard_credits_used REAL'); } catch (_) { /* already exists */ }
-  try { db.exec('ALTER TABLE token_usage ADD COLUMN harvard_credits_remaining REAL'); } catch (_) { /* already exists */ }
 
   // Create global session_log table (NOT project-scoped)
   // Tracks student engagement: one row per chat session, updated as the session progresses
@@ -543,15 +537,9 @@ async function initPostgresSchema() {
         prompt_tokens INTEGER NOT NULL DEFAULT 0,
         completion_tokens INTEGER NOT NULL DEFAULT 0,
         estimated_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
-        harvard_credits_used DOUBLE PRECISION,
-        harvard_credits_remaining DOUBLE PRECISION,
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
-
-    // Migration: add Harvard credit columns if missing
-    try { await client.query('ALTER TABLE token_usage ADD COLUMN harvard_credits_used DOUBLE PRECISION'); } catch (_) { /* already exists */ }
-    try { await client.query('ALTER TABLE token_usage ADD COLUMN harvard_credits_remaining DOUBLE PRECISION'); } catch (_) { /* already exists */ }
 
     // Create global session_log table (NOT project-scoped)
     await client.query(`
@@ -1486,44 +1474,21 @@ export async function logTokenUsage(entry: {
   prompt_tokens: number;
   completion_tokens: number;
   estimated_cost: number;
-  harvard_credits_used?: number | null;
-  harvard_credits_remaining?: number | null;
 }): Promise<void> {
   try {
     if (dbType === 'sqlite' && db) {
       db.prepare(
-        'INSERT INTO token_usage (project, endpoint, model, prompt_tokens, completion_tokens, estimated_cost, harvard_credits_used, harvard_credits_remaining) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(entry.project, entry.endpoint, entry.model, entry.prompt_tokens, entry.completion_tokens, entry.estimated_cost, entry.harvard_credits_used ?? null, entry.harvard_credits_remaining ?? null);
+        'INSERT INTO token_usage (project, endpoint, model, prompt_tokens, completion_tokens, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(entry.project, entry.endpoint, entry.model, entry.prompt_tokens, entry.completion_tokens, entry.estimated_cost);
     } else if (dbType === 'postgres' && pgPool) {
       await pgPool.query(
-        'INSERT INTO token_usage (project, endpoint, model, prompt_tokens, completion_tokens, estimated_cost, harvard_credits_used, harvard_credits_remaining) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [entry.project, entry.endpoint, entry.model, entry.prompt_tokens, entry.completion_tokens, entry.estimated_cost, entry.harvard_credits_used ?? null, entry.harvard_credits_remaining ?? null]
+        'INSERT INTO token_usage (project, endpoint, model, prompt_tokens, completion_tokens, estimated_cost) VALUES ($1, $2, $3, $4, $5, $6)',
+        [entry.project, entry.endpoint, entry.model, entry.prompt_tokens, entry.completion_tokens, entry.estimated_cost]
       );
     }
   } catch (error) {
     console.error('Failed to log token usage:', error);
   }
-}
-
-// Get the most recent Harvard credit balance
-export async function getHarvardCreditBalance(): Promise<{ credits_remaining: number | null; credits_used: number | null; last_updated: string | null }> {
-  const empty = { credits_remaining: null, credits_used: null, last_updated: null };
-  try {
-    if (dbType === 'sqlite' && db) {
-      const row = db.prepare(
-        'SELECT harvard_credits_remaining as credits_remaining, harvard_credits_used as credits_used, created_at as last_updated FROM token_usage WHERE harvard_credits_remaining IS NOT NULL ORDER BY id DESC LIMIT 1'
-      ).get() as any;
-      return row || empty;
-    } else if (dbType === 'postgres' && pgPool) {
-      const res = await pgPool.query(
-        'SELECT harvard_credits_remaining as credits_remaining, harvard_credits_used as credits_used, created_at::text as last_updated FROM token_usage WHERE harvard_credits_remaining IS NOT NULL ORDER BY id DESC LIMIT 1'
-      );
-      return res.rows[0] || empty;
-    }
-  } catch (error) {
-    console.error('Failed to get Harvard credit balance:', error);
-  }
-  return empty;
 }
 
 // Get aggregated token usage summary

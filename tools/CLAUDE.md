@@ -1023,7 +1023,16 @@ on?** It writes
   this repo's tooling writes into the hand-curated registry, after `pdfFile`);
   `pageBreaks` is where each PDF page opens in the canonical text file, in that
   file's own line numbers, and is read by `build-legal-corpus.py` alone --
-  `legal-map.ts` reads `sections` and ignores the rest of the file;
+  `legal-map.ts` reads `sections` and ignores the rest of the file. **The
+  `key` has three writers. Its spelling is `section_key` here, and both Python
+  writers call that one function:**
+  `build-legal-corpus.py` compares its own markers' keys against the map's, so
+  a second `f"{kind}-{number}"` anywhere is a divergence waiting for the day the
+  shape changes -- it re-formatted the key inline until 2026-09-08 and now
+  borrows the function, the way it already borrows the grammar and the label.
+  `doc-refs.ts` is the third writer and is necessarily its own, being the only
+  one on the other side of the wire; `KEY_RE` in the corpus builder is the
+  matching READER and the only other statement of the shape;
 - `projects/haivn_eip/content/eip-map.<lang>.json`, shape
   `{"anchors": {"sec-1-2": 5, "app-2": 24}}`, 1-based pages;
 - the **bookmark outline of the two EIP PDFs**, on `--eip-outline` (which

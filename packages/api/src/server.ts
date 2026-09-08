@@ -45,7 +45,6 @@ import {
   sanitizeTablePrefix,
   logTokenUsage,
   getTokenUsageSummary,
-  getHarvardCreditBalance,
   getProjectSetting,
   setProjectSetting,
   deleteProjectSetting,
@@ -91,7 +90,7 @@ try {
   console.warn('⚠️ Could not read projects/ directory for slug validation');
 }
 
-// Initialize OpenAI — supports Harvard HDSI gateway or direct OpenAI
+// Initialize OpenAI — supports a Harvard API gateway or direct OpenAI
 const useGateway = !!process.env.OPENAI_BASE_URL;
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -113,7 +112,7 @@ const openaiDirect = process.env.OPENAI_TTS_KEY
   : null;
 
 // OpenAI Realtime API (speech-to-speech voice) — DIRECT connection only.
-// The Harvard HDSI gateway CANNOT carry realtime: its Apigee credit-redemption
+// The Harvard API gateway CANNOT carry realtime: its Apigee credit-redemption
 // proxy rejects realtime models (HTTP 400), and the billable audio media flows
 // browser↔OpenAI directly via WebRTC, bypassing the gateway entirely — so credits
 // could never meter it even if the model were allowlisted. Realtime therefore
@@ -313,40 +312,6 @@ try {
 } catch (error) {
   console.error('❌ Database initialization failed:', error);
   console.error('App will continue but admin features will not work');
-}
-
-// Sync languages.json from database to filesystem (for frontend to fetch)
-try {
-  const languagesDir = process.env.NODE_ENV === 'production' 
-    ? path.join(__dirname, '../../frontend-chat/dist')
-    : path.resolve(REPO_ROOT, 'packages/frontend-chat/public');
-  const languagesPath = path.join(languagesDir, 'languages.json');
-  
-  // Ensure directory exists
-  await fs.mkdir(languagesDir, { recursive: true });
-  
-  // Get languages from database
-  const languagesContent = await getLanguages();
-  
-  if (languagesContent) {
-    // Write database content to filesystem for frontend
-    await fs.writeFile(languagesPath, languagesContent, 'utf8');
-    console.log('✅ languages.json synced from database to filesystem');
-  } else {
-    // Database has no languages yet (should be seeded on first run)
-    // Fall back to template
-    console.log('⚠️ No languages in database, will be seeded on first run');
-    const templatePath = path.resolve(__dirname, '../defaults/languages.template.json');
-    try {
-      await fs.copyFile(templatePath, languagesPath);
-      console.log('✅ languages.json created from template (temporary)');
-    } catch (e) {
-      console.error('⚠️ Could not copy template:', e);
-    }
-  }
-} catch (error) {
-  console.error('⚠️ Warning: Could not sync languages.json:', error);
-  console.error('App will continue but translations may not work correctly');
 }
 
 // Admin authentication middleware
@@ -830,7 +795,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
       const offerTools = readingsIndex && hop < MAX_TOOL_HOPS
         ? [searchReadingsTool(readingsIndex)] : null;
       response = await issue(offerTools);
-      if (response.usage) usages.push({ ...response.usage, _raw: response });
+      if (response.usage) usages.push({ ...response.usage });
 
       const assistantMsg = response.choices?.[0]?.message;
       const toolCalls = assistantMsg?.tool_calls;
@@ -891,9 +856,8 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
       }
     }
 
-    // Log token usage for every hop (including Harvard gateway credit fields).
+    // Log token usage for every hop.
     for (const u of usages) {
-      const raw = (u as any)._raw;
       logTokenUsage({
         project: activeProjectPrefix(),
         endpoint: '/api/chat',
@@ -901,8 +865,6 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
         prompt_tokens: u.prompt_tokens || 0,
         completion_tokens: u.completion_tokens || 0,
         estimated_cost: estimateCost(chatModel, u.prompt_tokens || 0, u.completion_tokens || 0),
-        harvard_credits_used: raw?.your_harvard_credits_used_this_transaction ?? null,
-        harvard_credits_remaining: raw?.your_harvard_credits_still_available ?? null,
       });
     }
 
@@ -2370,13 +2332,6 @@ app.post('/api/admin/languages', authenticateAdmin, async (req, res) => {
     const jsonString = JSON.stringify(newConfig, null, 2);
     await saveLanguages(jsonString);
     
-    // Also sync to filesystem for frontend to fetch
-    const languagesDir = process.env.NODE_ENV === 'production'
-      ? path.join(__dirname, '../../frontend-chat/dist')
-      : path.resolve(REPO_ROOT, 'packages/frontend-chat/public');
-    const languagesPath = path.join(languagesDir, 'languages.json');
-    await fs.writeFile(languagesPath, jsonString, 'utf8');
-    
     return res.json({ success: true, message: 'Languages configuration updated successfully' });
   } catch (error) {
     console.error('Error updating languages:', error);
@@ -2547,17 +2502,6 @@ app.delete('/api/admin/vignette-assignments', authenticateAdmin, async (req, res
   } catch (error) {
     console.error('Error deleting vignette assignments in bulk:', error);
     return res.status(500).json({ error: 'Failed to delete assignments' });
-  }
-});
-
-// Harvard credit balance (public — just a dollar amount)
-app.get('/api/harvard-balance', async (_req, res) => {
-  try {
-    const balance = await getHarvardCreditBalance();
-    return res.json(balance);
-  } catch (error) {
-    console.error('Error fetching Harvard balance:', error);
-    return res.status(500).json({ error: 'Failed to fetch Harvard balance' });
   }
 });
 

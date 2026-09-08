@@ -106,7 +106,7 @@ const LEGAL_CONNECTOR_TOKEN = `(?:${[...LEGAL_REF_CONNECTORS]
   .join('|')})\\.?`;
 
 /** "40" / "40a" -> "dieu-40" / "dieu-40a", the key `maps/<id>.json` uses. */
-export function legalSectionKey(num: string): string {
+function legalSectionKey(num: string): string {
   return `${LEGAL_SECTION_PREFIX}-${num.toLowerCase()}`;
 }
 

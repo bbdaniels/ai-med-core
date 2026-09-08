@@ -104,16 +104,16 @@ through the `payment_source` admin setting:
   `OPENAI_API_KEY`. This is the default and the only path most deployments need.
 - **`harvard`** -- chat and grading calls are routed through a Harvard HUIT API
   gateway that redeems institutional credits, by setting `OPENAI_BASE_URL` to the
-  gateway. The API records the credit balance the gateway returns and exposes it at
-  `GET /api/harvard-balance` and in the admin dashboard.
+  gateway. Token counts and estimated cost are recorded for these calls exactly as
+  for direct ones; the remaining institutional credit is tracked at the gateway,
+  not in this app.
 
 The gateway is optional and institution-specific. It proxies standard
 chat-completions models only: text-to-speech and the Realtime API always use a
 direct key (`OPENAI_TTS_KEY` / `OPENAI_REALTIME_KEY`), because the gateway's
 credit-redemption proxy rejects those models. Leave `OPENAI_BASE_URL` unset and the
 whole gateway path stays dormant. Any OpenAI-compatible gateway can be substituted
-by pointing `OPENAI_BASE_URL` at it, though the credit-balance fields are specific
-to the Harvard gateway's response format.
+by pointing `OPENAI_BASE_URL` at it.
 
 ## Cite this
 

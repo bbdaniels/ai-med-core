@@ -30,14 +30,25 @@ MIRROR NOTE. This script is deliberately publishable, and ships to
 bbdaniels/ai-med-core with the rest of tools/. The four excluded Python tools
 each carry something that must not leave the repo -- Google Doc ids that are
 bearer capabilities, a spoofed User-Agent and forged Referer, an instructor's
-private corpus paths. This one carries none of those: it imports nothing but the
-standard library (in particular NOT fetch-legal-docs.py, whose registry helpers
-would have been convenient and would have dragged an excluded module into the
-mirror), it reads project-relative paths that the mirror does not publish and
-degrades to a clear error when they are absent, and its only network call is the
-embeddings endpoint this deployment is already configured for. The key comes
-from the repo-root .env at runtime; no secret is written to, or read from, a
-tracked file.
+private corpus paths. This one carries none of those, and holds no secret of its
+own: its only network call is the embeddings endpoint this deployment is already
+configured for, the key comes from the repo-root .env at runtime, and no secret
+is written to, or read from, a tracked file. It also does not import
+fetch-legal-docs.py, whose registry helpers would have been convenient.
+
+It is not, however, self-contained, and this note used to claim it was. It
+imports four helpers from tools/lib/ -- filelock, transcriptions,
+openai_gateway, section_order -- all four of which the mirror publishes; and
+`jump_maps()` below loads tools/build-jump-maps.py by path, which the mirror
+does NOT publish, because that file imports fetch-legal-docs.py and would carry
+the spoofed headers out with it. That load is unreachable in the mirror rather
+than absent from it: this script reads project-relative paths the mirror does
+not carry, so it exits on the missing registry with a clear message long before
+any heading is parsed. Two consequences worth stating plainly. The published
+copy is there to be read, not run -- the only project it indexes ships with
+neither its content nor its map builder. And if the registry check is ever
+relaxed, the mirror's copy stops failing on missing content and starts failing
+on a missing module, which is a worse error for a stranger to land on.
 
 SCHEMA. The tables here are not this script's to design. packages/api/src/
 readings.ts queries a fixed shape, built until now only by tools/build-ppol-
@@ -171,6 +182,10 @@ KEY_RE = re.compile(r"^(dieu|chuong|muc|phu-luc|phan)-([0-9a-z]+)$")
 # which a composed `^Mục` pattern cannot match at all, so `Điều 48` was filed
 # under the chapter instead of under `Mục 1 GIẤY PHÉP HOẠT ĐỘNG KHÁM BỆNH,
 # CHỮA BỆNH` and no unmatched count went up. One grammar, in one file.
+#
+# The KEY's spelling is borrowed for the same reason: a marker's key is compared
+# against the map's keys, so `jump_maps.section_key` writes both sides. `KEY_RE`
+# below is this file's READER of that shape and the only local statement of it.
 _JUMP_MAPS = None
 
 
@@ -546,10 +561,11 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
     keyed = {key: norm(label) for key, _kind, _num, label, _page in parsed}
     taken = set(assigned.values())
     unmapped: list[Marker] = []
+    section_key = jump_maps().section_key
     for ln, kind, number, label, annexed in cands:
         if annexed or ln in taken:
             continue
-        key = f"{kind}-{number}"
+        key = section_key(kind, number)
         if key in keyed:
             mapped_label = keyed[key]
             if kind not in CONTAINER_KINDS or not label or not mapped_label:
@@ -571,6 +587,7 @@ def markers_from_headings(lines: list[str]) -> list[Marker]:
     """
     markers: list[Marker] = []
     last = 0
+    section_key = jump_maps().section_key
     for i, kind, number, line, _annexed in heading_candidates(lines):
         if kind == "dieu":
             digits = int(re.match(r"\d+", number).group(0))
@@ -580,7 +597,7 @@ def markers_from_headings(lines: list[str]) -> list[Marker]:
                 continue
             last = digits
         label = line[:MAX_SECTION_LABEL]
-        markers.append(Marker(line=i, kind=kind, key=f"{kind}-{number}", label=label))
+        markers.append(Marker(line=i, kind=kind, key=section_key(kind, number), label=label))
     return markers
 
 

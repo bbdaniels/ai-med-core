@@ -474,16 +474,31 @@ function noticeText(notice: ChunkNotice, code: string): string | null {
  * Every passage carries its own citation line, so the model never has to infer
  * which reading a passage came from -- the single most common way a grounded
  * answer ends up attributed to the wrong author.
+ *
+ * THE WORDING IS PROJECT-NEUTRAL, and it was not. This file serves two corpora
+ * -- ppol5013's course reading list and haivn_eip's index of Vietnamese
+ * government instruments -- and every string here said "course readings" to
+ * both of them. A legal advisor telling a clinician that "no passage in the
+ * indexed course readings" answers their question is describing a corpus that
+ * does not exist, in the one sentence it says when it has nothing. `scheduled`
+ * is the same one bit `searchReadingsTool` already branches on
+ * (`OpenIndex.hasWeeks`): a corpus with a class schedule keeps the sentence
+ * about the week, because that is the only claim here that is genuinely about
+ * a course rather than about a corpus.
  */
 export function formatSearchResults(
   query: string,
   results: ReadingChunk[],
-  options: { language?: string | null } = {},
+  options: { language?: string | null; scheduled?: boolean } = {},
 ): string {
+  const sources = options.scheduled ? 'indexed course readings' : 'indexed sources';
   if (!results.length) {
-    return `No passage in the indexed course readings matches "${query}". Say so ` +
-           'plainly rather than answering from general knowledge, and if the topic ' +
-           'is assigned in a week whose reading is not indexed, point the student there.';
+    return `No passage in the ${sources} matches "${query}". Say so ` +
+           'plainly rather than answering from general knowledge.' +
+           (options.scheduled
+             ? ' If the topic is assigned in a week whose reading is not indexed, ' +
+               'point the student there.'
+             : '');
   }
   // A notice is a property of the ANNOTATION, not of each row that matched it,
   // and one annotation routinely covers several passages of the same document.
@@ -550,7 +565,7 @@ export function formatSearchResults(
       r.text,
     ].join('\n');
   });
-  return `Passages from the indexed course materials matching "${query}":\n\n` +
+  return `Passages from the ${sources} matching "${query}":\n\n` +
          (noticeBlocks.length ? `${noticeBlocks.join('\n\n')}\n\n` : '') +
          blocks.join('\n\n');
 }

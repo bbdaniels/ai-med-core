@@ -53,13 +53,18 @@ rather than invented:
     title         English title, then the Vietnamese one
     venue         type, issuing agency, validity status, and the language of the
                   indexed text -- rendered next to the title in every passage
-    section       the citable location, "Chương II ... > Điều 5. ..." (with
-                  "(part k of n)" appended when one Điều is split). Material
-                  attached to an instrument rather than enacted in an article
-                  says so instead of borrowing the nearest article's number --
-                  see "where the articles stop" below
-    page_start /  the PDF page from maps/<id>.json, so an answer can be turned
-    page_end      into a chip that opens the Legal Library at the right page
+    section       the citable location and NOTHING else, "Chương II ... >
+                  Điều 5. ...". It carried "(part k of n)" until round 10, which
+                  is a fact about our chunker and not about the instrument, and
+                  readings.ts writes this field into the `Location:` line the
+                  advisor is told to repeat verbatim. Material attached to an
+                  instrument rather than enacted in an article says so instead
+                  of borrowing the nearest article's number -- see "where the
+                  articles stop" below
+    page_start /  the PDF pages this chunk's OWN lines are printed on, read off
+    page_end      `pageBreaks` in maps/<id>.json and floored at its section's
+                  page, so an answer can be turned into a chip that opens the
+                  Legal Library at the right page -- see `page_range`
     weeks         "[]" -- a course-schedule concept with no legal analogue.
                   Empty is what keeps readings.ts from printing an "assigned"
                   clause it cannot mean here.
@@ -75,6 +80,7 @@ rather than invented:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import os
 import re
@@ -259,10 +265,11 @@ class Marker:
 @dataclass
 class Chunk:
     section: str
-    page: int
+    page: int                    # 1-based PDF page the chunk STARTS on, 0 when unknown
     text: str
     part: int = 1
     parts: int = 1
+    page_end: int = 0            # the page it ENDS on; equals `page` where unmeasured
 
 
 @dataclass
@@ -271,6 +278,7 @@ class DocResult:
     chunks: list[Chunk] = field(default_factory=list)
     language: str = "vi"
     mapped_sections: int = 0
+    text_sections: int = 0        # headings the map does not carry, read from the text
     unmatched_sections: int = 0
     duplicates: int = 0
     orphan_transcriptions: int = 0
@@ -306,14 +314,27 @@ def strip_front_matter(text: str) -> str:
     registry already holds, and indexing them would put the same boilerplate
     sentence into 21 documents' first chunk.
     """
+    return split_front_matter(text)[0]
+
+
+def split_front_matter(text: str) -> tuple[str, int]:
+    """`strip_front_matter`, plus how many lines it took off the top.
+
+    The offset is what lets a line of the stripped body be named in the file as
+    it is on disk, which is the coordinate `maps/<id>.json`'s `pageBreaks` are
+    written in. One function so the two answers cannot drift: a header shape
+    added to one and not the other would put every page break in that document
+    a few lines out, silently."""
     lines = text.splitlines()
     for i, line in enumerate(lines[:24]):
         if line.strip() == "---":
-            return "\n".join(lines[i + 1:])
+            return "\n".join(lines[i + 1:]), i + 1
     for i, line in enumerate(lines[:24]):
         if line.strip().lower().startswith(("source:", "official source:")):
-            return "\n".join(lines[i + 1:])
-    return "\n".join(lines[1:]) if lines and lines[0].startswith("# ") else text
+            return "\n".join(lines[i + 1:]), i + 1
+    if lines and lines[0].startswith("# "):
+        return "\n".join(lines[1:]), 1
+    return text, 0
 
 
 # A figure the fetcher saved beside the text, written into it as a Markdown
@@ -404,12 +425,15 @@ def heading_candidates(lines: list[str]) -> list[tuple[int, str, str, str, bool]
 def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marker], int]:
     """Locate each curated section in the text.
 
-    The map is the authority on which sections exist, what they are called and
-    what page they start on; the text is the authority on where they begin.
-    Matching runs in two passes: first the labels, which are near-verbatim (both
-    sides come out of the same PDF), then -- only inside the window between two
-    already-fixed neighbours -- the heading's own number, which is what the key
-    encodes. Number matching alone is far too weak to be trusted globally: the
+    The map is the authority on which sections it carries, what they are called
+    and what page they start on; the text is the authority on where they begin
+    -- and on which sections EXIST, which is not the same thing and used to be
+    treated as if it were. Matching runs in three passes: first the labels,
+    which are near-verbatim (both sides come out of the same PDF), then -- only
+    inside the window between two already-fixed neighbours -- the heading's own
+    number, which is what the key encodes, and finally the headings whose key
+    the map does not carry at all, which open a marker of their own with no
+    page. Number matching alone is far too weak to be trusted globally: the
     string "Điều 5." occurs in most of these documents more than once.
 
     Pass 1 assigns globally rather than with a forward cursor
@@ -469,7 +493,72 @@ def markers_from_map(lines: list[str], sections: list[dict]) -> tuple[list[Marke
                page=parsed[i][4], mapped=True)
         for i in sorted(assigned, key=lambda i: assigned[i])
     ]
-    return markers, len(parsed) - len(assigned) + unparsed
+
+    # Pass 3 -- A HEADING THE MAP DOES NOT CARRY IS STILL A HEADING, and
+    # opening no marker for it does not leave it unlabelled: it leaves it
+    # labelled as the section ABOVE it, at that section's page, in the
+    # `Location:` the advisor is told to repeat verbatim. That is the same
+    # false citation `annex_markers` exists to stop at the signature block, one
+    # boundary earlier, so it gets the same answer -- a marker read out of the
+    # text, with no page of its own.
+    #
+    # Two ways the map comes to be missing a section this text has. A section
+    # the map DROPPED: `luat-15-2023-qh15`'s `Chương XII` and
+    # `tt-05-2024-tt-byt`'s `Phụ lục II` were both dropped as `nomatch` until
+    # the sliding anchor learned to step over a garbled numeral, and while they
+    # were, five of luat-15's chunks cited Chương XI and the whole of tt-05's
+    # Phụ lục II cited `PHỤ LỤC I ... p. 27`. And a section the key space
+    # cannot hold: `Điều 48a` and `Điều 48b` are new articles an amending law
+    # inserts, `Phần` is a kind the maps deliberately do not carry, and neither
+    # is ever going to appear in a map file.
+    #
+    # The test is the KEY: a key the map carries has already been placed by the
+    # two passes above, and a second line reading as that key is the recurrence
+    # they exist to reject (`Điều 17.` inside an appendix form). A key the map
+    # does not carry at all has nothing to collide with.
+    #
+    # THE ONE EXCEPTION IS A CONTAINER WHOSE NUMBERING RESTARTS, and it is the
+    # third way a map comes to be missing a section. The map key space is flat
+    # `<kind>-<number>`, so `luat-15-2023-qh15`, which restarts `Mục 1` under
+    # six of its twelve chapters, has one `muc-1` and five sections with nowhere
+    # to live. Chương IV's `Mục 1 GIẤY PHÉP HOẠT ĐỘNG ...` is one of those five,
+    # and every article under it -- Điều 48 first -- was filed under `Chương IV`
+    # instead. THE TITLE is what separates a restart from a recurrence: the map
+    # says which section that key names, and a `Mục 1` printed under a
+    # different title is a different section. A marker here is local to this
+    # builder (nothing downstream reads `Marker.key`), so this fixes the
+    # `Location:` without touching the key space at all.
+    #
+    # QUALIFYING THE MAP'S KEYS BY PARENT (`chuong-4/muc-1`) IS STILL OPEN, and
+    # the reason it was not done here is scope, not impossibility. Do not repeat
+    # the reason this comment used to give -- that `doc-refs.ts` builds a key
+    # out of a chat citation reading only "Mục 1", so a qualified key would
+    # leave those citations unresolvable. It does not: `doc-refs.ts` keys
+    # ARTICLES only (`DEFAULT_LEGAL_SECTION_WORDS` is Điều / Article / Art.,
+    # `LEGAL_SECTION_PREFIX` is `dieu`, and no project overrides either), for
+    # the reason its own comment gives -- an answer writes `Chương I` where the
+    # map writes `chuong-1`, and guessing between them sends a reader to the
+    # wrong page. The real consumer of a `muc-` key is the Legal Library's jump
+    # list (`jumpableSections` / `sectionPageIndex` in `legal-map.ts`), which
+    # therefore still offers one `Mục 1` per document. That is the map's limit,
+    # and lifting it is a change to `KEY_RE` here and to `legal-map.ts` --
+    # not to this pass.
+    keyed = {key: norm(label) for key, _kind, _num, label, _page in parsed}
+    taken = set(assigned.values())
+    unmapped: list[Marker] = []
+    for ln, kind, number, label, annexed in cands:
+        if annexed or ln in taken:
+            continue
+        key = f"{kind}-{number}"
+        if key in keyed:
+            mapped_label = keyed[key]
+            if kind not in CONTAINER_KINDS or not label or not mapped_label:
+                continue
+            if norm(label).startswith(mapped_label[:20]):
+                continue                     # the same section, seen twice
+        unmapped.append(Marker(line=ln, kind=kind, key=key, label=label, page=0))
+    return (sorted(markers + unmapped, key=lambda m: m.line),
+            len(parsed) - len(assigned) + unparsed)
 
 
 def markers_from_headings(lines: list[str]) -> list[Marker]:
@@ -662,22 +751,90 @@ def transcription_section(parent: str, stem: str,
     return f"{parent} > {caption}"
 
 
+# ── what page a CHUNK is on ──────────────────────────────────────────────
+#
+# Until round 10 a chunk was stamped with its SECTION's page, so
+# `tt-40-2025-tt-byt`'s Phụ lục III spans PDF pages 172-301 and all 199 of its
+# chunks cited 172, and `page_start` and `page_end` were the same number on all
+# 2,209 chunks in the index. Never impossible -- a chunk is at or after the page
+# it names -- but the longer the section the further its last chunk is from the
+# page it claims, and there was no page evidence in this pipeline for a line in
+# the middle of one.
+#
+# There is now: `build-jump-maps.py` measures where each PDF page opens in the
+# canonical text and writes it into `maps/<id>.json` as `pageBreaks`, in the
+# coordinates of the file on disk. This is the reader of that measurement.
+#
+# The section's own page stays the FLOOR. It is the curated number, confirmed by
+# an exact n-gram against exactly one page, and clamping to it keeps a section's
+# first chunk on the page the map confirmed for it.
+#
+# THREE WAYS THIS UNDERSTATES A PAGE, and all three err in the direction a jump
+# target may -- the reader lands earlier in the PDF and reads forward:
+#
+#   - a page the measurement could not place is not claimed, so the lines it
+#     covers read as the last page that WAS placed. Where several consecutive
+#     pages are unplaced -- `vbhn-15-2024-byt` places 17 of 75, `tt-05-2024-tt-
+#     byt` 35 of 70 -- that is not the section's page either, but a specific
+#     earlier page, and it can be a long way back;
+#   - a break is anchored at the first window of the page that is unique, which
+#     may be a line or two below the page's true first line;
+#   - `locate` cannot find a chunk's own lines at all (about 100 chunks, most of
+#     them later parts of a segment `split_long` overlapped), and the chunk then
+#     keeps its section's page at both ends -- the behavior every chunk had
+#     before round 10. That is where the widest understatements are: four of
+#     `tt-40-2025-tt-byt`'s Phụ lục III chunks sit ~125 pages into a 130-page
+#     appendix and cite its first page.
+#
+# IT MUST NOT OVERSTATE, and that is not this file's doing: `page_breaks` bounds
+# every break by the sections the map confirmed either side of it, so a break
+# cannot land above a section confirmed below it and a chunk cannot be pushed
+# past the page its own section was confirmed on. That property is checked in
+# the map builder, not patched up here with a ceiling -- see `page_range`.
+
+
+def page_lookup(breaks: list[dict] | None, offset: int):
+    """`line index in the stripped body -> PDF page`, or None where unknown.
+
+    `offset` is the front matter `split_front_matter` removed, since the breaks
+    are numbered against the file as it is on disk."""
+    pairs = sorted((int(b["line"]), int(b["page"])) for b in (breaks or [])
+                   if b.get("line") and b.get("page"))
+    if not pairs:
+        return lambda _index: None
+    starts = [line for line, _page in pairs]
+    pages = [page for _line, page in pairs]
+
+    def at(index: int) -> int | None:
+        position = bisect.bisect_right(starts, offset + index + 1) - 1
+        return pages[position] if position >= 0 else None
+
+    return at
+
+
 def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
-                   transcripts: dict[str, tuple[str, str]] | None = None) -> DocResult:
-    stripped = strip_front_matter(text)
+                   transcripts: dict[str, tuple[str, str]] | None = None,
+                   breaks: list[dict] | None = None) -> DocResult:
+    stripped, offset = split_front_matter(text)
     figures = figure_stems(stripped.splitlines())
     transcripts = dict(transcripts or {})
     body = strip_figure_paths(stripped)
     lines = body.splitlines()
+    page_at = page_lookup(breaks, offset)
     result = DocResult(doc_id=doc_id, language="vi" if vietnamese(body) else "en")
 
     if sections:
         markers, unmatched = markers_from_map(lines, sections)
         result.unmatched_sections = unmatched
-        result.mapped_sections = len(markers)
+        result.mapped_sections = sum(1 for m in markers if m.mapped)
+        result.text_sections = len(markers) - result.mapped_sections
         result.source = "map"
-        if not markers:                      # a map that matched nothing is no map
+        # A map that matched nothing is no map. The test is the MAPPED markers:
+        # pass 3 reads headings out of the text, and counting those would let a
+        # map that placed not one of its sections look like a working one.
+        if not result.mapped_sections:
             markers = markers_from_headings(lines)
+            result.text_sections = 0
             result.source = "heuristic (map matched nothing)"
     else:
         markers = markers_from_headings(lines)
@@ -692,7 +849,7 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
     # is the title block and the "Căn cứ" recitals -- the authority the document
     # is issued under, which is a real answer to a real question.
     bounds = [m.line for m in markers]
-    segments: list[tuple[Marker | None, str, list[str]]] = []
+    segments: list[tuple[Marker | None, str, list[str], tuple[int, int]]] = []
 
     def stems_in(start: int, end: int) -> list[str]:
         return [s for i in range(start, end) for s in figures.get(i, ())]
@@ -700,31 +857,103 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
     first = bounds[0] if bounds else len(lines)
     preamble = "\n".join(lines[:first]).strip()
     if preamble:
-        segments.append((None, preamble, stems_in(0, first)))
+        segments.append((None, preamble, stems_in(0, first), (0, first)))
     for idx, marker in enumerate(markers):
         end = markers[idx + 1].line if idx + 1 < len(markers) else len(lines)
         segments.append((marker, "\n".join(lines[marker.line:end]).strip(),
-                         stems_in(marker.line, end)))
+                         stems_in(marker.line, end), (marker.line, end)))
+
+    def locate(part: str, span: tuple[int, int] | None,
+               cursor: int) -> tuple[int, int] | None:
+        """The lines of `lines` a chunk's text came from, [first, last].
+
+        A chunk is a run of the segment's own paragraphs, joined back together,
+        so its lines are the segment's lines verbatim -- which is why they can
+        simply be walked. The walk starts at the PREVIOUS chunk's first line,
+        not its last, because `split_long` overlaps a paragraph or two between
+        neighbouring parts. Where a line cannot be found the search stops and
+        the span ends where it got to: an early end costs page precision and
+        cannot invent a page the text does not reach.
+        """
+        if span is None:
+            return None
+        low, high = span
+        wanted = [ln.strip() for ln in part.splitlines() if ln.strip()]
+        if not wanted:
+            return None
+        start = next((i for i in range(max(low, cursor), high)
+                      if lines[i].strip() == wanted[0]), None)
+        if start is None:
+            return None
+        last = at = start
+        for text in wanted[1:]:
+            at = next((i for i in range(at + 1, high)
+                       if lines[i].strip() == text), None)
+            if at is None:
+                break
+            last = at
+        return start, last
+
+    def page_range(page: int, span: tuple[int, int] | None) -> tuple[int, int]:
+        """What this chunk may claim about its pages.
+
+        `page` is its section's, and it is the FLOOR: it was confirmed against
+        exactly one page of the PDF, and a chunk of that section is at or after
+        it. A page the measurement could not place is not claimed at all -- the
+        lines it covers read as the last page that WAS placed, which is early --
+        so the floor is what keeps a section's own first chunk on the page the
+        map confirmed for it.
+
+        The floor clamps one end only, which is safe just as long as the
+        measurement itself cannot run ahead of the map. That is a property of
+        `page_breaks` in `build-jump-maps.py`, not of this function: it bounds
+        every break by the confirmed sections either side of it, so a break can
+        no longer land above a section the map confirmed below it. It could
+        before -- the first version chose among up to eight candidate positions
+        and `monotone_assignment` takes the earliest one the order rule allows,
+        which put `nd-96-2023-nd-cp` page 68 forty lines above the `Điều 34` the
+        map confirmed on page 67 and made 22 chunks claim a page LATER than the
+        page their text is printed on. Do not add a ceiling here to paper over a
+        recurrence of that; the measurement is where it has to be right."""
+        if span is None:
+            return page, page
+        start = page_at(span[0])
+        end = page_at(span[1])
+        start = page if start is None else max(start, page)
+        end = start if end is None else max(end, start)
+        return start, end
 
     # Containers (Chương / Mục / Phần) are context, not citations: their heading
     # rides along with the next article rather than becoming a chunk of its own.
     pending_text: list[str] = []
     pending_figs: list[str] = []
+    pending_span: tuple[int, int] | None = None
     parent: str = ""
     page_carry = 0
 
     def emit(section: str, page: int, body_text: str,
-             figs: list[str] | None = None) -> None:
+             figs: list[str] | None = None,
+             span: tuple[int, int] | None = None) -> None:
         body_text = body_text.strip()
         if body_text:
             parts = split_long(body_text, TARGET_TOKENS, OVERLAP_TOKENS)
+            cursor = span[0] if span else 0
             for i, part in enumerate(parts):
-                result.chunks.append(Chunk(section=section, page=page, text=part,
-                                           part=i + 1, parts=len(parts)))
+                at = locate(part, span, cursor)
+                if at:
+                    cursor = at[0]
+                start, end = page_range(page, at)
+                result.chunks.append(Chunk(section=section, page=start, text=part,
+                                           part=i + 1, parts=len(parts),
+                                           page_end=end))
         # A figure standing in this section: its transcription is indexed here,
         # under the figure's own caption, and through this same call so it is
         # split, sized and page-stamped exactly like the prose around it. Popped
         # rather than read, so what is left over at the end is the orphans.
+        #
+        # A transcription is the CURATOR's text, not the document's, so it has
+        # no lines in this file to measure: it takes its figure's section page
+        # at both ends, which is what `span=None` says.
         for stem in figs or ():
             entry = transcripts.pop(stem, None)
             if entry:
@@ -745,20 +974,24 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
         BEFORE it advances `page_carry`; draining after was a wrong page claim
         shipping in this corpus (see the loop below).
         """
-        nonlocal pending_text, pending_figs
+        nonlocal pending_text, pending_figs, pending_span
         blob = "\n\n".join(pending_text).strip()
-        figs = pending_figs
-        pending_text, pending_figs = [], []
+        figs, span = pending_figs, pending_span
+        pending_text, pending_figs, pending_span = [], [], None
         if blob and est_tokens(blob) > MIN_SPLIT_TOKENS:
-            emit(parent or "Unnumbered provisions", page, blob, figs)
+            emit(parent or "Unnumbered provisions", page, blob, figs, span)
         elif blob:
-            pending_text, pending_figs = [blob], figs
+            pending_text, pending_figs, pending_span = [blob], figs, span
 
-    for marker, seg, figs in segments:
+    def widen(span: tuple[int, int] | None,
+              add: tuple[int, int]) -> tuple[int, int]:
+        return add if span is None else (span[0], max(span[1], add[1]))
+
+    for marker, seg, figs, span in segments:
         if marker is None:
             if seg:
                 emit("Preamble (title block and recitals)",
-                     1 if sections else 0, seg, figs)
+                     1 if sections else 0, seg, figs, span)
             continue
         # THE DRAIN COMES FIRST, AND `page_carry` ADVANCES AFTER IT. What has
         # accumulated is the text between the PREVIOUS marker and this one, so
@@ -775,17 +1008,20 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
             pending_figs.extend(figs)
             if seg:
                 pending_text.append(seg)
+                pending_span = widen(pending_span, span)
             continue
         if marker.kind not in BOUNDARY_KINDS:
             pending_text.append(seg)
             pending_figs.extend(figs)
+            pending_span = widen(pending_span, span)
             continue
 
         drain(page_carry)
         page_carry = marker.page or page_carry
         full = ("\n\n".join(pending_text + [seg])).strip() if pending_text else seg
         figs = pending_figs + figs
-        pending_text, pending_figs = [], []
+        span = widen(pending_span, span)
+        pending_text, pending_figs, pending_span = [], [], None
         if marker.kind in APPENDIX_KINDS:
             # An appendix is attached to the instrument, not filed inside its
             # last chapter: `Chương V ĐIỀU KHOẢN THI HÀNH > Phụ lục I` and
@@ -797,17 +1033,19 @@ def chunk_document(doc_id: str, text: str, sections: list[dict] | None,
             # only.
             parent = ""
         if marker.kind == ANNEX_KIND:
-            # Attached material the map never located sits on no page it can
-            # name. Carrying one forward would be the same false precision in a
-            # different field.
+            # Attached material belongs to no article, so the article's page
+            # must not carry into it. It is no longer left with nothing: the
+            # page BREAKS cover the attachment like any other part of the file,
+            # so `page_range` gives these chunks the pages their own lines are
+            # printed on. Zero here means "inherit nothing", not "unknown".
             page_carry = 0
         section = f"{parent} > {marker.label}" if parent else marker.label
-        emit(section, page_carry, full, figs)
+        emit(section, page_carry, full, figs, span)
 
     drain(page_carry)
     if pending_text or pending_figs:          # a sliver drain declined to emit
         emit(parent or "Closing provisions", page_carry,
-             "\n\n".join(pending_text), pending_figs)
+             "\n\n".join(pending_text), pending_figs, pending_span)
 
     # Whatever `emit` never popped: a transcription curated for a figure that is
     # not in this text. It is still indexed -- an algorithm missing from the
@@ -1198,10 +1436,16 @@ def build(args: argparse.Namespace) -> int:
             continue
 
         sections = None
+        breaks = None
         map_rel = doc.get("mapFile")
         if map_rel and (REPO_ROOT / map_rel).exists():
-            sections = json.loads((REPO_ROOT / map_rel).read_text(encoding="utf-8")
-                                  ).get("sections") or None
+            page_map = json.loads((REPO_ROOT / map_rel).read_text(encoding="utf-8"))
+            sections = page_map.get("sections") or None
+            # Where the PDF's pages open in this text. Absent from a map written
+            # before round 10, and absent for a document with no canonical text
+            # to measure against -- both read as "no measurement", which is the
+            # behaviour every chunk had before there was one.
+            breaks = page_map.get("pageBreaks") or None
 
         # The figures' hand-curated transcriptions, read from the sidecar rather
         # than out of the displayed text. See the section comment above
@@ -1212,7 +1456,7 @@ def build(args: argparse.Namespace) -> int:
             print(f"  {doc_id}: {note}")
 
         res = chunk_document(doc_id, text_path.read_text(encoding="utf-8"), sections,
-                             transcripts)
+                             transcripts, breaks)
         if transcripts:
             print(f"  {doc_id}: indexed {len(transcripts)} figure transcription(s)"
                   + (f", {res.orphan_transcriptions} with no figure in the text"
@@ -1254,10 +1498,18 @@ def build(args: argparse.Namespace) -> int:
         notices = passage_notices(registry, doc)
         by_tier: dict[str, int] = {name: 0 for name in NOTICE_TIERS}
         for ordinal, chunk in enumerate(res.chunks):
+            # `section` is the CITABLE location and nothing else goes in it. It
+            # used to carry `(part k of n)` when one article was split, which is
+            # a fact about our chunker and not about the instrument -- and
+            # `readings.ts` writes this field into the `Location:` line the
+            # advisor is instructed to repeat verbatim, so `(part 18 of 99)`
+            # reached a reader inside a citation, describing a division of the
+            # law that does not exist. Nothing read the suffix; the passages in
+            # a tool result are already numbered.
             where = chunk.section
-            if chunk.parts > 1:
-                where = f"{where} (part {chunk.part} of {chunk.parts})"
-            page_bit = f", PDF page {chunk.page}" if chunk.page else ""
+            page_bit = (f", PDF pages {chunk.page}-{chunk.page_end}"
+                        if chunk.page_end > chunk.page
+                        else f", PDF page {chunk.page}" if chunk.page else "")
             # The header is indexed at twice the weight of the body and is the
             # string embedded alongside it, so it carries every handle a question
             # might use: the number, the article, both titles, the agency, the
@@ -1302,7 +1554,8 @@ def build(args: argparse.Namespace) -> int:
             conn.execute(
                 "INSERT INTO chunks (id, doc_id, ordinal, section, page_start, "
                 "page_end, header, text, tokens, notice) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (next_id, doc_id, ordinal, where, chunk.page, chunk.page,
+                (next_id, doc_id, ordinal, where, chunk.page,
+                 max(chunk.page_end, chunk.page),
                  header, chunk.text, tokens, notice),
             )
             conn.execute("INSERT INTO chunks_fts (rowid, header, text) VALUES (?,?,?)",
@@ -1317,7 +1570,13 @@ def build(args: argparse.Namespace) -> int:
             annotated_tiers.append((doc_id, number, len(res.chunks), dict(by_tier)))
         print(f"  {doc_id} ({number}): {len(res.chunks)} chunks "
               f"[{res.source}, {res.unmatched_sections} unmatched, "
-              f"{res.duplicates} duplicate, {res.language}"
+              # A heading the map does not carry, opened from the text. Named
+              # in the run because it is the one thing here the map cannot be
+              # checked against: a number that climbs is a map going thin.
+              + (f"{res.text_sections} text-only section"
+                 f"{'' if res.text_sections == 1 else 's'}, "
+                 if res.text_sections else "")
+              + f"{res.duplicates} duplicate, {res.language}"
               + (f", notices {tier_report}" if notices else "") + "]")
         # Every chunk of an opted-in document now carries at least the document
         # notice, so "nothing was annotated" no longer says anything about the

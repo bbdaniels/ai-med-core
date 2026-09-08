@@ -905,8 +905,14 @@ body {
 .pdfjs-outline {
     position: sticky;
     align-self: flex-start;
-    flex: 0 0 15rem;
-    width: 15rem;
+    /* 17rem, not 15: at 15 a heading of this document's length ("3.1. Advocating
+       and coordinating with stakeholders in establishing HBV and HCV services")
+       wrapped to four lines, and four-line rows read as paragraphs rather than as
+       a contents list. At 17 exactly one of the EIP's 66 English rows still runs
+       past three lines, which is why the width is the whole fix and there is no
+       line clamp below: see `.pdfjs-outline-link`. */
+    flex: 0 0 17rem;
+    width: 17rem;
     max-width: 45%;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -932,24 +938,76 @@ body {
     gap: 0.15rem;
 }
 
+/* The disclosure control. Every row starts collapsed (see `OutlineEntry`), so
+   this is how a reader reaches the subsections at all -- it has to read as a
+   button. It used to be a text glyph at 0.7rem, which the font stack drew as a
+   faint dot; it is now a drawn chevron in a square target, rotating a quarter
+   turn when its branch opens. A row with no children keeps the same square as an
+   inert spacer, so titles line up down the column. */
 .pdfjs-outline-twisty {
-    flex: 0 0 1rem;
-    width: 1rem;
+    /* 1.5rem = 24px, the WCAG 2.2 SC 2.5.8 minimum target. It was 1.25rem (20px)
+       and that is under the floor for a control which is now the ONLY route to 59
+       of the EIP's 66 entries. */
+    flex: 0 0 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
     padding: 0;
-    margin-top: 0.15rem;
-    font-size: 0.7rem;
-    line-height: 1.3;
-    color: var(--text-muted);
+    margin-top: 0.1rem;
+    color: var(--text-secondary);
     background: transparent;
     border: 0;
+    border-radius: 4px;
     cursor: pointer;
 }
 
-.pdfjs-outline-twisty:hover { color: var(--accent); }
+.pdfjs-outline-twisty svg {
+    width: 0.7rem;
+    height: 0.7rem;
+    transition: transform 0.12s ease;
+}
+
+.pdfjs-outline-twisty.is-open svg { transform: rotate(90deg); }
+
+.pdfjs-outline-twisty:hover {
+    color: var(--accent);
+    background: var(--bg-deep);
+}
+
+.pdfjs-outline-twisty:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+/* Not a control: no pointer, no hover, no target. `pointer-events: none` is what
+   actually delivers that, and `cursor: default` alone did not -- the leaf span
+   carries the twisty class, so `:hover` above matched it at equal specificity and
+   painted an accent-colored chip on a dead element (2 of the 7 rows visible when
+   the EIP outline is fully collapsed are leaves). Resetting the two properties
+   would work too, but only until the hover rule gains a third. */
+.pdfjs-outline-twisty.is-leaf {
+    cursor: default;
+    pointer-events: none;
+}
 
 .pdfjs-outline-link {
     flex: 1;
     min-width: 0;
+    /* A long heading WRAPS; it is never truncated. The tall-row complaint is
+       answered by the sidebar's width above -- at 17rem one of 66 EIP rows runs
+       past three lines -- and a line clamp on top of that only ever fires where
+       the pane is narrow, which is exactly where it does the most damage: the
+       sidebar keeps `max-width: 45%`, so in a 375px pane it is ~186px and a
+       3-line clamp hid part of 39 of the 66 English rows, one of them a top-level
+       heading. A `title` tooltip does not give that text back on a touch device,
+       and the state is reachable in production because a saved
+       `pdf_outline_open` opens the sidebar at any width. (The clamp was also
+       inert wherever only the legacy `-webkit-box` mechanism exists: this element
+       is a flex item, so that display value is blockified and only the standard
+       `line-clamp` ever applied.) */
+    overflow-wrap: anywhere;
     text-align: left;
     padding: 0.15rem 0.25rem;
     font: inherit;

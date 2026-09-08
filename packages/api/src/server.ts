@@ -875,7 +875,12 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
             // The notice a retrieved passage may carry is an instruction about
             // that passage, so it is rendered in the language the answer is
             // being written in rather than in every language the corpus holds.
-            content = formatSearchResults(searchQuery, results, { language });
+            // `scheduled` is the corpus's own answer to "does this index have a
+            // class schedule?" -- the same bit `searchReadingsTool` branches on --
+            // so an unscheduled corpus is not described to the model as course
+            // readings assigned in weeks it does not have.
+            content = formatSearchResults(searchQuery, results,
+                                          { language, scheduled: readingsIndex.hasWeeks });
           }
         } catch (e) {
           console.error('[readings] tool call failed:', e);

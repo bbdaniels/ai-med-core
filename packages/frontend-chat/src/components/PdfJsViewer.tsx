@@ -95,6 +95,11 @@ const RETURN_MIN_DELTA = 48;
  * below (which is only the opening guess for a reader who has never expressed
  * one).
  *
+ * It remembers the SIDEBAR only, deliberately. Which branches inside it are open
+ * is per document and per branch, it is not a standing preference about the
+ * viewer, and the browser's own PDF viewer does not remember it either -- so it
+ * lives in component state and starts collapsed on every document.
+ *
  * Both accessors are wrapped because localStorage is not merely absent-or-present
  * here: this app is embedded in an iframe on Canvas, where Safari's tracking
  * prevention can make a read or a write THROW for a third-party frame (the same
@@ -495,6 +500,10 @@ function PdfPage({ pdf, pageNumber, scale, root, registerPage, resolveDest, onNa
  * into this file: the EIP outlines are rebuilt from the documents' own numbering
  * by `eip_outline_nodes` in `tools/build-jump-maps.py`, so their depth follows
  * the source and has already changed three times.
+ *
+ * pdf.js also hands each node a `count`, which encodes the open/closed state the
+ * FILE declares for that branch. It is dropped here on purpose -- see the comment
+ * in `OutlineEntry` for why following it would undo the fix HAIVN asked for.
  */
 interface OutlineNode {
   title: string;
@@ -521,9 +530,13 @@ type OutlineUI = (typeof FIND_UI)[string];
  * ever half a fix anyway -- "open in a new tab" hands the browser the same
  * bytes, and the browser's own viewer drew every blank row we were hiding.
  *
- * It stays because this component also draws the Legal Library, and those are
- * twenty-three Vietnamese government PDFs published by somebody else, whose
- * outlines we neither write nor control.
+ * It stays as a guard over the Legal Library, whose twenty-three Vietnamese
+ * government PDFs are published by somebody else and whose outlines we neither
+ * write nor control -- but be exact about what that guard is worth today: as of
+ * 2026-09-08 none of those twenty-three carries an outline AT ALL (`get_toc()` is
+ * empty for every one of them), so none of them can carry a blank-titled bookmark
+ * either, and no file this viewer draws currently exercises this function. It is
+ * cheap insurance against the next registry entry, not a live fix.
  */
 function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {
   const out: OutlineNode[] = [];
@@ -536,29 +549,68 @@ function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {
   return out;
 }
 
-function OutlineList({ nodes, t, onPick }: {
+/**
+ * Which branches of the outline the reader has opened, as index paths ("0",
+ * "0.2", "0.2.1"). It is the VIEWER's state rather than each row's, so that
+ * hiding the sidebar and showing it again does not throw away what the reader
+ * had opened -- the sidebar unmounts on close. A new document clears it.
+ */
+interface OutlineExpansion {
+  expanded: Set<string>;
+  onToggle: (path: string) => void;
+}
+
+function OutlineList({ nodes, path, t, expansion, onPick }: {
   nodes: OutlineNode[];
+  path: string;
   t: OutlineUI;
+  expansion: OutlineExpansion;
   onPick: (dest: string | unknown[] | null) => void;
 }) {
   return (
     <ul className="pdfjs-outline-list">
-      {nodes.map((node, i) => (
-        <OutlineEntry key={i} node={node} t={t} onPick={onPick} />
-      ))}
+      {nodes.map((node, i) => {
+        const childPath = path ? `${path}.${i}` : String(i);
+        return (
+          <OutlineEntry
+            key={childPath}
+            node={node}
+            path={childPath}
+            t={t}
+            expansion={expansion}
+            onPick={onPick}
+          />
+        );
+      })}
     </ul>
   );
 }
 
-function OutlineEntry({ node, t, onPick }: {
+function OutlineEntry({ node, path, t, expansion, onPick }: {
   node: OutlineNode;
+  path: string;
   t: OutlineUI;
+  expansion: OutlineExpansion;
   onPick: (dest: string | unknown[] | null) => void;
 }) {
-  // Expanded by default: a reader who opens the contents wants to see the
-  // subsections, which is the whole complaint the sidebar answers. The twisty is
-  // there for the reader who then wants a long branch out of the way.
-  const [open, setOpen] = useState(true);
+  // COLLAPSED by default, at every level. This viewer used to mount every node
+  // open, so the same 66-entry outline read as one flat wall here and as seven
+  // rows in the browser's own viewer on "open in a new tab" -- which hands the
+  // browser the very same file. HAIVN reported exactly that on 2026-09-08 ("the
+  // bookmarks in the PDF within the App remain too detailed ... please revise the
+  // file so that the two bookmarks are at the same level"). The depth below these
+  // rows is itself a HAIVN request from earlier the same day (see
+  // `eip_outline_nodes` in tools/build-jump-maps.py), so it is reached by opening
+  // a branch, never removed.
+  //
+  // COLLAPSED IS A CHOSEN CONSTANT HERE, NOT A PROPERTY READ OFF THE DOCUMENT.
+  // pdf.js hands each node a `count` encoding the open/closed state the file
+  // itself declares, and `OutlineNode` deliberately does not carry it: the
+  // builder (`build-jump-maps.py`, `set_toc(toc, collapse=1)`) writes every
+  // branch closed since round 10, so file and viewer agree, and a PDF from
+  // elsewhere with its own open branches is still shown the way Chrome and Arc
+  // show it -- collapsed, opened by the reader.
+  const open = expansion.expanded.has(path);
   const kids = node.items && node.items.length ? node.items : null;
   return (
     <li className="pdfjs-outline-item">
@@ -566,22 +618,38 @@ function OutlineEntry({ node, t, onPick }: {
         {kids ? (
           <button
             type="button"
-            className="pdfjs-outline-twisty"
-            onClick={() => setOpen((o) => !o)}
+            className={open ? 'pdfjs-outline-twisty is-open' : 'pdfjs-outline-twisty'}
+            onClick={() => expansion.onToggle(path)}
             aria-expanded={open}
-            aria-label={open ? t.collapse : t.expand}
+            // Named after its own section. A bare "Show subsections" was 17
+            // identical buttons to a screen reader, which was tolerable while
+            // every node mounted open and is not now that this is the only way
+            // to reach 59 of the 66 entries.
+            aria-label={`${open ? t.collapse : t.expand}: ${node.title}`}
             title={open ? t.collapse : t.expand}
-          >{open ? '▾' : '▸'}</button>
+          >
+            {/* Drawn rather than typed. The chevron used to be the characters
+                U+25B8/U+25BE at 0.7rem, and in the app's font stack they came out
+                as faint 3-4px dots -- unreadable as a control, on the one row a
+                collapsed-by-default outline depends on. An SVG is the same size
+                in every font. */}
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M6 3.2 11 8l-5 4.8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         ) : (
-          <span className="pdfjs-outline-twisty" aria-hidden="true" />
+          <span className="pdfjs-outline-twisty is-leaf" aria-hidden="true" />
         )}
+        {/* No `title` tooltip: the row wraps rather than truncating, so the whole
+            heading is already on screen -- and a tooltip is not a recovery route
+            on a touch device anyway. */}
         {node.url ? (
           <a className="pdfjs-outline-link" href={node.url} target="_blank" rel="noopener noreferrer">{node.title}</a>
         ) : (
           <button type="button" className="pdfjs-outline-link" onClick={() => onPick(node.dest)}>{node.title}</button>
         )}
       </div>
-      {kids && open && <OutlineList nodes={kids} t={t} onPick={onPick} />}
+      {kids && open && <OutlineList nodes={kids} path={path} t={t} expansion={expansion} onPick={onPick} />}
     </li>
   );
 }
@@ -616,6 +684,9 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
   // single-slot "return" that remembers where a jump started from.
   const [outline, setOutline] = useState<OutlineNode[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  // Which outline branches are open, by index path. Held here rather than in each
+  // row so closing the sidebar (which unmounts it) does not discard them.
+  const [outlineExpanded, setOutlineExpanded] = useState<Set<string>>(() => new Set());
   // Names the sidebar for the toolbar toggle's aria-controls. Generated rather
   // than a literal because a merged tab mounts two of these viewers at once, and
   // two elements with one id would point both toggles at whichever came first.
@@ -763,6 +834,19 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     writeOutlinePreference(next);
   }, [outlineOpen]);
 
+  const toggleOutlineNode = useCallback((path: string) => {
+    setOutlineExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  }, []);
+
+  const outlineExpansion = useMemo(
+    () => ({ expanded: outlineExpanded, onToggle: toggleOutlineNode }),
+    [outlineExpanded, toggleOutlineNode],
+  );
+
   // An outline bookmark carries a destination in exactly the form a link
   // annotation does, so it is resolved by the same resolveDest and moved by the
   // same goToDest — no second resolver, no second scroll path.
@@ -824,7 +908,8 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
     // A different document invalidates everything the find bar knows.
     setQuery(''); setDebouncedQuery(''); setIndex(null); setIndexState('idle');
     setWantIndex(false); setActiveMatch(0); indexStartedForRef.current = null;
-    setOutline([]); setOutlineOpen(false); setReturnTop(null); setShowBackToTop(false);
+    setOutline([]); setOutlineOpen(false); setOutlineExpanded(new Set());
+    setReturnTop(null); setShowBackToTop(false);
     lastVisibleTopRef.current = null;
     const task = pdfjsLib.getDocument({ url: src });
     task.promise
@@ -1155,7 +1240,7 @@ export default function PdfJsViewer({ src, title, openLabel, lang, jumpTarget }:
                 maxHeight: scrollportHeight ? Math.max(160, scrollportHeight - headHeight - 16) : undefined,
               }}
             >
-              <OutlineList nodes={outline} t={t} onPick={goToOutlineDest} />
+              <OutlineList nodes={outline} path="" t={t} expansion={outlineExpansion} onPick={goToOutlineDest} />
             </nav>
           )}
           <div className="pdfjs-pages" ref={pagesRef} title={title}>

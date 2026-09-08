@@ -272,7 +272,8 @@ Google Docs exports an outline of the numbered headings only -- about forty
 entries for a forty-two-page document -- and stamps a handful of TITLELESS ones
 into it besides, an empty paragraph that happens to be styled as a heading (7 in
 the English file, 8 in the Vietnamese, and there the first one). Our own viewer's
-contents sidebar hid the blanks and expanded the rest, but **"open in a new tab"
+contents sidebar hid the blanks (it also mounted every remaining node open, which
+is a separate story ending on 2026-09-08 -- see below), but **"open in a new tab"
 hands the browser the same bytes**: there is no second copy of this PDF, so the
 browser's own viewer drew nine collapsed top-level rows, some of them empty.
 HAIVN reported exactly that on 2026-09-04, having already been given the deeper
@@ -371,9 +372,32 @@ Four things about it are load-bearing:
   object to a 5 MB binary git tracks.
 - **The frontend's `pruneOutline` was NOT removed.** It is still dead weight for
   the EIP -- verified again after the 2026-09-08 restore, zero blank entries in
-  either language -- but the same viewer draws the Legal Library's twenty-three
-  government PDFs, whose outlines somebody else publishes. Its comment says so,
-  so the next reader does not take it as evidence the EIP files still need it.
+  either language -- and it is dead weight for the Legal Library too, which is the
+  correction this bullet used to need: it claimed the helper earned its keep on
+  "twenty-three government PDFs whose outlines somebody else publishes", but
+  `get_toc()` is EMPTY for all twenty-three, so none of them can carry a blank
+  bookmark and none exercises the function. Nothing this viewer draws does today.
+  Keep it as insurance against the next registry entry, and say that, rather than
+  citing a caller that does not exist.
+- **How DEEP the outline goes and how much of it is SHOWN AT ONCE are two
+  different questions.** Later on 2026-09-08 Thuy reported that the bookmarks
+  "within the App" were still too detailed next to the same file opened in a new
+  tab, and asked for the two to be at the same level. `OutlineEntry` in
+  `packages/frontend-chat/src/components/PdfJsViewer.tsx` mounted every node open,
+  so Chrome showed seven collapsed top-level rows and we showed all sixty-six at
+  once; the viewer now starts every branch collapsed. **Do not answer a complaint
+  of this shape by shortening the outline** -- the depth below those rows is the
+  request from earlier the same day, and it is reached by opening a branch.
+- **The open state is ALSO in the file, and this builder now writes every branch
+  CLOSED.** `doc.set_toc(toc, collapse=1)` gives every parent a negative `/Count`.
+  Until 2026-09-08 the call was `collapse=None`, which wrote all 17 parents open in
+  both `eip-en.pdf` and `eip-vi.pdf`; Chrome and Arc ignore the flag, but Firefox's
+  pdf.js, Acrobat and Preview honor it, so a downloaded copy opened fully expanded
+  outside the app. `open_bookmark_xrefs` reads the flag off the outline objects
+  (`get_toc(simple=False)` does not expose it) and feeds the "unchanged" check, so a
+  file that still carries an open branch is rewritten once and then left alone
+  (verified: second run reports `unchanged`, 66 entries, depth 5, 0 open / 17
+  closed, identical level sequence EN/VI).
 
 `python3 tools/build-jump-maps.py --eip-only --eip-outline` rewrites the outlines
 of the PDFs already on disk, without re-fetching them.
@@ -993,9 +1017,13 @@ on?** It writes
 - `projects/haivn_eip/content/legal/maps/<id>.json` for every registry document
   with a PDF whose structure could be located, shape
   `{"docId", "source": "native"|"ocr", "sections": [{"key": "dieu-5", "label":
-  "Điều 5. ...", "page": 7, "confidence": "confirmed"|"structural"}]}`, and a
+  "Điều 5. ...", "page": 7, "confidence": "confirmed"|"structural"}],
+  "pageBreaks": [{"page": 7, "line": 214}]}`, and a
   `mapFile` path into that document's registry entry (the second and last field
   this repo's tooling writes into the hand-curated registry, after `pdfFile`);
+  `pageBreaks` is where each PDF page opens in the canonical text file, in that
+  file's own line numbers, and is read by `build-legal-corpus.py` alone --
+  `legal-map.ts` reads `sections` and ignores the rest of the file;
 - `projects/haivn_eip/content/eip-map.<lang>.json`, shape
   `{"anchors": {"sec-1-2": 5, "app-2": 24}}`, 1-based pages;
 - the **bookmark outline of the two EIP PDFs**, on `--eip-outline` (which
@@ -1027,7 +1055,7 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   text file, longest first (14 tokens down to 6), and accepted only when exactly
   one page contains it. Ambiguous or absent means the section is **dropped and
   named in the run's output**, never guessed.
-- **The n-gram's anchor may slide, but only inside the heading's own line.** The
+- **The n-gram's anchor may slide, but only inside the heading itself.** The
   window used to start at token 0 and nowhere else, so a single misread glyph
   INSIDE a heading made the section unlocatable however unique the forty tokens
   behind it were. That is what dropped `PHỤ LỤC III` from `tt-20-2022-tt-byt`:
@@ -1037,9 +1065,43 @@ with tone marks kept it falls to about 90% on the harder scans -- and `cầu` fo
   appendix's content was then filed and cited under Phụ lục II. The prefix is
   still tried first and on its own terms, so nothing that already confirms can
   move; only when it names no page do windows starting at tokens 1..n get their
-  turn, n being the length of the heading line, and a page one of them names
-  must also carry the heading's kind word (`phụ lục`, `điều`) so that a window
-  made only of context cannot pull a section onto the following page.
+  turn.
+
+  **`n` is the length of the heading AS PRINTED, which for a bare marker is the
+  marker plus the one line it borrows for its label -- not the marker alone.**
+  A publisher's line break does not make `Chương XII` and the banner
+  `ĐIỀU KHOẢN THI HÀNH` under it two headings, and while the slide stopped at
+  the marker the anchor could never get past the two tokens OCR had destroyed.
+  Two real sections were dropped as `nomatch` because of it, both of them
+  numerals a scan merged into one glyph: `luat-15-2023-qh15`'s `Chương XII`
+  (page 72 reads `Chương XH`) and `tt-05-2024-tt-byt`'s `Phụ lục II` (page 62
+  reads `Phụ lục HI`). Five of luat-15's corpus chunks then cited Chương XI and
+  the whole of tt-05's Phụ lục II cited `PHỤ LỤC I ... p. 27`.
+
+  **The slide exists to step over a garbled NUMERAL, so every other word it
+  steps over must be on the page it names.** Testing only the kind word
+  (`phụ lục`, `điều`) was enough while the window could not leave the marker
+  line; over a whole heading it is not, and the failure is silent and
+  confident. tt-05 prints `PHỤ LỤC I DANH MỤC THUỐC ĐƯỢC ÁP DỤNG HÌNH THỨC ĐÀM
+  PHÁN GIÁ` on page 27 and `PHỤ LỤC II DANH MỤC THIẾT BỊ Y TẾ ... ĐƯỢC ÁP DỤNG
+  HÌNH THỨC ĐÀM PHÁN GIÁ` on page 62, and the OCR garbles `THUỐC` on page 27 --
+  so a window starting after it is made of the seven words the two appendices
+  SHARE plus the issuing clause both of them print, and it confirms Phụ lục I
+  onto Phụ lục II's page. Requiring the skipped words puts `thuoc` back in the
+  test, page 62 does not have it, and Phụ lục I keeps the structural page 27 it
+  is printed on. Measured across all 23 documents: 760 sections / 729 confirmed
+  before, 762 / 732 after, and the only two maps that move are the two named
+  here.
+
+  **Neither of those two was a defect in the text or in the grammar, and both
+  were filed as if they were.** `text/luat-15-2023-qh15.md` says `## Chương XII`
+  and `text/tt-05-2024-tt-byt.md` says `## PHỤ LỤC II`; `parse_heading_parts`
+  reads both correctly. `Chương XH` and `Phụ lục HI` exist only in tesseract's
+  read of the scanned page, which is computed at run time and written nowhere --
+  so there is nothing at `--format` to correct, and teaching the grammar to
+  decode `HI` as `II` would be reading a NUMBER out of a garbled glyph, which is
+  the one thing `roman_value` refuses (`IlH` folds to `IIII` and reports chapter
+  4 for a page printing Chương III).
 - **A confirmation that contradicts the document's own order is not a
   confirmation, and the LAST thing the canonical pass does is enforce that.**
   The kind-word guard above is not enough on its own: `luat-15-2023-qh15`'s
@@ -1234,6 +1296,98 @@ as tables of contents, `tt-20-2022-tt-byt`'s Phụ lục III form among them; an
 kind whose detections collapse under the monotone filter is dropped
 as a repeating label rather than shipped (one circular's appendix FORMS are
 headed `Mục I`..`Mục IV`, restarting on each of two dozen forms).
+
+### Where the pages break in the canonical text
+
+A section map answers "which page does this SECTION begin on?", and until round
+10 that was the only page evidence in the pipeline. `page_breaks` answers the
+finer question -- **which page is this LINE on?** -- for every page of every
+document that has a canonical text, and writes the answer into the map as
+`pageBreaks`. It is what lets `build-legal-corpus.py` stamp a chunk with the
+pages its own text is printed on instead of its section's first page (see
+"What a chunk claims about its page" below).
+
+The measurement is the same kind of evidence as a section's page, taken three
+hundred times instead of twenty: the page's opening words, normalised, and
+matched exactly into the canonical token stream. Four rules carry it, and the
+first is the one the round-10 draft did not have.
+
+- **FOUND EXACTLY ONCE, OR ABSENT.** The first version took a page's opening
+  n-gram wherever it matched, up to eight times over, and left
+  `monotone_assignment` to pick between the candidates -- and that function
+  minimises the position it ends on, so it takes the EARLIEST candidate the
+  order rule allows. A break placed early reads the lines above it as the next
+  page, which is the one direction a page claim must not err in, because
+  `readings.ts` prints the number into the `Location:` line the advisor is told
+  to repeat verbatim. It shipped: `qd-678-2025` opened page 2 on the words its
+  title block prints on page 1, so Điều 1-3 -- `confirmed` on page 1 in the same
+  map -- were stamped page 2; `nd-96-2023-nd-cp` opened page 68 forty lines
+  above the `Điều 34` its map confirms on page 67. Measured across the corpus,
+  22 chunks claimed a page LATER than the page their own text is printed on and
+  10 sections' first chunk contradicted their own map's confirmed page. The rule
+  is now the one the sections have always lived under. Where the longest window
+  is still tied the window is **widened** (to `PAGE_BREAK_NWIDEN = 40` tokens)
+  rather than chosen between -- a page carries hundreds of tokens, so reading
+  further into it is free evidence, and it is what separates two pages that open
+  on the same formula.
+- **The confirmed sections bound the search.** A section the map confirmed was
+  matched by exact n-gram against exactly one page, which is the strongest page
+  evidence this pipeline has, so a measurement is not allowed to contradict it:
+  a break for page *q* must sit after every confirmed section on a page below
+  *q* and before every confirmed section on page *q* or above. Structural and
+  demoted pages are inferences and bound nothing. This is what leaves qd-678's
+  page 2 unplaced instead of placing it wrongly.
+- **The anchor slides past the running head.** A page opens with its folio and
+  its running title far more often than not, and neither is in the text file:
+  the gazette editions print `CÔNG BÁO số 169 + 170 ngày 26/01/2024` across the
+  top of every page, eleven tokens the canonical file does not have. With the
+  window pinned at the first token this pass placed **0 of 341** pages of
+  `nd-96-2023-nd-cp`, 0 of 115 of `nd-188-2025-nd-cp` and 0 of 25 of
+  `luat-51-2024-qh15`; at `PAGE_BREAK_STARTS = 16` it places 287, 105 and 25.
+  Sliding moves the break LATER WITHIN ITS OWN PAGE, which costs only the few
+  lines above the anchor -- they read as the previous page. It says nothing
+  about WHICH occurrence of those words is found, which is what the first rule
+  is for; the two were conflated in the draft of this section, and the sentence
+  claiming that skipping "can only put a break LATE" was false as written.
+- **The document's own order is enforced, strictly.** The breaks go through
+  `lib/section_order.monotone_assignment` over token positions, and strictly
+  because two pages cannot open at the same word. A page whose opening words
+  match a form header repeated in an appendix is dropped rather than placed
+  backwards.
+
+**An unplaced page is not claimed, and what that costs is worth being exact
+about.** The lines it covers read as the last page that WAS placed -- not as
+their section's page. Where one page is missing that is an understatement of
+one; where a run of pages is missing it is a specific, wrong, EARLIER page, and
+`tt-05-2024-tt-byt`'s appendix chunks read one to two pages early that way (they
+read twelve pages early in the round-10 draft, which is what a verifier caught).
+The wider understatements are not this pass's at all: about 100 chunks are ones
+whose own lines `locate` could not find in the file, and they keep their
+section's page at both ends -- see "What a chunk claims about its page".
+Coverage is **1,217 breaks over the 21 documents that have a canonical text**
+(`tt-12-2026-tt-btc` and `qd-3176-2024` have `textFile: null`, so nothing is
+measured and their maps carry an empty `pageBreaks`). It is near-total where the
+text is our own extraction of the PDF (`tt-35-2016-tt-byt` 38/38,
+`luat-51-2024-qh15` 25/25, `nd-96-2023-nd-cp` 287/341, `tt-40-2025-tt-byt`
+277/304) and thin where the text came from a publisher's transcription of a scan
+(`vbhn-15-2024-byt` 17/75, `tt-05-2024-tt-byt` 35/70, `tt-20-2022-tt-byt`
+46/84) -- exactly where the words on the page and the words in the file are not
+the same words. Report the thin ones by name when this changes; a total hides
+them.
+
+**What is left, measured rather than asserted.** Over every chunk whose first
+eight normalised tokens occur on exactly one page of its PDF (1,245 of them):
+1,178 name that page exactly, 58 name an earlier one (the understatement above),
+and **9 still name a page one later** -- 5 in `nd-188-2025-nd-cp`, 1 in
+`tt-40-2025-tt-byt` and 3 in `vbhn-15-2024-byt`, all documents whose text is a
+publisher's transcription rather than our extraction, so the file's order and
+the PDF's layout genuinely disagree in places. Two of the nine are their
+section's own structural map page, which is the floor and not a measurement.
+None contradicts a confirmed section page any more (0, down from 10). Re-run
+that audit rather than trusting a before/after comparison against the old coarse
+value: comparing a new page number to the SECTION page it replaced can only
+detect understatement, which is how the draft of this section reported "not one
+starts earlier" while 22 chunks were overstating.
 
 ### Canonical text-layer injection
 
@@ -1474,10 +1628,16 @@ duplicated either; it is `lib/openai_gateway.py`, documented above.
 
 Legal metadata is **mapped onto** the reading columns rather than added beside
 them: `author_short` is the instrument number, so `readings.ts` renders
-`CITE AS: 96/2023/NĐ-CP`; `section` is the citable location
-(`Chương III ... > Điều 40. ...`, plus `(part k of n)` when one article is
-split); `page_start` is the PDF page from `maps/<id>.json`, which is what a
-future doc-ref chip would need to open the Legal Library at the right page;
+`CITE AS: 96/2023/NĐ-CP`; `section` is the citable location and NOTHING ELSE
+(`Chương III ... > Điều 40. ...`) -- it used to carry `(part k of n)` when one
+article was split, which is a fact about our chunker and not about the
+instrument, and `readings.ts` writes this field into the `Location:` line the
+advisor is instructed to repeat verbatim, so `(part 18 of 99)` reached a reader
+inside a citation, describing a division of the law that does not exist;
+nothing read the suffix and the passages in a tool result are already numbered;
+`page_start` and `page_end` are the pages the chunk's own text is printed on
+(see "What a chunk claims about its page"), which is what a doc-ref chip needs
+to open the Legal Library at the right page;
 `venue` carries type, agency, validity status and the language of the text;
 `weeks` is `[]`, since a course schedule has no legal analogue and an empty
 array is what stops `readings.ts` printing an "assigned" clause it cannot mean.
@@ -1505,6 +1665,79 @@ in `maps/<id>.json` and be thrown away one tool later with nothing said. Since
 writes a map, so a map is ordered BY CONSTRUCTION and a section this pass cannot
 place is one the text does not support. Documents with text but no map
 (`qd-4026-2010`) fall back to heading heuristics.
+
+**A HEADING THE MAP DOES NOT CARRY IS STILL A HEADING**, and until round 10 the
+builder opened a marker only for a section the map had. That does not leave such
+a heading unlabelled -- it leaves it labelled as the section ABOVE it, at that
+section's page, in the `Location:` the advisor is told to repeat verbatim. It is
+the same false citation `annex_markers` exists to stop at the signature block,
+one boundary earlier, so pass 3 gives it the same answer: a marker read out of
+the text, with no page of its own. **The test is the KEY**, not the line -- a key
+the map carries has already been placed by passes 1 and 2, and a second line
+reading as that key is the recurrence they exist to reject.
+
+Three ways a map comes to be missing a section its text has, and today's corpus
+has all three:
+
+- **A section the map DROPPED.** `luat-15-2023-qh15`'s `Chương XII` and
+  `tt-05-2024-tt-byt`'s `Phụ lục II` were both dropped as `nomatch` until the
+  sliding anchor learned to step over a garbled numeral (above). While they
+  were, five of luat-15's chunks cited Chương XI and the whole of tt-05's
+  Phụ lục II cited `PHỤ LỤC I ... p. 27`. Both are mapped now; pass 3 is what
+  makes the next one cost a page rather than a wrong citation.
+- **A kind or a number the key space cannot hold.** `Điều 7a`, `Điều 32a`,
+  `Điều 48a` and `Điều 48b` are new articles an amending law inserts, and
+  `Phần` is a kind the maps deliberately do not carry -- ten headings across
+  `luat-51-2024-qh15`, `nd-96-2023-nd-cp` and `qd-1868-2020`, none of which will
+  ever appear in a map file.
+- **A container whose numbering RESTARTS.** The map key space is flat
+  `<kind>-<number>`, so `muc-1` names the first `Mục 1` in a document and the
+  rest have nowhere to live. `luat-15-2023-qh15` restarts `Mục 1` under six of
+  its twelve chapters and `nd-96-2023-nd-cp` under two. **The TITLE separates a
+  restart from a recurrence**: the map says which section that key names, and a
+  `Mục 1` printed under a different title is a different section. Chương IV's
+  `Mục 1 GIẤY PHÉP HOẠT ĐỘNG ...` is one of them, and Điều 48 was filed under
+  `Chương IV` because of it.
+
+**That last one is a corpus-side fix and NOT a fix to the key space.** A marker
+here is local to this builder -- nothing downstream reads `Marker.key` -- so the
+`Location:` is repaired without touching the flat key space `KEY_RE` and
+`legal-map.ts` share. Re-keying a map section under its parent
+(`chuong-4/muc-1`) was left for its own round, on grounds of scope: it rewrites
+every map file and the jump-list key space at once.
+
+**Do not repeat the reason this paragraph gave in its first draft**, which was
+that `doc-refs.ts` builds a key out of a chat citation reading only "Mục 1" and
+that a qualified key space would leave those citations unresolvable. It does
+not, and would not: `doc-refs.ts` keys ARTICLES only --
+`DEFAULT_LEGAL_SECTION_WORDS` is Điều / Dieu / Article / Articles / Art.,
+`LEGAL_SECTION_PREFIX` is `dieu`, and no project sets `legalSectionWords` -- for
+the reason its own comment gives, that an answer writes `Chương I` where the map
+writes `chuong-1` and a roman-numeral guess sends a reader to the wrong page. No
+`Mục` citation in the chat resolves to a legal page today. The real consumer of
+a `muc-` key is the **Legal Library's jump list** (`jumpableSections` /
+`sectionPageIndex` in `legal-map.ts`, drawn by `LegalLibraryPanel.tsx`), which
+therefore still offers one `Mục 1` per document. That is the limit, it is
+unfixed, and it is two files rather than three.
+
+Measured over the rebuild: pass 3 opens **39 markers across five documents** --
+28 `Mục`, 6 `Phần`, 4 `Điều` and 1 `Chương`, in `luat-15-2023-qh15` (12),
+`nd-96-2023-nd-cp` (17), `qd-1868-2020` (6), `luat-51-2024-qh15` (3) and
+`tt-32-2023-tt-byt` (1) -- and **256 chunks change their `Location:`** (counted
+after normalising away the `(part k of n)` suffix this round removed, so a
+formatting change is not read as a relabelling). Every one of them moves from a
+container that does not contain them to the one that does.
+
+**One hazard this doubles, and it is not fixed.** A `Location:` that now opens
+`Mục 1 GIẤY PHÉP HOẠT ĐỘNG ... > Điều 48 ...` is text the advisor is instructed
+to repeat into the chat, and `haivn_eip`'s own `docRefs` config maps the word
+`Mục` (with `Section` and `Phần`) to the EIP document's `sec-N` anchors -- so a
+repeated legal Location can render a chip that scrolls the EIP text to its own
+Section 1, a cross-document mislink. Chunks whose `section` begins `Mục <digit>`
+go from 176 to 376 with this change; the hazard pre-existed for the 176 and was
+not examined when the rest were added. Roman-numeral containers (`Chương IV`,
+`Phụ lục I`) cannot match, which is why most labels are safe. The fix belongs in
+`doc-refs.ts` or in that config, not here.
 
 **The articles stop at the signature block.** What a Vietnamese instrument
 carries after it -- a promulgated plan, a technical guideline, a tariff
@@ -1556,6 +1789,59 @@ prefix from 169 chunks across five documents -- `nd-96-2023-nd-cp` 90,
 `qd-4026-2010` 1 (the no-map fallback, which gets the same rule) -- and not one
 of the 169 changed page.
 
+**A CHUNK CLAIMS ITS OWN PAGES, NOT ITS SECTION'S.** Until round 10 every chunk
+of a section carried that section's start page and `page_start == page_end` on
+all 2,209 chunks in the index, so `tt-40-2025-tt-byt`'s Phụ lục III spans PDF
+pages 172-301 and all 199 of its chunks cited 172. The claim was never
+impossible -- a chunk is at or after the page it names -- but it was coarse by
+construction, because there was no page evidence anywhere for a line in the
+middle of a section. There is now: `build-jump-maps.py` measures where each PDF
+page opens in the canonical text and writes it into the map as `pageBreaks`, and
+`page_lookup` / `page_range` here read a chunk's first and last lines off it.
+
+- **The section's map page stays the FLOOR**, and it clamps ONE end. It is the
+  curated number, confirmed by an exact n-gram against exactly one page, so it
+  keeps a section's first chunk on the page the map confirmed for it and covers
+  the chunks whose lines fall where no break could be placed. **What stops the
+  measurement running the other way is not this clamp** -- it is the uniqueness
+  and confirmed-section rules in `page_breaks` (see "Where the pages break").
+  Do not add a ceiling here to compensate for a measurement that overstates; fix
+  the measurement.
+- **1,094 of 2,211 chunks now name a page RANGE** (`readings.ts` already
+  rendered `pp. X-Y` and never had a chunk to render it for), the widest being
+  19 pages -- a `tt-05-2024-tt-byt` appendix chunk, in a document where 35 of 70
+  page breaks could be placed, so a wide range there is missing measurement
+  rather than a long chunk. tt-40's Phụ lục III chunks now run 172 to 301
+  instead of all citing 172. Against the committed index: 1,223 chunks start on
+  a LATER page than before, none earlier (`luat-51-2024-qh15` excluded, since
+  its chunk count moved 39 -> 41 and its ordinals no longer line up). **That
+  comparison is not a correctness check** and must not be reported as one: the
+  page it compares against is the coarse section page, so it can only ever show
+  understatement. The check that can fail is the one against the PDFs, in the
+  "Where the pages break" section above.
+- Spot-checked against the PDFs' own text layers -- the first ten normalised
+  tokens of a chunk on the page it names as `page_start`, its last ten on
+  `page_end`, all true: `tt-40-2025-tt-byt` #8 (pp. 5-6, `Điều 6`), #329
+  (172-175), #428 (223-224) and #527 (301); `nd-96-2023-nd-cp` #300 (229-230);
+  `luat-15-2023-qh15` #120 (62, `Điều 105`).
+- **Attached material gets real pages.** `annex_markers` still sets page 0 at an
+  attachment boundary -- an article's page must not carry into a document the
+  instrument merely promulgates -- but that now means "inherit nothing" rather
+  than "unknown", because the page breaks cover the attachment like any other
+  part of the file. Chunks with no page at all fall from 406 to 70: 44 in
+  `qd-4026-2010`, which has no map and no measured PDF, then
+  `tt-35-2016-tt-byt` 15, `qd-4531-2021` 8 and `qd-1740-2026` 3.
+- **A figure transcription is the curator's text, not the document's**, so it
+  has no lines in this file to measure and keeps its figure's section page at
+  both ends.
+- **A chunk whose own lines cannot be located keeps its section's page**, which
+  is the pre-round-10 behavior and the widest remaining understatement: about
+  100 chunks, most of them the later parts of a segment `split_long` overlapped,
+  so `locate`'s forward walk cannot find their first line again. Four of
+  `tt-40-2025-tt-byt`'s Phụ lục III chunks are printed around page 297 and cite
+  172 for it. Fixing that is a chunker question (give `split_long` the lines it
+  split on), not a page-evidence one.
+
 Measured end to end for the 2026-09-07 map change, HEAD to working tree, with
 chunks matched by the SHA-1 of their text so a re-split cannot be read as a
 move: 2,211 chunks to 2,209; **every page move in the corpus is in
@@ -1589,18 +1875,11 @@ document moved a page. Per-document chunk counts are unchanged everywhere except
   carrying the document and so never sees the preview copy or the navigation.
   `qd-4026-2010` has no `textSource` yet and is the remaining case.
 
-- **Every chunk of a section carries that SECTION's start page**, so a long
-  section's chunks all cite one page and the longer the section the further the
-  last chunk is from it. `tt-40-2025-tt-byt`'s Phụ lục III spans PDF pages
-  172-301 and all 199 of its chunks cite 172; its Phụ lục II spans 44-171 and
-  all 236 cite 44. The claim is never impossible -- a chunk is always at or
-  after the page it names, which is the invariant the drain fix above restored
-  -- but it is coarse, and it is coarse by construction: the map answers "which
-  page does this SECTION begin on?" and there is no page evidence anywhere in
-  this pipeline for a line in the middle of one. Fixing it means locating each
-  chunk in the PDF rather than inheriting its section's page, which is a new
-  measurement pass in `build-jump-maps.py`, not a change here. Do not paper over
-  it by widening `page_end`, which is set from the same single number.
+- ~~**Every chunk of a section carries that SECTION's start page.**~~ Fixed in
+  round 10, and fixed where this note said it had to be: a new measurement pass
+  in `build-jump-maps.py` (`page_breaks`), read here. See "What a chunk claims
+  about its page" above for the numbers. `page_end` is no longer set from the
+  same single number, which is what this note warned against papering over.
 - **Page precision follows map coverage, and some maps are thin.**
   `maps/qd-4531-2021.json` carries 3 sections for a 129 KB document -- its three
   articles and nothing else -- so its 3 article chunks sit on page 1 and its
@@ -1609,15 +1888,23 @@ document moved a page. Per-document chunk counts are unchanged everywhere except
   page of the nearest mapped section at or above it within the same article, and
   0 where nothing was mapped, so a thin map costs precision rather than
   correctness -- and the fix is more sections out of `build-jump-maps.py`.
-  `readings.ts` renders an unmapped chunk as `Location: p. 0`, which is honest
-  and reads oddly; suppressing it is a change to that shared file, so it belongs
-  to whoever next touches it, alongside the "assigned course readings" strings
-  below.
+  `readings.ts` prints no location line at all for a chunk with no page, which
+  is what it should do; the note that used to stand here saying it renders
+  `Location: p. 0` was already wrong when it was written -- that suppression
+  landed in `1eebde0`. With the page breaks in place only 70 chunks have no page
+  at all, 44 of them in `qd-4026-2010`.
 
-Also note the strings `readings.ts` wraps results in still say "assigned course
-readings", which is ppol5013's vocabulary reaching a legal advisor. It is
-cosmetic and it is in shared code, so it belongs to whoever next touches that
-file, not to a per-project workaround here.
+**The strings `readings.ts` wraps results in are project-neutral since round
+10**, and this paragraph used to say they were not. They said "the indexed
+course readings" and "the indexed course materials" to both corpora, so a legal
+advisor with nothing to return told a clinician that no passage in the indexed
+course readings answered them, and offered to point them at the week the topic
+was assigned. `formatSearchResults` now takes `scheduled`, which is the same one
+bit `searchReadingsTool` already branches on (`OpenIndex.hasWeeks`): a corpus
+with a class schedule keeps the sentence about the week, because that is the
+only claim in that text genuinely about a course rather than about a corpus, and
+an unscheduled one says "the indexed sources". One flag, already computed, no
+second notion of what kind of corpus this is.
 
 ## probe-facility-levels.mjs
 

@@ -238,7 +238,10 @@ app.options('/t/*', cors(corsOptions));
 app.use('/npj26', cors(corsOptions));
 app.options('/npj26/*', cors(corsOptions));
 
-app.use(express.json());
+// /npj26/load carries 100 cells of full bilingual transcripts, well past the 100kb default;
+// the route mounts its own parser, so the global one must skip it or it rejects first.
+const jsonBody = express.json();
+app.use((req, res, next) => (req.path === '/npj26/load' ? next() : jsonBody(req, res, next)));
 app.use(cookieParser());
 
 // Multi-tenant project routing via X-Project header

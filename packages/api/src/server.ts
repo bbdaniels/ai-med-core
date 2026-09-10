@@ -590,16 +590,22 @@ app.post('/npj26/:token/:cellId', npj26Limiter, async (req, res) => {
     return res.status(400).json({ error: 'Invalid review code' });
   }
 
+  // code is a smallint 1-4: 1 Vietnamese, 2 English, 3 Both, 4 Neither.
   const { code, turn_relevant: turnRelevant, comment } = req.body ?? {};
   const codeNum = typeof code === 'number' ? code : parseInt(String(code), 10);
   if (!Number.isInteger(codeNum) || codeNum < 1 || codeNum > 4) {
-    return res.status(400).json({ error: 'code must be an integer 1-4' });
+    return res.status(400).json({
+      error: 'code must be an integer 1-4 (1 Vietnamese, 2 English, 3 Both, 4 Neither)',
+    });
   }
   // Only a highlighted cell asks the turn question, so null is a real value here
   // and must survive as null rather than collapse to false.
   const turn = turnRelevant === null || turnRelevant === undefined
     ? null
     : Boolean(turnRelevant);
+  // The reviewer form no longer collects a comment, so this is null in practice.
+  // The column stays, and the parse stays, so older clients and any future
+  // free-text field write through the same path.
   const commentText = typeof comment === 'string' && comment.trim()
     ? comment.trim().slice(0, 4000)
     : null;

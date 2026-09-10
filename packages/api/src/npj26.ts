@@ -374,11 +374,12 @@ const EXPORT_COLUMNS = [
   'eng_turn_index', 'code', 'code_label', 'turn_relevant', 'comment', 'created_at',
 ] as const;
 
+// Codes stay smallint 1-4; the meaning is the language(s) in which the item counts.
 const CODE_LABELS: Record<number, string> = {
-  1: 'Vietnamese supports item; English dropped or garbled it',
-  2: 'Present in both languages but does not meet the item',
-  3: 'Nothing in the Vietnamese supports this item',
-  4: 'Cannot tell',
+  1: 'Vietnamese',
+  2: 'English',
+  3: 'Both',
+  4: 'Neither',
 };
 
 function csvCell(v: unknown): string {

@@ -553,7 +553,8 @@ app.get('/npj26/export', async (req, res) => {
   }
 });
 
-app.post('/npj26/load', async (req, res) => {
+// Cells carry full bilingual transcripts; 100 cells exceed express.json()'s 100kb default.
+app.post('/npj26/load', express.json({ limit: '20mb' }), async (req, res) => {
   const { passphrase, cells } = req.body ?? {};
   if (!npj26AdminOk(passphrase)) {
     return res.status(401).json({ error: 'Invalid passphrase' });

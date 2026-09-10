@@ -1924,6 +1924,24 @@ export async function getAllProjectSettings(key: string): Promise<Array<{ projec
   return [];
 }
 
+/**
+ * Raw handles for feature modules that own their own global tables.
+ *
+ * Everything above is project-scoped content, keyed by the AsyncLocalStorage
+ * prefix. A few tables are deliberately global instead (`qa_log`, and the
+ * `dspverify_*` pair in npj26.ts): they belong to one study, not to a project,
+ * and no X-Project header ever reaches their routes. Rather than copy the
+ * sqlite/postgres branch into every such module -- two implementations of one
+ * job -- they take the handles from here and branch once, in one place.
+ */
+export function getDbHandles(): {
+  dbType: 'sqlite' | 'postgres' | null;
+  sqlite: Database.Database | null;
+  pg: pg.Pool | null;
+} {
+  return { dbType, sqlite: db, pg: pgPool };
+}
+
 // Close database connections
 export function closeDatabase() {
   if (db) {

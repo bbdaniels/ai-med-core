@@ -58,6 +58,15 @@ import {
   QA_LOG_MAX_LIMIT,
 } from './database.js';
 import {
+  ensureNpj26Tables,
+  getNpj26Progress,
+  saveNpj26Response,
+  npj26CellExists,
+  loadNpj26Cells,
+  exportNpj26Csv,
+  TOKEN_RE as NPJ26_TOKEN_RE,
+} from './npj26.js';
+import {
   openReadingsIndex,
   searchReadings,
   formatSearchResults,
@@ -222,6 +231,12 @@ app.use('/api', cors(corsOptions));
 app.options('/api/*', cors(corsOptions));
 app.use('/t', cors(corsOptions));
 app.options('/t/*', cors(corsOptions));
+// npj26 review tool. Its page is served from GitHub Pages (ai-med.live) and
+// calls this API cross-origin, so it needs the same allowlist the /api routes
+// get -- it is deliberately NOT under /api, which would put it behind the
+// X-Project middleware for tables that are global by design.
+app.use('/npj26', cors(corsOptions));
+app.options('/npj26/*', cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
@@ -309,6 +324,8 @@ const loginLimiter = rateLimit({
 try {
   await initDatabase();
   console.log('✅ Database initialization complete');
+  await ensureNpj26Tables();
+  console.log('✅ npj26 verification tables ready');
 } catch (error) {
   console.error('❌ Database initialization failed:', error);
   console.error('App will continue but admin features will not work');
@@ -490,6 +507,113 @@ app.post('/api/access', accessLimiter, async (req, res) => {
   const token = jwt.sign({ role: 'course-access', project: slug }, JWT_SECRET,
                          { expiresIn: ACCESS_TOKEN_EXPIRY });
   return res.json({ success: true, token, required: true });
+});
+
+// ── npj26 disagreement verification ──────────────────────────────────
+//
+// A bilingual clinician opens ai-med.live/npj26/<CODE> and works one checklist
+// cell at a time. The code is an opaque reviewer token issued out of band; there
+// is no login, so the token IS the identity and the only thing that scopes a
+// reviewer's answers. Nothing here is project-scoped, which is why these routes
+// sit outside /api and its X-Project middleware.
+//
+// `bucket` and `match_method` are the study's sampling and matching labels. They
+// would tell a reviewer which answer the analysis expects, so the reviewer
+// serializer in npj26.ts drops them and they leave only via the admin export.
+
+const npj26Limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { error: 'Too many requests, please slow down' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const npj26AdminOk = (supplied: unknown): boolean => {
+  const expected = process.env.ADMIN_PASSPHRASE;
+  return typeof expected === 'string' && expected.length > 0
+    && typeof supplied === 'string' && supplied === expected;
+};
+
+// Admin routes are declared before the /:token routes so that a literal segment
+// ("export", "load") can never be read as a reviewer token.
+
+app.get('/npj26/export', async (req, res) => {
+  if (!npj26AdminOk(req.query.passphrase)) {
+    return res.status(401).json({ error: 'Invalid passphrase' });
+  }
+  try {
+    const csv = await exportNpj26Csv();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="npj26-responses.csv"');
+    return res.send(csv);
+  } catch (error) {
+    console.error('npj26 export failed:', error);
+    return res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+app.post('/npj26/load', async (req, res) => {
+  const { passphrase, cells } = req.body ?? {};
+  if (!npj26AdminOk(passphrase)) {
+    return res.status(401).json({ error: 'Invalid passphrase' });
+  }
+  if (!Array.isArray(cells) || cells.length === 0) {
+    return res.status(400).json({ error: 'cells must be a non-empty array' });
+  }
+  try {
+    const loaded = await loadNpj26Cells(cells);
+    console.log(`npj26: loaded ${loaded} cells (replacing all)`);
+    return res.json({ success: true, loaded });
+  } catch (error) {
+    console.error('npj26 load failed:', error);
+    return res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.get('/npj26/:token/next', npj26Limiter, async (req, res) => {
+  const { token } = req.params;
+  if (!NPJ26_TOKEN_RE.test(token)) {
+    return res.status(400).json({ error: 'Invalid review code' });
+  }
+  try {
+    return res.json(await getNpj26Progress(token));
+  } catch (error) {
+    console.error('npj26 next failed:', error);
+    return res.status(500).json({ error: 'Could not load the next item' });
+  }
+});
+
+app.post('/npj26/:token/:cellId', npj26Limiter, async (req, res) => {
+  const { token, cellId } = req.params;
+  if (!NPJ26_TOKEN_RE.test(token)) {
+    return res.status(400).json({ error: 'Invalid review code' });
+  }
+
+  const { code, turn_relevant: turnRelevant, comment } = req.body ?? {};
+  const codeNum = typeof code === 'number' ? code : parseInt(String(code), 10);
+  if (!Number.isInteger(codeNum) || codeNum < 1 || codeNum > 4) {
+    return res.status(400).json({ error: 'code must be an integer 1-4' });
+  }
+  // Only a highlighted cell asks the turn question, so null is a real value here
+  // and must survive as null rather than collapse to false.
+  const turn = turnRelevant === null || turnRelevant === undefined
+    ? null
+    : Boolean(turnRelevant);
+  const commentText = typeof comment === 'string' && comment.trim()
+    ? comment.trim().slice(0, 4000)
+    : null;
+
+  try {
+    if (!(await npj26CellExists(cellId))) {
+      return res.status(404).json({ error: 'Unknown item' });
+    }
+    await saveNpj26Response(token, cellId, codeNum, turn, commentText);
+    return res.json(await getNpj26Progress(token));
+  } catch (error) {
+    console.error('npj26 submit failed:', error);
+    return res.status(500).json({ error: 'Could not save your answer' });
+  }
 });
 
 // Serve static files from dist/client in production (unless SERVE_FRONTEND=false)

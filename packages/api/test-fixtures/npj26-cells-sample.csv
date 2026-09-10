@@ -1,0 +1,34 @@
+cell_id,display_order,bucket,case_id,condition,variable,domain,item_text,viet_turn_index,viet_turn_text,eng_turn_index,eng_turn_text,viet_transcript,eng_transcript,has_highlight,match_method
+cell_0001,1,viet_only,VN-014,tb,q_cxr,Workup,"Ordered a chest X-ray or sputum test",5,"Bác sĩ: Tôi sẽ cho anh đi chụp phim phổi và làm xét nghiệm đờm nhé.",5,"Doctor: I will send you for a test.","Bác sĩ: Chào anh, hôm nay anh thấy trong người thế nào?
+Bệnh nhân: Dạ, em ho đã hơn hai tuần rồi ạ.
+Bác sĩ: Anh có sốt về chiều không?
+Bệnh nhân: Có ạ, chiều nào em cũng thấy hâm hấp sốt, người mệt mỏi.
+Bác sĩ: Anh có sụt cân trong thời gian gần đây không?
+Bác sĩ: Tôi sẽ cho anh đi chụp phim phổi và làm xét nghiệm đờm nhé.
+Bệnh nhân: Vâng ạ, em cảm ơn bác sĩ.","Doctor: Hello, how have you been feeling?
+Patient: I have been coughing for more than two weeks.
+Doctor: Do you have a fever in the afternoons?
+Patient: Yes, every afternoon I feel feverish and tired.
+Doctor: Have you lost any weight recently?
+Doctor: I will send you for a test.
+Patient: Thank you, doctor.",TRUE,exact_turn
+cell_0002,2,eng_only,VN-027,diarrhea,q_ors,Treatment,"Advised oral rehydration solution (ORS)",3,"Bác sĩ: Chị nhớ pha oresol cho cháu uống sau mỗi lần đi ngoài nhé.",,,"Bác sĩ: Cháu bị đi ngoài mấy ngày rồi chị?
+Người nhà: Dạ hai ngày rồi ạ, đi phân lỏng nhiều lần.
+Bác sĩ: Cháu có nôn hay sốt không ạ?
+Bác sĩ: Chị nhớ pha oresol cho cháu uống sau mỗi lần đi ngoài nhé.
+Người nhà: Vâng, em hiểu rồi ạ.","Doctor: How many days has the child had diarrhoea?
+Caregiver: Two days now, loose stools many times.
+Doctor: Any vomiting or fever?
+Doctor: Please keep giving fluids at home.
+Caregiver: Yes, I understand.",TRUE,fuzzy_turn
+cell_0003,3,both_disagree,VN-031,angina,q_referral,Referral,"Referred the patient to a higher-level facility",,,,,"Bác sĩ: Bác thấy đau ngực khi nào ạ?
+Bệnh nhân: Lúc tôi leo cầu thang thì tức ngực, nghỉ một lúc thì đỡ.
+Bác sĩ: Bác có tiền sử huyết áp cao không?
+Bệnh nhân: Có, tôi uống thuốc huyết áp mấy năm nay rồi.
+Bác sĩ: Bác nên lên tuyến trên khám tim mạch cho chắc chắn.
+Bệnh nhân: Vâng, tôi sẽ thu xếp đi ạ.","Doctor: When do you get the chest pain?
+Patient: When I climb stairs I feel tightness, it eases with rest.
+Doctor: Do you have a history of high blood pressure?
+Patient: Yes, I have taken blood pressure medicine for years.
+Doctor: You should go up to the hospital for a heart check.
+Patient: Yes, I will arrange it.",FALSE,no_match

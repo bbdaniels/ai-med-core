@@ -8,6 +8,7 @@ import { readdirSync } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
+import { fillTalkPublicUrl } from '../../shared/src/talk-url.js';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import {
@@ -252,8 +253,16 @@ app.get('/api/talk-manifest/:slug', talkManifestCors, async (req, res) => {
     return res.json({ papers: [] });
   }
   const manifest = await readTalkManifest(slug, config.talkManifest);
+  // talkPublicUrl projects: each paper also carries its canonical public link
+  // (the author's page with that paper's popout open), filled server side.
+  const template = typeof config.talkPublicUrl === 'string' ? config.talkPublicUrl : '';
+  const papers = template
+    ? manifest.papers.map(p => (p && typeof p === 'object'
+      ? { ...p, publicUrl: fillTalkPublicUrl(template, (p as { doi?: string | null }).doi) }
+      : p))
+    : manifest.papers;
   res.set('Cache-Control', 'public, max-age=300');
-  return res.json(manifest);
+  return res.json({ papers });
 });
 
 // Apply CORS only to API-style routes
@@ -3069,6 +3078,9 @@ app.get('/api/config', async (_req, res) => {
     // ?paper=<DOI> against /api/talk-manifest/<slug>). Only the flag: the path
     // is a server-side detail.
     let talkManifest = false;
+    // The public page that fronts a talkManifest project (URL template with
+    // {slug}/{doi}); a top-level visit is redirected there. Empty when unset.
+    let talkPublicUrl = '';
     // Optional document-reference linking config (see doc-refs.ts on the frontend).
     // Passed through verbatim when present; absent for projects that don't opt in.
     let docRefs: unknown = null;
@@ -3085,6 +3097,7 @@ app.get('/api/config', async (_req, res) => {
       requireAccessCode = projectConfig.requireAccessCode || false;
       chatOnly = projectConfig.chatOnly || false;
       talkManifest = typeof projectConfig.talkManifest === 'string' && projectConfig.talkManifest !== '';
+      talkPublicUrl = typeof projectConfig.talkPublicUrl === 'string' ? projectConfig.talkPublicUrl : '';
       if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
         docRefs = projectConfig.docRefs;
       }
@@ -3107,6 +3120,7 @@ app.get('/api/config', async (_req, res) => {
       requireAccessCode,
       chatOnly,
       talkManifest,
+      talkPublicUrl,
       docRefs,
     });
   } catch (error) {

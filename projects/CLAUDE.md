@@ -78,6 +78,7 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
   "formless": false,                // Skip the Kobo form tab entirely (Q&A chatbots)
   "enableFollowups": false,         // Inline AI-suggested follow-up questions above chat input
   "talkManifest": "projects/papers/manifest.json", // Optional — public paper list + public_chat kill switch (see below)
+  "talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}", // Optional — the public page that fronts a talkManifest project (see below)
   "docRefs": {                      // Optional — linkify document references in chat answers
     "tabId": "eip-doc",             // id of the tab the links point into (its `document` edition)
     "patterns": [                   // surface words -> anchor prefix (the {#sec-…}/{#app-…} ids in the document)
@@ -135,6 +136,8 @@ It is served without auth, to any origin, at `GET /api/talk-manifest/<slug>`. De
 - **Off**: the manifest route returns `{"papers": []}` (`no-store`), so the external site renders no buttons, and `/api/chat`, `/api/tts`, `/api/realtime/session` and `/api/grade-session` answer 503 `{code: "public_chat_disabled"}`, so bookmarked chat links stop working at once. The frontend shows that error text as the assistant reply.
 
 Unknown slugs and projects without `talkManifest` get 404 from the manifest route; projects without `talkManifest` are untouched by the switch. A malformed manifest file is logged and served as `{"papers": []}`, never a 500.
+
+**`talkPublicUrl`: the author's page is the only public front door.** The app is the backend behind an iframe popout on another site and must not act as a public landing page itself. A project that declares `"talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}"` redirects every top-level visit (`window.self === window.top`) with `location.replace`: a link naming a manifest paper (`?paper=<DOI>` or `?vignette=<key>`) goes to the template filled for that paper, and any other visit goes to the template with everything from `#` stripped. Inside an iframe nothing changes. `{slug}` is the DOI lower-cased with every run outside `[a-z0-9]` collapsed to `-` and trimmed, exactly as orcid-display's `slugForWork` builds its `#talk-doi-<slug>` ids; `{doi}` is the URL-encoded DOI. The manifest route then also returns each paper's filled `publicUrl`, so any consumer can link canonically. The slug and template fill live in one place, `packages/shared/src/talk-url.ts`, imported by both the API and `packages/frontend-chat/src/talk-paper.ts` (checks: `npx tsx packages/frontend-chat/src/talk-paper.check.ts`). The redirect is skipped when the page is served from `localhost`, `127.0.0.1` or `[::1]`, so a dev server still renders top-level in a plain tab.
 
 ## Private content (files kept out of git)
 

@@ -18,7 +18,7 @@ import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
 import { type LegalDocMap, sectionPageIndex } from './legal-map';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
-import { type TalkPaper, requestedVignette } from './talk-paper';
+import { type TalkPaper, requestedVignette, publicRedirectUrl } from './talk-paper';
 
 // Heavy components are code-split so their dependencies stay out of the entry
 // chunk: NativeKoboForm pulls the whole enketo-core/enketo-transformer/jquery
@@ -436,6 +436,9 @@ function ChatInterface() {
   // being dropped silently into whichever paper happens to be first.
   const [talkManifestSlug, setTalkManifestSlug] = useState<string | null>(null);
   const [talkPapers, setTalkPapers] = useState<TalkPaper[]>([]);
+  // talkPublicUrl projects (project.json): the author's page is the only public
+  // front door. A top-level visit leaves for it; only the popout iframe stays.
+  const [talkPublicUrl, setTalkPublicUrl] = useState('');
   // The vignette the URL asks for: undefined while it is still being resolved
   // (the manifest fetch), null when the URL names none, else the key.
   const [urlVignette, setUrlVignette] = useState<string | null | undefined>(undefined);
@@ -505,6 +508,9 @@ function ChatInterface() {
   // reader came for one paper. It becomes a Close control that asks the host
   // page to dismiss the panel; the host listens for exactly this message.
   const embeddedInFrame = useMemo(() => { try { return window.self !== window.top; } catch { return true; } }, []);
+  // The public-page redirect is a production rule. A dev server on localhost
+  // keeps rendering top-level so the project can be worked on in a plain tab.
+  const isLocalDevHost = useMemo(() => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname), []);
   const closeEmbeddingFrame = useCallback(() => {
     try { window.parent.postMessage({ type: 'orcid-display:talk-close' }, '*'); } catch { /* not embedded */ }
   }, []);
@@ -791,6 +797,7 @@ function ChatInterface() {
           const slug = (typeof data.tablePrefix === 'string' ? data.tablePrefix : '').replace(/_+$/, '');
           setTalkManifestSlug(slug || PROJECT || null);
         }
+        if (typeof data.talkPublicUrl === 'string') setTalkPublicUrl(data.talkPublicUrl);
         if (data.enableFeedback === false) setFeedbackEnabled(false);
         if (data.docRefs && typeof data.docRefs === 'object' && typeof data.docRefs.tabId === 'string') {
           setDocRefs(data.docRefs as DocRefsConfig);
@@ -872,12 +879,26 @@ function ChatInterface() {
         const papers: TalkPaper[] = Array.isArray(data?.papers)
           ? data.papers.filter((p: TalkPaper) => p && typeof p.vignette === 'string' && typeof p.title === 'string')
           : [];
+        // Not framed: leave for the public page before anything past the loading
+        // state renders. urlVignette stays undefined, so no vignette loads and the
+        // picker never mounts while the browser navigates away.
+        if (talkPublicUrl && !embeddedInFrame && !isLocalDevHost) {
+          window.location.replace(publicRedirectUrl(talkPublicUrl, search, papers));
+          return;
+        }
         setTalkPapers(papers);
         setUrlVignette(requestedVignette(search, papers));
       })
-      .catch(() => { if (!cancelled) setUrlVignette(requestedVignette(search, [])); });
+      .catch(() => {
+        if (cancelled) return;
+        if (talkPublicUrl && !embeddedInFrame && !isLocalDevHost) {
+          window.location.replace(publicRedirectUrl(talkPublicUrl, search, []));
+          return;
+        }
+        setUrlVignette(requestedVignette(search, []));
+      });
     return () => { cancelled = true; };
-  }, [configLoaded, talkManifestSlug]);
+  }, [configLoaded, talkManifestSlug, talkPublicUrl, embeddedInFrame]);
 
   // skipWelcome projects boot straight into chat once languages are loaded —
   // the welcome page's two jobs (language choice, consent notice) live in
@@ -1593,6 +1614,11 @@ function ChatInterface() {
   useEffect(() => {
     scrollListToBottom(messagesEndRef.current);
   }, [messages, isLoading]);
+
+  // talkPublicUrl project opened top-level: the manifest effect is sending the
+  // browser to the public page. Render nothing meanwhile, so neither the chat
+  // shell nor the picker flashes first.
+  if (talkPublicUrl && !embeddedInFrame) return null;
 
   // Access gate. Rendered instead of the app, after every hook above has run, so
   // the hook order is identical whether or not the gate is showing. It waits for

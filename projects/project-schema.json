@@ -178,6 +178,11 @@
       "type": "string",
       "description": "Repo-relative path to a JSON manifest {\"papers\": [{\"doi\", \"title\", \"vignette\"}]} served publicly at GET /api/talk-manifest/<slug> for external 'Talk to this paper' buttons. Declaring it puts the project behind the public_chat kill switch (default off): when off the manifest is empty and /api/chat, /api/tts, /api/realtime/session and /api/grade-session return 503 code public_chat_disabled."
     },
+    "talkPublicUrl": {
+      "type": "string",
+      "pattern": "^https://",
+      "description": "Public front door for a talkManifest project: a URL template on the author's own site, e.g. https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}. {slug} is the DOI lower-cased with every run outside [a-z0-9] replaced by '-' and trimmed (orcid-display's slugForWork); {doi} is the URL-encoded DOI. Opened top-level (not in an iframe), the frontend redirects there: filled for the paper ?paper=/?vignette= names, else with the fragment stripped. The talk manifest route adds each paper's filled publicUrl."
+    },
     "deployment": {
       "type": "object",
       "additionalProperties": false,

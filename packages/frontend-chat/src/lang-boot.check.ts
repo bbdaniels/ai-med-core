@@ -17,4 +17,12 @@ assert.equal(resolveInitialLanguage('', null, []), 'en');
 // 6. other params don't confuse it
 assert.equal(resolveInitialLanguage('?values=d%5Buid%5D%3Dx&lang=vi', null, []), 'vi');
 
-console.log('lang-boot checks: 8/8 passed');
+// 7. with the project's list: each step must be offered, else fall through
+const L = ['en', 'es', 'fr', 'vi'];
+assert.equal(resolveInitialLanguage('?lang=vi', 'fr', ['es'], L), 'vi');
+assert.equal(resolveInitialLanguage('?lang=th', 'fr', ['es'], L), 'fr');
+assert.equal(resolveInitialLanguage('?lang=th', 'de', ['de-DE', 'es-MX'], L), 'es');
+assert.equal(resolveInitialLanguage('', null, ['de-DE', 'ja'], L), 'en');
+assert.equal(resolveInitialLanguage('', null, [], ['vi', 'en']), 'vi');
+
+console.log('lang-boot checks: 13/13 passed');

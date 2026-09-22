@@ -157,7 +157,7 @@ function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullabl
 - `t('feedback', 'explored')` → "Topics you explored well:" or "Sujets que vous avez bien explorés :"
 
 **Language State:**
-- Selected language code stored in localStorage (`lang_code`); initial value resolves `?lang=` URL param → saved → browser locale → `en` (`src/lang-boot.ts`), validated against the project's languages by the auto-correct effect
+- Selected language code stored in localStorage (`lang_code`); initial value resolves `?lang=` URL param → saved → browser locale → `en` (`src/lang-boot.ts`); once the project's languages load, the same chain is re-run against that list, so each step counts only if the project offers it and the last resort is the project's first language. Only a validated code is written back to `lang_code`. A language switch before the first question also re-localizes the fixed opening message
 - Language selector on welcome screen (only shown if >1 language available)
 - `skipWelcome` projects (haivn_eip) have no welcome page, so the two jobs the welcome screen does are split:
   - Both live in `.chat-topbar`, the row above the conversation: switcher on the left, notices on the right. The whole row is gated on `skipWelcome`, so projects that show the welcome screen render nothing there and are byte-identical to before.

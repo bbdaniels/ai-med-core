@@ -73,6 +73,100 @@ const FIND_UI: Record<string, {
     hideOutline: 'Ẩn mục lục — mở rộng tài liệu',
     backToTop: 'Về đầu trang',
     returnBack: 'Quay lại vị trí trước',
+  },  es: {
+    placeholder: "Buscar en este PDF",
+    prev: "Coincidencia anterior",
+    next: "Coincidencia siguiente",
+    clear: "Borrar búsqueda",
+    noMatch: "sin coincidencias",
+    reading: "Leyendo el documento…",
+    noText: "Este documento escaneado no tiene texto en el que buscar.",
+    loading: "Cargando el documento…",
+    failed: "No se pudo mostrar el PDF aquí.",
+    openNewTab: "Abrirlo en una pestaña nueva ↗",
+    outline: "Índice",
+    expand: "Mostrar subsecciones",
+    collapse: "Ocultar subsecciones",
+    showOutline: "Mostrar índice",
+    hideOutline: "Ocultar índice y ampliar el documento",
+    backToTop: "Volver al inicio",
+    returnBack: "Volver a donde estaba",
+  },
+  fr: {
+    placeholder: "Rechercher dans ce PDF",
+    prev: "Occurrence précédente",
+    next: "Occurrence suivante",
+    clear: "Effacer la recherche",
+    noMatch: "aucune occurrence",
+    reading: "Lecture du document…",
+    noText: "Ce document numérisé ne contient pas de texte consultable.",
+    loading: "Chargement du document…",
+    failed: "Impossible d’afficher le PDF ici.",
+    openNewTab: "L’ouvrir dans un nouvel onglet ↗",
+    outline: "Sommaire",
+    expand: "Afficher les sous-sections",
+    collapse: "Masquer les sous-sections",
+    showOutline: "Afficher le sommaire",
+    hideOutline: "Masquer le sommaire et élargir le document",
+    backToTop: "Retour en haut",
+    returnBack: "Revenir où vous étiez",
+  },
+  pt: {
+    placeholder: "Pesquisar neste PDF",
+    prev: "Resultado anterior",
+    next: "Próximo resultado",
+    clear: "Limpar pesquisa",
+    noMatch: "nenhum resultado",
+    reading: "Lendo o documento…",
+    noText: "Este documento digitalizado não tem texto pesquisável.",
+    loading: "Carregando o documento…",
+    failed: "Não foi possível exibir o PDF aqui.",
+    openNewTab: "Abrir em nova aba ↗",
+    outline: "Sumário",
+    expand: "Mostrar subseções",
+    collapse: "Ocultar subseções",
+    showOutline: "Mostrar sumário",
+    hideOutline: "Ocultar sumário e ampliar o documento",
+    backToTop: "Voltar ao topo",
+    returnBack: "Voltar para onde estava",
+  },
+  zh: {
+    placeholder: "在此 PDF 中搜索",
+    prev: "上一个匹配",
+    next: "下一个匹配",
+    clear: "清除搜索",
+    noMatch: "无匹配结果",
+    reading: "正在读取文档…",
+    noText: "此扫描文档没有可搜索的文字。",
+    loading: "正在加载文档…",
+    failed: "无法在此显示 PDF。",
+    openNewTab: "在新标签页中打开 ↗",
+    outline: "目录",
+    expand: "显示子章节",
+    collapse: "隐藏子章节",
+    showOutline: "显示目录",
+    hideOutline: "隐藏目录，加宽文档",
+    backToTop: "返回顶部",
+    returnBack: "返回原位置",
+  },
+  hi: {
+    placeholder: "इस PDF में खोजें",
+    prev: "पिछला परिणाम",
+    next: "अगला परिणाम",
+    clear: "खोज साफ़ करें",
+    noMatch: "कोई परिणाम नहीं",
+    reading: "दस्तावेज़ पढ़ा जा रहा है…",
+    noText: "इस स्कैन किए गए दस्तावेज़ में खोजने योग्य पाठ नहीं है।",
+    loading: "दस्तावेज़ लोड हो रहा है…",
+    failed: "PDF यहाँ नहीं दिखाया जा सका।",
+    openNewTab: "इसे नए टैब में खोलें ↗",
+    outline: "विषय-सूची",
+    expand: "उप-खंड दिखाएँ",
+    collapse: "उप-खंड छिपाएँ",
+    showOutline: "विषय-सूची दिखाएँ",
+    hideOutline: "विषय-सूची छिपाएँ और दस्तावेज़ चौड़ा करें",
+    backToTop: "ऊपर जाएँ",
+    returnBack: "पिछली जगह पर लौटें",
   },
 };
 
@@ -538,11 +632,25 @@ type OutlineUI = (typeof FIND_UI)[string];
  * either, and no file this viewer draws currently exercises this function. It is
  * cheap insurance against the next registry entry, not a live fix.
  */
+/**
+ * LaTeX-built PDFs (hyperref without \texorpdfstring) can ship bookmark titles
+ * carrying the raw TeX macro `\numberline{IV}Discussion`; pdf.js hands the
+ * string back verbatim, and the backslash-n even renders as a line break. Turn
+ * the macro into its visible number and drop any other stray control sequence.
+ */
+function cleanOutlineTitle(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .replace(/\\numberline\s*\{([^}]*)\}\s*/g, '$1 ')
+    .replace(/\\[A-Za-z]+\s*(\{[^}]*\})?/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function pruneOutline(nodes: OutlineNode[] | null | undefined): OutlineNode[] {
   const out: OutlineNode[] = [];
   for (const node of nodes ?? []) {
     const kids = pruneOutline(node.items);
-    const title = node.title?.trim();
+    const title = cleanOutlineTitle(node.title);
     if (title) out.push({ ...node, title, items: kids });
     else out.push(...kids);
   }

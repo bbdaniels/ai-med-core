@@ -237,6 +237,11 @@ function resolveI18n(val: TabLabel | undefined, lang: string): string {
 const PDF_TAB_UI: Record<string, { openInNewTab: string }> = {
   en: { openInNewTab: 'Open in new tab' },
   vi: { openInNewTab: 'Mở trong tab mới' },
+  es: { openInNewTab: 'Abrir en una pestaña nueva' },
+  fr: { openInNewTab: 'Ouvrir dans un nouvel onglet' },
+  pt: { openInNewTab: 'Abrir em nova aba' },
+  zh: { openInNewTab: '在新标签页中打开' },
+  hi: { openInNewTab: 'नए टैब में खोलें' },
 }
 
 // The Text/PDF control on a merged document tab. Same wording as the Legal
@@ -246,6 +251,11 @@ const PDF_TAB_UI: Record<string, { openInNewTab: string }> = {
 const DUAL_VIEW_UI: Record<string, { group: string; pdf: string; text: string }> = {
   en: { group: 'View', pdf: 'PDF', text: 'Text' },
   vi: { group: 'Xem', pdf: 'PDF', text: 'Văn bản' },
+  es: { group: 'Ver', pdf: 'PDF', text: 'Texto' },
+  fr: { group: 'Affichage', pdf: 'PDF', text: 'Texte' },
+  pt: { group: 'Ver', pdf: 'PDF', text: 'Texto' },
+  zh: { group: '查看', pdf: 'PDF', text: '文本' },
+  hi: { group: 'देखें', pdf: 'PDF', text: 'पाठ' },
 }
 
 // The secondary affordance on a document-reference chip. The chip itself opens
@@ -253,6 +263,11 @@ const DUAL_VIEW_UI: Record<string, { group: string; pdf: string; text: string }>
 const DOC_REF_UI: Record<string, { text: string; openPdf: string; openText: string }> = {
   en: { text: 'Text', openPdf: 'Open in the PDF', openText: 'Open in the text' },
   vi: { text: 'Văn bản', openPdf: 'Mở trong bản PDF', openText: 'Mở trong toàn văn' },
+  es: { text: 'Texto', openPdf: 'Abrir en el PDF', openText: 'Abrir en el texto' },
+  fr: { text: 'Texte', openPdf: 'Ouvrir dans le PDF', openText: 'Ouvrir dans le texte' },
+  pt: { text: 'Texto', openPdf: 'Abrir no PDF', openText: 'Abrir no texto' },
+  zh: { text: '文本', openPdf: '在 PDF 中打开', openText: '在文本中打开' },
+  hi: { text: 'पाठ', openPdf: 'PDF में खोलें', openText: 'पाठ में खोलें' },
 }
 
 // A PDF tab's page map lives beside the PDF it maps, under the same base name:
@@ -733,21 +748,25 @@ function ChatInterface() {
     else if (title) document.title = title;
   }, [langs, selectedLanguageCode, talkManifestSlug, talkPapers, selectedVignetteKey]);
 
-  // Persist language selection
-  useEffect(() => {
-    try { localStorage.setItem('lang_code', selectedLanguageCode) } catch {}
-  }, [selectedLanguageCode]);
-
-  // Auto-correct language code if it doesn't exist in the loaded languages
+  // Once the project's languages load, validate the boot candidate against them.
+  // An unoffered code is re-resolved through the same chain WITH the list
+  // (?lang= > saved > browser > first language), so e.g. an unsupported ?lang=
+  // still honors the saved choice instead of jumping straight to the first
+  // language. Only a validated code is persisted: writing the raw boot
+  // candidate would overwrite the saved choice before it could be consulted.
   useEffect(() => {
     if (!langs || !langs.languages || langs.languages.length === 0) return;
-    
-    const codeExists = langs.languages.some((l: LanguageDef) => l.code === selectedLanguageCode);
-    if (!codeExists && langs.languages.length > 0) {
-      // Current code not found, switch to first available language
-      console.log(`Language code '${selectedLanguageCode}' not found, switching to '${langs.languages[0].code}'`);
-      setSelectedLanguageCode(langs.languages[0].code);
+    const codes = langs.languages.map((l: LanguageDef) => l.code);
+    if (codes.includes(selectedLanguageCode)) {
+      try { localStorage.setItem('lang_code', selectedLanguageCode) } catch {}
+      return;
     }
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('lang_code') } catch {}
+    const next = resolveInitialLanguage(
+      window.location.search, saved, navigator.languages ?? [navigator.language], codes);
+    console.log(`Language code '${selectedLanguageCode}' not offered, switching to '${next}'`);
+    setSelectedLanguageCode(next);
   }, [langs, selectedLanguageCode]);
 
   // Reload form when UI language changes (only after start)
@@ -1161,6 +1180,25 @@ function ChatInterface() {
   }, [formSubmitted]);
 
   // No persistence for ordered progress; always start from the first vignette per session
+
+  // A language switch before the reader's first question re-localizes the
+  // project's fixed opening message, which was placed in the language active
+  // when the conversation began. Only a lone opening message that matches one of
+  // the project's own openingMessage strings is replaced, so an LLM greeting or
+  // a conversation already under way is never rewritten.
+  useEffect(() => {
+    if (!langs?.ui) return;
+    const openings = new Set(Object.values(langs.ui)
+      .map(u => (u?.chat as Record<string, unknown> | undefined)?.openingMessage)
+      .filter((m): m is string => typeof m === 'string' && m.trim() !== '')
+      .map(m => m.trim()));
+    const langChat = (langs.ui[selectedLanguageCode]?.chat ?? langs.ui['en']?.chat ?? {}) as Record<string, unknown>;
+    const next = typeof langChat.openingMessage === 'string' ? langChat.openingMessage.trim() : '';
+    if (!next) return;
+    setMessages(prev => (prev.length === 1 && prev[0].role === 'assistant'
+      && prev[0].content !== next && openings.has(prev[0].content))
+      ? [{ ...prev[0], content: next }] : prev);
+  }, [langs, selectedLanguageCode]);
 
   const initializeConversation = async () => {
     if (!selectedVignetteKey) return;

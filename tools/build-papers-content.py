@@ -104,14 +104,34 @@ VERSION_LABEL = {
     "wp": "the working paper",
     "proof": "the journal's galley proof, effectively identical to the published version",
 }
+# The PDF tab's label, per interface language. Keep one entry per language in
+# languages.json: a missing language falls back to English in the frontend.
 PDF_TAB_LABEL = {
-    "pub": "PDF",
-    "pub-inpress": "PDF (in press)",
-    "pp": "PDF (preprint)",
-    "am": "PDF (author manuscript)",
-    "wp": "PDF (working paper)",
-    "proof": "PDF (proof)",
+    "en": {"pub-inpress": "PDF (in press)", "pp": "PDF (preprint)",
+           "am": "PDF (author manuscript)", "wp": "PDF (working paper)", "proof": "PDF (proof)"},
+    "es": {"pub-inpress": "PDF (en prensa)", "pp": "PDF (preprint)",
+           "am": "PDF (manuscrito del autor)", "wp": "PDF (documento de trabajo)",
+           "proof": "PDF (galeradas)"},
+    "fr": {"pub-inpress": "PDF (sous presse)", "pp": "PDF (prépublication)",
+           "am": "PDF (manuscrit auteur)", "wp": "PDF (document de travail)",
+           "proof": "PDF (épreuves)"},
+    "pt": {"pub-inpress": "PDF (no prelo)", "pp": "PDF (preprint)",
+           "am": "PDF (manuscrito do autor)", "wp": "PDF (texto para discussão)",
+           "proof": "PDF (prova)"},
+    "vi": {"pub-inpress": "PDF (đang in)", "pp": "PDF (bản tiền ấn phẩm)",
+           "am": "PDF (bản thảo của tác giả)", "wp": "PDF (tài liệu nghiên cứu)",
+           "proof": "PDF (bản in thử)"},
+    "zh": {"pub-inpress": "PDF（印刷中）", "pp": "PDF（预印本）",
+           "am": "PDF（作者手稿）", "wp": "PDF（工作论文）", "proof": "PDF（校样）"},
+    "hi": {"pub-inpress": "PDF (प्रकाशनाधीन)", "pp": "PDF (प्रीप्रिंट)",
+           "am": "PDF (लेखक की पांडुलिपि)", "wp": "PDF (वर्किंग पेपर)", "proof": "PDF (प्रूफ़)"},
 }
+
+
+def pdf_tab_label(version: str) -> dict[str, str]:
+    label = {lang: labels.get(version, "PDF") for lang, labels in PDF_TAB_LABEL.items()}
+    # A plain "PDF" reads the same everywhere; English alone covers it.
+    return {"en": label["en"]} if len(set(label.values())) == 1 else label
 LICENSE_LABEL = {
     "cc-by": "CC BY (open access)",
     "cc-by-nc": "CC BY-NC (open access, non-commercial)",
@@ -490,7 +510,7 @@ def update_project_json(papers: list[dict]) -> None:
             "type": "pdf",
             "order": order,
             "pinned": True,
-            "label": {"en": PDF_TAB_LABEL.get(p["version"], "PDF")},
+            "label": pdf_tab_label(p["version"]),
             "contentFile": REL(p["pdf"]),
             "showForVignetteKeys": [p["key"]],
         })

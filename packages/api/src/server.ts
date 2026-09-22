@@ -1053,8 +1053,12 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requireP
     // Deliberately not logged to token_usage: like the query embedding beside
     // it, it is a fixed sub-cent overhead on a search, and logging it under the
     // project's chatModel would misattribute both the model and the cost.
+    // A session already in the corpus language (an English session on the
+    // English papers corpus) has nothing to restate, so it skips the call.
+    const sessionInCorpusLanguage = !!readingsQueryLanguage && !!language
+      && language.trim().toLowerCase() === readingsQueryLanguage.toLowerCase();
     const toCorpusLanguage = async (raw: string): Promise<string> => {
-      if (!readingsQueryLanguage) return raw;
+      if (!readingsQueryLanguage || sessionInCorpusLanguage) return raw;
       try {
         const restated = await chatClient.chat.completions.create({
           model: 'gpt-4o-mini',

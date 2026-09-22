@@ -95,20 +95,32 @@ async function main() {
     ? `${project.deployment.tablePrefix.replace(/_+$/, '')}_`
     : '';
   console.log(`Checking deployment at ${baseUrl}...`);
+  // A failed request (502 while Railway restarts, connection refused, timeout) is
+  // "not ready" too, not a fatal error: the push runs on the same trigger as the
+  // backend redeploy and routinely lands inside the restart window.
   const readinessDeadline = Date.now() + 180_000; // 3 min
-  let health = await client.healthCheck();
+  const probe = async (): Promise<{ tablePrefix?: string; error?: string }> => {
+    try {
+      return await client.healthCheck();
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+  };
+  let health = await probe();
   let attempt = 1;
-  while (
-    expectedPrefix &&
-    health.tablePrefix !== expectedPrefix &&
-    Date.now() < readinessDeadline
-  ) {
-    console.log(
-      `  Attempt ${attempt}: expected prefix "${expectedPrefix}", got "${health.tablePrefix || '(not set)'}". Backend not ready — waiting 10s...`
-    );
+  const notReady = () => health.error !== undefined || (expectedPrefix !== '' && health.tablePrefix !== expectedPrefix);
+  while (notReady() && Date.now() < readinessDeadline) {
+    const why = health.error
+      ? `health check failed (${health.error})`
+      : `expected prefix "${expectedPrefix}", got "${health.tablePrefix || '(not set)'}"`;
+    console.log(`  Attempt ${attempt}: ${why}. Backend not ready — waiting 10s...`);
     await new Promise(r => setTimeout(r, 10_000));
     attempt += 1;
-    health = await client.healthCheck();
+    health = await probe();
+  }
+  if (health.error) {
+    console.error(`ABORT: backend unreachable after 3 minutes (${health.error}). Re-run the workflow once Railway's deploy is green.`);
+    process.exit(1);
   }
   if (expectedPrefix && health.tablePrefix !== expectedPrefix) {
     console.error(

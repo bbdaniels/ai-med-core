@@ -20,7 +20,7 @@ Everything the project serves about a paper is derived here, and nowhere else:
                               pushes it to the deployment database from a
                               checkout that has it, and skips it in CI.
   project.json                cases.vignettes (one per paper with text) and
-                              tabs (the suggestions tab, plus one PDF tab per
+                              tabs (one PDF tab per
                               servable paper, shown only on that paper).
                               Every other field is left as written.
   manifest.json               the public list behind the "Talk to this paper"

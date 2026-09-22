@@ -512,6 +512,10 @@ function ChatInterface() {
     return mergeTabViews(tabs).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }, [langs, apiTabs, formless, selectedVignetteKey]);
   const hasTabs = resolvedTabs !== null;
+  // A formless project can end up with no visible tab for the selected vignette
+  // (papers: closed-access papers get no PDF tab). An empty second panel is
+  // worse than none, so that case takes the chat-only layout.
+  const noPanel = chatOnly || (formless && resolvedTabs !== null && resolvedTabs.length === 0);
   // Starter questions come from languages.json (chat.starterQuestions), so they
   // localize with everything else and need no extra endpoint.
   const starterQuestions = useMemo<string[]>(() => {
@@ -1685,7 +1689,7 @@ function ChatInterface() {
     {/* Mobile Toggle/Tab Bar - Only visible on screens < 768px.
         A chat-only project has no second panel, so there is nothing to toggle
         between and the strip would just eat vertical space on a phone. */}
-    {chatOnly ? null : hasTabs ? (
+    {noPanel ? null : hasTabs ? (
       <div className="mobile-tab-strip">
         <TabBar
           tabs={[
@@ -1733,9 +1737,9 @@ function ChatInterface() {
       </div>
     )}
     
-    <div className={`main-container ${hasTabs ? 'has-tabs' : ''} ${chatOnly ? 'chat-only' : ''}`}>
+    <div className={`main-container ${hasTabs && !noPanel ? 'has-tabs' : ''} ${noPanel ? 'chat-only' : ''}`}>
       {/* Left Panel: Chatbot */}
-      <div className={`left-panel ${!chatOnly && mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
+      <div className={`left-panel ${!noPanel && mobileActivePanel === 'form' ? 'mobile-hidden' : ''}`}>
         <div className="left-panel-inner">
           {/* skipWelcome projects never see the welcome screen, so both of its
               standing jobs live here, in the chat's top bar: the language selector
@@ -2014,7 +2018,7 @@ function ChatInterface() {
           chat-only project — rendering it and hiding it with CSS would still
           mount the panel, and for a formless project that means mounting the
           legacy Kobo form and firing its fetch. */}
-      {!chatOnly && (
+      {!noPanel && (
       <div className={`right-panel ${mobileActivePanel === 'chat' ? 'mobile-hidden' : ''}`}>
         {hasTabs ? (
           <>

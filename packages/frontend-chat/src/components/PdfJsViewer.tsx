@@ -635,12 +635,13 @@ type OutlineUI = (typeof FIND_UI)[string];
 /**
  * LaTeX-built PDFs (hyperref without \texorpdfstring) can ship bookmark titles
  * carrying the raw TeX macro `\numberline{IV}Discussion`; pdf.js hands the
- * string back verbatim, and the backslash-n even renders as a line break. Turn
+ * string back with the PDF escape `\\n` already decoded to a newline, so the title
+ * arrives as a line break followed by `umberline`. Accept both spellings. Turn
  * the macro into its visible number and drop any other stray control sequence.
  */
 function cleanOutlineTitle(raw: string | null | undefined): string {
   return (raw ?? '')
-    .replace(/\\numberline\s*\{([^}]*)\}\s*/g, '$1 ')
+    .replace(/(?:\\numberline|\numberline)\s*\{([^}]*)\}\s*/g, '$1 ')
     .replace(/\\[A-Za-z]+\s*(\{[^}]*\})?/g, '')
     .replace(/\s+/g, ' ')
     .trim();

@@ -1,14 +1,14 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "AI-MED Project Definition",
-  "description": "Defines a project: cases + frontend + Kobo form + deployment config",
+    "title": "AI-MED Project Definition",
+  "description": "Defines a project: cases + frontend + optional Kobo form + tabs + feature flags + deployment config. Validated on every build by tools/validate-projects.ts, so every field a project.json may carry must be declared here (additionalProperties is false).",
   "type": "object",
-  "required": ["name", "displayName", "frontend", "cases", "kobo", "languages", "deployment"],
+  "additionalProperties": false,
+  "required": ["name", "displayName", "frontend", "cases", "languages", "deployment"],
   "properties": {
     "name": {
       "type": "string",
-      "pattern": "^[a-z0-9-]+$",
-      "description": "URL-safe project identifier (lowercase, hyphens only)"
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Project slug: lowercase letters, digits and underscores. Must equal the directory name under projects/, the VITE_PROJECT build value and the X-Project header. URLs use the hyphenated form (haivn_eip is served at /haivn-eip/)."
     },
     "displayName": {
       "type": "string",
@@ -21,6 +21,7 @@
     },
     "cases": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["systemPrompt", "vignettes"],
       "properties": {
         "systemPrompt": {
@@ -29,8 +30,10 @@
         },
         "vignettes": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["key", "template", "file"],
             "properties": {
               "key": {
@@ -55,14 +58,15 @@
                 "description": "Demographic profile ID from the template's profiles.json. Null if hand-written."
               }
             }
-          },
-          "minItems": 1
+          }
         }
       }
     },
     "kobo": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["template", "formUid", "formUrl"],
+      "description": "Assessment form. Required unless the project is formless.",
       "properties": {
         "template": {
           "type": "string",
@@ -80,8 +84,95 @@
     },
     "languages": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "Language codes supported by this project"
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[a-z]{2,3}$" },
+      "description": "ISO 639-1 language codes supported by this project; each must have a block in languages.json"
+    },
+    "tabs": {
+      "type": "array",
+      "description": "Right-panel tab structure. Declaring one id twice, once 'pdf' and once 'document', makes a single tab with a Text/PDF switcher.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "order"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "type": {
+            "type": "string",
+            "enum": ["content", "form", "suggestions", "document", "pdf", "library"]
+          },
+          "order": { "type": "integer", "minimum": 0 },
+          "pinned": { "type": "boolean" },
+          "label": {
+            "type": "object",
+            "description": "Localized tab label, keyed by language code",
+            "additionalProperties": { "type": "string" }
+          },
+          "contentFile": {
+            "description": "Repo-relative content path, or a map of language code to path",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object", "additionalProperties": { "type": "string" } }
+            ]
+          },
+          "showForVignetteKeys": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tab is visible only when the selected vignette key is in this list; omit to show on every vignette"
+          }
+        }
+      }
+    },
+    "docRefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tabId", "patterns"],
+      "description": "Linkify numbered document references in chat answers into the named document tab",
+      "properties": {
+        "tabId": { "type": "string" },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["prefix", "words"],
+            "properties": {
+              "prefix": { "type": "string" },
+              "words": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+    "enableFeedback": { "type": "boolean", "description": "Real-time grading feedback after form submission" },
+    "enableFollowups": { "type": "boolean", "description": "Inline AI-suggested follow-up question chips above the chat input" },
+    "enableVoice": { "type": "boolean", "description": "TTS playback of assistant messages" },
+    "enableRealtime": { "type": "boolean", "description": "OpenAI Realtime API voice mode (?mode=voice)" },
+    "formless": { "type": "boolean", "description": "Pure Q&A advisor: no Kobo form tab, no grading" },
+    "skipWelcome": { "type": "boolean", "description": "Open straight into the chat, skipping the welcome/consent screen" },
+    "chatOnly": { "type": "boolean", "description": "Hide the right panel entirely" },
+    "dragDropAllocation": { "type": "boolean", "description": "Management project: drag-and-drop worker allocation panel" },
+    "requireAccessCode": {
+      "type": "boolean",
+      "description": "Gate the project behind an access code from the access_code project setting or ACCESS_CODE_<SLUG>; fails closed when none is configured"
+    },
+    "logConversations": {
+      "type": "boolean",
+      "description": "Write every chat turn to the global qa_log table (the durable store for formless advisors)"
+    },
+    "chatModel": {
+      "type": "string",
+      "enum": ["gpt-4o-mini", "gpt-4o"],
+      "description": "Chat model override; must be in KNOWN_CHAT_MODELS in packages/api/src/server.ts"
+    },
+    "readingsIndex": {
+      "type": "string",
+      "description": "Repo-relative path to a SQLite readings corpus (FTS5 + optional embeddings) built by tools/build-*-corpus.py; in production the READINGS_INDEX_<SLUG> env var points at the uploaded copy on the Railway volume"
+    },
+    "readingsQueryLanguage": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z ]{1,31}$",
+      "description": "Language the corpus is written in; queries are restated into it before retrieval"
     },
     "talkManifest": {
       "type": "string",
@@ -89,13 +180,18 @@
     },
     "deployment": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["tablePrefix"],
       "properties": {
         "tablePrefix": {
           "type": "string",
-          "description": "Database table prefix for multi-tenancy"
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Database table prefix for multi-tenancy; conventionally equal to name"
         }
       }
     }
-  }
+  },
+  "if": { "properties": { "formless": { "const": true } }, "required": ["formless"] },
+  "then": {},
+  "else": { "required": ["kobo"] }
 }

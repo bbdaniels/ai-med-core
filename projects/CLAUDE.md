@@ -107,6 +107,10 @@ document-advisor project with a `document` tab whose headings carry `{#prefix-N}
 anchors can adopt it by declaring its own `tabId` + word/prefix `patterns`.
 `projects/haivn_eip/` is the canonical example.
 
+## Validation
+
+`projects/project-schema.json` declares every field a `project.json` may carry (`additionalProperties: false`), and `npm run validate:projects` (`tools/validate-projects.ts`) checks every project against it plus the things a schema cannot express: slug equals directory name, `languages.json` present, every referenced file exists, vignette keys unique. It runs first in `npm run build` and in `deploy-pages.yml`, so a new field must be added to the schema in the same commit that first uses it, or the build fails.
+
 ## Formless Projects
 
 Projects with `"formless": true` are pure Q&A chatbots with no Kobo form (e.g. document advisors). For these projects:

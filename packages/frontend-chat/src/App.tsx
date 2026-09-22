@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import './App.css';
-import { api, apiFetch, getAccessToken, setAccessToken, readAccessCodeFromUrl, scrubAccessCodeFromUrl } from './api-base';
+import { PROJECT, api, apiFetch, getAccessToken, setAccessToken, readAccessCodeFromUrl, scrubAccessCodeFromUrl } from './api-base';
 import AccessGate from './components/AccessGate';
 import AdminLogin from './components/AdminLogin';
 import WelcomeScreen from './WelcomeVariants';
@@ -18,6 +18,7 @@ import { resolveInitialLanguage } from './lang-boot';
 import { type DocRefsConfig, extractAnchorIds, buildDocRefMatcher } from './doc-refs';
 import { type LegalDocMap, sectionPageIndex } from './legal-map';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
+import { type TalkPaper, requestedVignette } from './talk-paper';
 
 // Heavy components are code-split so their dependencies stay out of the entry
 // chunk: NativeKoboForm pulls the whole enketo-core/enketo-transformer/jquery
@@ -112,6 +113,9 @@ interface LanguageUISection {
     groundingNote?: string
     // Per-answer marker shown on a reply that goes beyond the grounding source.
     beyondScopeNotice?: string
+    // talkManifest projects: heading of the paper picker, and the link back to it.
+    pickerHeading?: string
+    pickerBack?: string
   }
   feedback?: {
     loading: string
@@ -410,6 +414,15 @@ function ChatInterface() {
   // ppol5013 is chat-only because its corpus is copyrighted: there is no
   // reading text to put in a side panel, and an empty pane is worse than none.
   const [chatOnly, setChatOnly] = useState(false);
+  // "Talk to this paper" projects (project.json talkManifest). The manifest maps
+  // each paper's DOI to its vignette, so ?paper=<DOI> can open that paper; with no
+  // (or an unknown) ?paper= the reader picks from the manifest's list instead of
+  // being dropped silently into whichever paper happens to be first.
+  const [talkManifestSlug, setTalkManifestSlug] = useState<string | null>(null);
+  const [talkPapers, setTalkPapers] = useState<TalkPaper[]>([]);
+  // The vignette the URL asks for: undefined while it is still being resolved
+  // (the manifest fetch), null when the URL names none, else the key.
+  const [urlVignette, setUrlVignette] = useState<string | null | undefined>(undefined);
   const [unlocked, setUnlocked] = useState<boolean>(() => !!getAccessToken());
   // Whether the gated endpoints (/api/tabs, /api/vignettes, /api/project-content)
   // will answer us. Every fetch of one must wait on this. React runs a component's
@@ -701,8 +714,11 @@ function ChatInterface() {
   useEffect(() => {
     const title = langs?.ui?.[selectedLanguageCode]?.welcome?.title
       || langs?.ui?.[langs.languages?.[0]?.code]?.welcome?.title;
-    if (title) document.title = title;
-  }, [langs, selectedLanguageCode]);
+    const paperTitle = talkManifestSlug && selectedVignetteKey
+      ? talkPapers.find(p => p.vignette === selectedVignetteKey)?.title : undefined;
+    if (paperTitle) document.title = title ? `${paperTitle} | ${title}` : paperTitle;
+    else if (title) document.title = title;
+  }, [langs, selectedLanguageCode, talkManifestSlug, talkPapers, selectedVignetteKey]);
 
   // Persist language selection
   useEffect(() => {
@@ -739,6 +755,10 @@ function ChatInterface() {
         if (data.dragDropAllocation) setDragDropAllocation(true);
         if (data.requireAccessCode) setRequireAccessCode(true);
         if (data.chatOnly) setChatOnly(true);
+        if (data.talkManifest) {
+          const slug = (typeof data.tablePrefix === 'string' ? data.tablePrefix : '').replace(/_+$/, '');
+          setTalkManifestSlug(slug || PROJECT || null);
+        }
         if (data.enableFeedback === false) setFeedbackEnabled(false);
         if (data.docRefs && typeof data.docRefs === 'object' && typeof data.docRefs.tabId === 'string') {
           setDocRefs(data.docRefs as DocRefsConfig);
@@ -801,6 +821,31 @@ function ChatInterface() {
     })();
     return () => { cancelled = true; };
   }, [configLoaded, requireAccessCode, urlAccessCode]);
+
+  // Resolve the vignette the URL asks for (?vignette=, or ?paper=<DOI> through the
+  // talk manifest) before any vignette is chosen. A manifest that fails to load,
+  // or is empty because public chat is switched off, just means no ?paper= match.
+  useEffect(() => {
+    if (!configLoaded) return;
+    const search = window.location.search;
+    if (!talkManifestSlug) {
+      setUrlVignette(requestedVignette(search, []));
+      return;
+    }
+    let cancelled = false;
+    apiFetch(api(`/api/talk-manifest/${encodeURIComponent(talkManifestSlug)}`))
+      .then(res => (res.ok ? res.json() : { papers: [] }))
+      .then(data => {
+        if (cancelled) return;
+        const papers: TalkPaper[] = Array.isArray(data?.papers)
+          ? data.papers.filter((p: TalkPaper) => p && typeof p.vignette === 'string' && typeof p.title === 'string')
+          : [];
+        setTalkPapers(papers);
+        setUrlVignette(requestedVignette(search, papers));
+      })
+      .catch(() => { if (!cancelled) setUrlVignette(requestedVignette(search, [])); });
+    return () => { cancelled = true; };
+  }, [configLoaded, talkManifestSlug]);
 
   // skipWelcome projects boot straight into chat once languages are loaded —
   // the welcome page's two jobs (language choice, consent notice) live in
@@ -974,20 +1019,65 @@ function ChatInterface() {
 
   // Load vignettes only after the user starts (filtered by uid if present)
   useEffect(() => {
-    if (!hasStarted || !accessReady) return;
+    if (!hasStarted || !accessReady || urlVignette === undefined) return;
     fetchVignettes(userUid)
       .then(keys => {
         setVignetteKeys(keys);
         if (keys.length > 0) {
-          setCurrentVignetteIndex(0);
-          setSelectedVignetteKey(keys[0]);
+          // Selection precedence: the vignette the URL names (?vignette=, or a
+          // ?paper= DOI found in the talk manifest); else, on a talkManifest
+          // project with papers to offer, nothing yet (the paper picker shows);
+          // else the first vignette, as every other project always has.
+          const requested = urlVignette ? keys.indexOf(urlVignette) : -1;
+          const offersPicker = !!talkManifestSlug && talkPapers.some(p => keys.includes(p.vignette));
+          if (requested >= 0) {
+            setCurrentVignetteIndex(requested);
+            setSelectedVignetteKey(keys[requested]);
+          } else if (!offersPicker) {
+            setCurrentVignetteIndex(0);
+            setSelectedVignetteKey(keys[0]);
+          }
         }
         console.log('Vignette keys loaded successfully', userUid ? `for uid: ${userUid}` : '(all vignettes)');
       })
       .catch(error => {
         console.error('Error loading vignette keys:', error);
       });
-  }, [hasStarted, userUid, accessReady]);
+  }, [hasStarted, userUid, accessReady, urlVignette, talkManifestSlug, talkPapers]);
+
+  // The talk-manifest paper currently open, and the papers the picker offers
+  // (only those whose vignette the deployment actually serves).
+  const selectedPaper = useMemo(
+    () => (talkManifestSlug && selectedVignetteKey
+      ? talkPapers.find(p => p.vignette === selectedVignetteKey) ?? null : null),
+    [talkManifestSlug, talkPapers, selectedVignetteKey]);
+  const pickerPapers = useMemo(
+    () => (talkManifestSlug ? talkPapers.filter(p => vignetteKeys.includes(p.vignette)) : []),
+    [talkManifestSlug, talkPapers, vignetteKeys]);
+
+  // Open a paper from the picker, or (key = null) go back to the picker. A fresh
+  // conversation either way, with a fresh transcript token, and the address bar
+  // updated so the page can be bookmarked or shared as ?paper=<DOI>.
+  const openPaper = (key: string | null) => {
+    const index = key ? vignetteKeys.indexOf(key) : -1;
+    if (key && index < 0) return;
+    setCurrentVignetteIndex(Math.max(0, index));
+    setSelectedVignetteKey(key);
+    setMessages([]);
+    setPendingAssistantMessage(null);
+    setInput('');
+    setFollowups([]);
+    setInitialized(false);
+    setFormReloadKey((prev: number) => prev + 1);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('vignette');
+      const doi = key ? talkPapers.find(p => p.vignette === key)?.doi : null;
+      if (doi) url.searchParams.set('paper', doi);
+      else url.searchParams.delete('paper');
+      window.history.replaceState(null, '', url.toString());
+    } catch { /* the address bar is a convenience */ }
+  };
 
   // Initialize conversation when vignette keys are loaded (only after start)
   useEffect(() => {
@@ -1701,7 +1791,20 @@ function ChatInterface() {
                     const hasContentTab = resolvedTabs?.some(t => t.type === 'content') || false;
                     return (
                       <div className="vignette-info">
-                        <h1>{vi?.title || t('chat','headerTitle')}</h1>
+                        <h1>{vi?.title || selectedPaper?.title || t('chat','headerTitle')}</h1>
+                        {selectedPaper && (
+                          <p className="paper-meta">
+                            {[selectedPaper.venue, selectedPaper.year].filter(Boolean).join(', ')}
+                            {selectedPaper.doi && (
+                              <> · <a href={`https://doi.org/${selectedPaper.doi}`} target="_blank" rel="noopener noreferrer">https://doi.org/{selectedPaper.doi}</a></>
+                            )}
+                            {pickerPapers.length > 1 && (
+                              <> · <button type="button" className="paper-picker-back" onClick={() => openPaper(null)}>
+                                {t('chat', 'pickerBack') || 'All papers'}
+                              </button></>
+                            )}
+                          </p>
+                        )}
                         {!hasContentTab && vi?.imageFile && (
                           <img
                             src={`${import.meta.env.BASE_URL}images/${vi.imageFile}`}
@@ -1776,6 +1879,21 @@ function ChatInterface() {
                 </div>
 
                 <div className="messages-container">
+                  {hasStarted && !selectedVignetteKey && pickerPapers.length > 0 && (
+                    <div className="paper-picker">
+                      <h2>{t('chat', 'pickerHeading') || 'Choose a paper'}</h2>
+                      <ul>
+                        {pickerPapers.map(p => (
+                          <li key={p.vignette}>
+                            <button type="button" onClick={() => openPaper(p.vignette)}>
+                              <span className="paper-picker-title">{p.title}</span>
+                              <span className="paper-picker-meta">{[p.venue, p.year].filter(Boolean).join(', ')}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {messages.map((message: Message, index: number) => (
                     <div key={index} className={`message ${message.role === 'user' ? 'user-message' : 'bot-message'}`}>
                       <div className="message-content">

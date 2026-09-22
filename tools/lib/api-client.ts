@@ -171,6 +171,30 @@ export class AdminApiClient {
     });
   }
 
+  // --- Private content store (files kept out of git; see tools/lib/private-files.ts) ---
+
+  /** What the deployment's private store holds for this project, with hashes. */
+  async listPrivateContent(): Promise<{
+    configured: boolean;
+    files: Array<{ path: string; bytes: number; sha256: string }>;
+  }> {
+    return this.request('/api/admin/private-content');
+  }
+
+  async putPrivateContent(relPath: string, body: Uint8Array): Promise<void> {
+    await this.request(`/api/admin/private-content/${encodeURI(relPath)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: body as unknown as BodyInit,   // a Node Buffer is a valid fetch body
+    });
+  }
+
+  async deletePrivateContent(relPath: string): Promise<void> {
+    await this.request(`/api/admin/private-content/${encodeURI(relPath)}`, {
+      method: 'DELETE',
+    });
+  }
+
   // --- Assignment endpoints ---
 
   async getAssignments(): Promise<{

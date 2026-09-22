@@ -1,6 +1,6 @@
 """One HTTP layer for the OpenAI-compatible endpoint the corpus builders use.
 
-`tools/build-ppol-corpus.py` and `tools/build-legal-corpus.py` both embed their
+`tools/build-readings-corpus.py` and `tools/build-legal-corpus.py` both embed their
 chunks through the same gateway and both used to carry their own copy of this
 code. The copies drifted in exactly the way two implementations of one job
 always do: when the Harvard HUIT gateway started 403ing on the default urllib

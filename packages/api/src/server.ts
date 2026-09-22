@@ -5,7 +5,7 @@ import { OpenAI } from 'openai';
 import path from 'path';
 import fs from 'fs/promises';
 import { readdirSync } from 'fs';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
@@ -270,8 +270,15 @@ app.options('/npj26/*', cors(corsOptions));
 
 // /npj26/load carries 100 cells of full bilingual transcripts, well past the 100kb default;
 // the route mounts its own parser, so the global one must skip it or it rejects first.
+// Admin content writes get a larger limit than public routes: a vignette can be a
+// whole paper (the papers project's longest are about 180 KB of text), and at the
+// 100kb default push-content.ts got a 413 for every one of them.
 const jsonBody = express.json();
-app.use((req, res, next) => (req.path === '/npj26/load' ? next() : jsonBody(req, res, next)));
+const adminJsonBody = express.json({ limit: '5mb' });
+app.use((req, res, next) => {
+  if (req.path === '/npj26/load') return next();
+  return (req.path.startsWith('/api/admin/') ? adminJsonBody : jsonBody)(req, res, next);
+});
 app.use(cookieParser());
 
 // Multi-tenant project routing via X-Project header
@@ -569,6 +576,77 @@ async function readTalkManifest(slug: string, relPath: string): Promise<{ papers
     console.error(`[talk-manifest] ${slug}: could not read ${relPath}:`, err);
     return { papers: [] };
   }
+}
+
+// ── Private project content ──────────────────────────────────────────
+//
+// Some files a project serves are deliberately not in the repository: the
+// papers project's PDFs are gitignored (several are publisher-copyright, and none
+// belong in git history). A Railway deploy is built from git, so those files are
+// never on its disk. They live instead in a private store on the mounted volume,
+// PRIVATE_CONTENT_ROOT (e.g. /data/private-content), at the SAME repo-relative
+// path they have in a checkout (projects/papers/content/library/x.pdf). Every
+// reader resolves a content path through resolveProjectContentFile(), which tries
+// the checkout first and the store second, so project.json names one path and it
+// works in dev and in production alike. tools/push-content.ts fills the store.
+const PRIVATE_CONTENT_ROOT = process.env.PRIVATE_CONTENT_ROOT?.trim()
+  ? path.resolve(process.env.PRIVATE_CONTENT_ROOT.trim())
+  : null;
+
+/** A repo-relative path under projects/, normalized; null for anything else. */
+function projectContentRelPath(rel: string): string | null {
+  if (typeof rel !== 'string' || !rel || rel.includes('\0')) return null;
+  const normalized = path.posix.normalize(rel.replace(/\\/g, '/'));
+  if (normalized.startsWith('/') || normalized.startsWith('../')) return null;
+  if (!normalized.startsWith('projects/')) return null;
+  return normalized;
+}
+
+/** Where a private file lives in the store; null when no store is configured. */
+function privateContentPath(rel: string): string | null {
+  if (!PRIVATE_CONTENT_ROOT) return null;
+  const abs = path.resolve(PRIVATE_CONTENT_ROOT, rel);
+  return abs.startsWith(PRIVATE_CONTENT_ROOT + path.sep) ? abs : null;
+}
+
+/** The file on disk for a project content path: the checkout, then the private store. */
+async function resolveProjectContentFile(rel: string): Promise<string | null> {
+  const clean = projectContentRelPath(rel);
+  if (!clean) return null;
+  const candidates = [path.resolve(REPO_ROOT, clean), privateContentPath(clean)];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      if ((await fs.stat(candidate)).isFile()) return candidate;
+    } catch { /* try the next */ }
+  }
+  return null;
+}
+
+/** Every file a project's tabs point at, all languages, as repo-relative paths. */
+function projectTabContentFiles(config: Record<string, any>): Set<string> {
+  const out = new Set<string>();
+  for (const tab of Array.isArray(config.tabs) ? config.tabs : []) {
+    const files = typeof tab?.contentFile === 'string' ? [tab.contentFile]
+      : Object.values(tab?.contentFile ?? {});
+    for (const f of files) {
+      const clean = typeof f === 'string' ? projectContentRelPath(f) : null;
+      if (clean) out.add(clean);
+    }
+  }
+  return out;
+}
+
+/**
+ * Write a file by way of a temporary sibling and a rename, so a dropped upload
+ * leaves the previous copy in place rather than a truncated one. Shared by every
+ * upload that lands on the volume.
+ */
+async function writeFileAtomic(dest: string, body: Buffer): Promise<void> {
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  const tmp = `${dest}.upload-${randomUUID().slice(0, 8)}`;
+  await fs.writeFile(tmp, body);
+  await fs.rename(tmp, dest);
 }
 
 app.post('/api/access', accessLimiter, async (req, res) => {
@@ -2110,10 +2188,7 @@ app.post('/api/admin/readings-index',
       }
 
       const dest = path.resolve(target.trim());
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      const tmp = `${dest}.upload-${randomUUID().slice(0, 8)}`;
-      await fs.writeFile(tmp, body);
-      await fs.rename(tmp, dest);
+      await writeFileAtomic(dest, body);
 
       console.log(`[readings] ${slug}: index uploaded to ${dest} (${body.length} bytes)`);
       return res.json({ success: true, path: dest, bytes: body.length });
@@ -2125,6 +2200,97 @@ app.post('/api/admin/readings-index',
       });
     }
   });
+
+// ── Private content store (see resolveProjectContentFile) ──────────────
+//
+// Global admin only. A file may be stored only at a path the requesting
+// project's own project.json names as a tab contentFile, so the store cannot be
+// used for anything a project does not actually serve. tools/push-content.ts
+// lists, uploads changed files, and removes ones project.json no longer names.
+
+/** A request path for this project's store, or an error to send. */
+async function privateContentTarget(req: express.Request):
+    Promise<{ rel: string; dest: string; referenced: boolean } | { status: number; error: string }> {
+  if (!PRIVATE_CONTENT_ROOT) {
+    return { status: 400, error: 'PRIVATE_CONTENT_ROOT is not set on this deployment, so there is ' +
+                                 'nowhere persistent to put private content. Set it to a path on a mounted volume.' };
+  }
+  const slug = requestProjectSlug(req);
+  const rel = projectContentRelPath(String(req.params[0] ?? ''));
+  const dest = rel ? privateContentPath(rel) : null;
+  if (!rel || !dest || !rel.startsWith(`projects/${slug}/`)) {
+    return { status: 403, error: `Path must lie under projects/${slug}/` };
+  }
+  const referenced = projectTabContentFiles(await readProjectConfig(slug)).has(rel);
+  return { rel, dest, referenced };
+}
+
+app.get('/api/admin/private-content', authenticateAdmin, requireContentWrite, async (req, res) => {
+  const slug = requestProjectSlug(req);
+  if (!PRIVATE_CONTENT_ROOT) return res.json({ configured: false, files: [] });
+  const dir = privateContentPath(`projects/${slug}`);
+  const files: Array<{ path: string; bytes: number; sha256: string }> = [];
+  const walk = async (abs: string): Promise<void> => {
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await fs.readdir(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const child = path.join(abs, e.name);
+      if (e.isDirectory()) {
+        await walk(child);
+      } else if (e.isFile() && !e.name.includes('.upload-')) {
+        const buf = await fs.readFile(child);
+        files.push({
+          path: path.relative(PRIVATE_CONTENT_ROOT, child).split(path.sep).join('/'),
+          bytes: buf.length,
+          sha256: createHash('sha256').update(buf).digest('hex'),
+        });
+      }
+    }
+  };
+  if (dir) await walk(dir);
+  return res.json({ configured: true, files });
+});
+
+app.put('/api/admin/private-content/*',
+  authenticateAdmin, requireContentWrite,
+  express.raw({ type: 'application/octet-stream', limit: '100mb' }),
+  async (req, res) => {
+    try {
+      const target = await privateContentTarget(req);
+      if ('error' in target) return res.status(target.status).json({ error: target.error });
+      if (!target.referenced) {
+        return res.status(400).json({ error: `${target.rel} is not a contentFile in this project's project.json` });
+      }
+      const body = req.body as Buffer;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return res.status(400).json({ error: 'Empty body; send the file as application/octet-stream' });
+      }
+      await writeFileAtomic(target.dest, body);
+      console.log(`[private-content] stored ${target.rel} (${body.length} bytes)`);
+      return res.json({ success: true, path: target.rel, bytes: body.length });
+    } catch (error) {
+      console.error('Private content upload failed:', error);
+      return res.status(500).json({ error: 'Upload failed' });
+    }
+  });
+
+app.delete('/api/admin/private-content/*', authenticateAdmin, requireContentWrite, async (req, res) => {
+  const target = await privateContentTarget(req);
+  if ('error' in target) return res.status(target.status).json({ error: target.error });
+  try {
+    await fs.unlink(target.dest);
+    console.log(`[private-content] removed ${target.rel}`);
+    return res.json({ success: true, path: target.rel });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return res.json({ success: true, path: target.rel });
+    console.error('Private content delete failed:', error);
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
 
 app.post('/api/admin/system-prompt', authenticateAdmin, async (req, res) => {
   try {
@@ -2895,6 +3061,10 @@ app.get('/api/config', async (_req, res) => {
     let dragDropAllocation = false;
     let requireAccessCode = false;
     let chatOnly = false;
+    // Whether the project publishes a talk manifest (the frontend then resolves
+    // ?paper=<DOI> against /api/talk-manifest/<slug>). Only the flag: the path
+    // is a server-side detail.
+    let talkManifest = false;
     // Optional document-reference linking config (see doc-refs.ts on the frontend).
     // Passed through verbatim when present; absent for projects that don't opt in.
     let docRefs: unknown = null;
@@ -2910,6 +3080,7 @@ app.get('/api/config', async (_req, res) => {
       dragDropAllocation = projectConfig.dragDropAllocation || false;
       requireAccessCode = projectConfig.requireAccessCode || false;
       chatOnly = projectConfig.chatOnly || false;
+      talkManifest = typeof projectConfig.talkManifest === 'string' && projectConfig.talkManifest !== '';
       if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
         docRefs = projectConfig.docRefs;
       }
@@ -2931,6 +3102,7 @@ app.get('/api/config', async (_req, res) => {
       dragDropAllocation,
       requireAccessCode,
       chatOnly,
+      talkManifest,
       docRefs,
     });
   } catch (error) {
@@ -2995,12 +3167,19 @@ app.get('/api/tabs', requireAccessCode, async (req, res) => {
         }
 
         try {
-          const contentPath = path.resolve(REPO_ROOT, contentFile);
-          // Prevent path traversal outside REPO_ROOT. Use path.sep boundary so
-          // sibling directories like `${REPO_ROOT}-secrets` don't match startsWith.
-          const repoBoundary = REPO_ROOT.endsWith(path.sep) ? REPO_ROOT : REPO_ROOT + path.sep;
-          if (contentPath !== REPO_ROOT && !contentPath.startsWith(repoBoundary)) {
-            console.error(`Tab contentFile path traversal blocked: ${contentFile}`);
+          // Resolved from the checkout, or from the private store for content that
+          // is deliberately not in git (see resolveProjectContentFile). Anything
+          // outside projects/ resolves to null.
+          const contentPath = await resolveProjectContentFile(contentFile);
+          if (!contentPath) {
+            // A PDF tab whose file has not been uploaded yet would open onto a 404;
+            // leave the tab out instead, so the reader never sees a dead viewer.
+            if (contentFile.endsWith('.pdf')) {
+              console.warn(`/api/tabs: ${projectSlug}: ${contentFile} is in neither the checkout ` +
+                           'nor the private store; leaving tab ' + tab.id + ' out');
+              return null;
+            }
+            console.error(`/api/tabs: contentFile not found or outside projects/: ${contentFile}`);
             return { ...base, label: tab.label, content: null };
           }
           // PDFs are served via a dedicated endpoint — return a URL, don't read binary as text.
@@ -3023,7 +3202,7 @@ app.get('/api/tabs', requireAccessCode, async (req, res) => {
       })
     );
 
-    res.json({ tabs: resolvedTabs });
+    res.json({ tabs: resolvedTabs.filter(t => t !== null) });
   } catch (error) {
     console.error('Error reading tabs config:', error);
     res.status(500).json({ error: 'Failed to read tabs configuration' });
@@ -3031,14 +3210,13 @@ app.get('/api/tabs', requireAccessCode, async (req, res) => {
 });
 
 // Serve project content files (PDFs, images, etc.)
-app.get('/api/project-content/*', requireAccessCode, (req, res) => {
+// from the checkout or the private store (see resolveProjectContentFile).
+app.get('/api/project-content/*', requireAccessCode, async (req, res) => {
   const relativePath = req.params[0];
   if (!relativePath) return res.status(400).json({ error: 'No path specified' });
-  const filePath = path.resolve(REPO_ROOT, relativePath);
-  const repoBoundary = REPO_ROOT.endsWith(path.sep) ? REPO_ROOT : REPO_ROOT + path.sep;
-  if (!filePath.startsWith(repoBoundary) || !filePath.startsWith(path.join(REPO_ROOT, 'projects'))) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
+  if (!projectContentRelPath(relativePath)) return res.status(403).json({ error: 'Access denied' });
+  const filePath = await resolveProjectContentFile(relativePath);
+  if (!filePath) return res.status(404).json({ error: 'Not found' });
   res.sendFile(filePath);
 });
 

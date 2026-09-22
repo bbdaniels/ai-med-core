@@ -51,11 +51,11 @@ relaxed, the mirror's copy stops failing on missing content and starts failing
 on a missing module, which is a worse error for a stranger to land on.
 
 SCHEMA. The tables here are not this script's to design. packages/api/src/
-readings.ts queries a fixed shape, built until now only by tools/build-ppol-
-corpus.py, and a second producer of the same shape is exactly the kind of
-divergence that goes silent. So SCHEMA below is byte-identical to the one in
-build-ppol-corpus.py, and the column meanings are mapped onto legal metadata
-rather than invented:
+readings.ts queries a fixed shape, and a second producer of the same shape is
+exactly the kind of divergence that goes silent. So SCHEMA is imported from
+lib/readings_schema.py, the one definition build-readings-corpus.py also
+writes, and the column meanings are mapped onto legal metadata rather than
+invented:
 
     author_short  the instrument number, "96/2023/NĐ-CP" -- readings.ts renders
                   it as the CITE AS line, which is precisely how the model
@@ -108,6 +108,7 @@ from lib import transcriptions                       # noqa: E402
 from lib import openai_gateway as gateway            # noqa: E402
 from lib.openai_gateway import api_post, load_env, pack, unpack  # noqa: E402,F401
 from lib.section_order import monotone_assignment    # noqa: E402
+from lib.readings_schema import SCHEMA                # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_DIR = REPO_ROOT / "projects" / "haivn_eip" / "content" / "legal"
@@ -1101,51 +1102,8 @@ def embed_batch(env: dict[str, str], texts: list[str]) -> list[list[float]]:
 
 # ── database ─────────────────────────────────────────────────────────────
 #
-# Byte-identical to the SCHEMA in tools/build-ppol-corpus.py, because
-# packages/api/src/readings.ts reads both indexes with one implementation and a
-# second, subtly different shape is how that divergence would start.
-
-SCHEMA = """
-PRAGMA journal_mode = WAL;
-
-CREATE TABLE documents (
-  id            TEXT PRIMARY KEY,
-  authors       TEXT NOT NULL,
-  author_short  TEXT NOT NULL,
-  year          INTEGER,
-  title         TEXT NOT NULL,
-  venue         TEXT,
-  gloss         TEXT,
-  weeks         TEXT NOT NULL,   -- JSON array of {date, topic, term, reference}
-  page_offset   INTEGER NOT NULL DEFAULT 0,
-  n_chunks      INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE chunks (
-  id          INTEGER PRIMARY KEY,
-  doc_id      TEXT NOT NULL REFERENCES documents(id),
-  ordinal     INTEGER NOT NULL,
-  section     TEXT,
-  page_start  INTEGER NOT NULL,
-  page_end    INTEGER NOT NULL,
-  header      TEXT NOT NULL,     -- contextual prefix, indexed alongside the body
-  text        TEXT NOT NULL,
-  tokens      INTEGER NOT NULL,
-  notice      TEXT               -- passage-level staleness note; NULL for most chunks
-);
-CREATE INDEX idx_chunks_doc ON chunks(doc_id);
-
-CREATE VIRTUAL TABLE chunks_fts USING fts5(
-  header, text, content='chunks', content_rowid='id', tokenize='porter unicode61'
-);
-
-CREATE TABLE embeddings (
-  chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id),
-  vec      BLOB NOT NULL
-);
-
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-"""
+# SCHEMA is imported from lib/readings_schema.py, shared with
+# build-readings-corpus.py: one definition rather than two copies promised to match.
 
 LANGUAGE_NAMES = {"vi": "Vietnamese", "en": "English"}
 

@@ -136,6 +136,23 @@ It is served without auth, to any origin, at `GET /api/talk-manifest/<slug>`. De
 
 Unknown slugs and projects without `talkManifest` get 404 from the manifest route; projects without `talkManifest` are untouched by the switch. A malformed manifest file is logged and served as `{"papers": []}`, never a 500.
 
+## Private content (files kept out of git)
+
+Some of what a project serves must not be committed: the `papers` project's vignettes are each paper's full text and its PDF tabs point at the paper PDFs, and several are publisher-copyright. Such files are **gitignored, and the `.gitignore` is the only declaration**: `tools/lib/private-files.ts` asks `git check-ignore`, and every tool uses that one answer.
+
+- `npm run validate:projects` accepts a referenced file that is absent when it is gitignored (a CI checkout lacks it by design) and still fails on any other missing file.
+- `tools/push-content.ts` pushes private files when the checkout has them and skips them, leaving the deployed copies in place, when it does not. CI's push therefore keeps everything else current, and the author delivers the private files by running the same push from his own checkout after rebuilding them.
+- Private **vignettes** go to the database like any other vignette.
+- Private **tab files** (PDFs) go to the deployment's private store, `PRIVATE_CONTENT_ROOT` on the mounted volume (Railway: `web-volume` at `/data`, e.g. `PRIVATE_CONTENT_ROOT=/data/private-content`), at the same repo-relative path they have in a checkout. The API resolves every content path through one function, checkout first and store second, so `project.json` names one path that works in dev and in production. The push uploads only changed files (by SHA-256) and removes stored files `project.json` no longer names. The upload route accepts only paths the project's own tabs name, so a closed-access paper with no PDF tab can never reach the store.
+- A PDF tab whose file is in neither place is left out of `/api/tabs` (logged), so a reader never sees a dead viewer.
+
+```bash
+python3 tools/build-papers-content.py --sync     # rebuild the paper texts and project.json
+ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/push-content.ts papers --url https://api.ai-med.live
+```
+
+The reading index (`readingsIndex`) is private too, but it still has its own upload route and variable (`READINGS_INDEX_<SLUG>`, `tools/upload-readings-index.sh`); folding it into the private store is an open cleanup.
+
 ## Tabs: Structure vs. Content
 
 Tab structure (id, type, order, pinned, label) lives in `project.json`. Tab content lives in a separate file pointed to by `contentFile`. This keeps `languages.json` focused on UI strings.

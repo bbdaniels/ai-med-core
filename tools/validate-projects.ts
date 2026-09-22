@@ -8,13 +8,14 @@
  * field that is not declared in the schema fails the build instead of being
  * silently ignored by the API. Beyond the JSON Schema it checks the things a
  * schema cannot: the slug matches its directory, and every repo-relative path
- * the file names exists.
+ * the file names exists (or is private, i.e. gitignored: see lib/private-files.ts).
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const schema = JSON.parse(fs.readFileSync(path.join(root, 'projects/project-schema.json'), 'utf8'));
@@ -37,10 +38,7 @@ function pathFields(p: any): string[] {
   const out: string[] = [];
   out.push(p.cases?.systemPrompt);
   for (const v of p.cases?.vignettes ?? []) out.push(v.file);
-  for (const t of p.tabs ?? []) {
-    if (typeof t.contentFile === 'string') out.push(t.contentFile);
-    else if (t.contentFile) out.push(...Object.values(t.contentFile as Record<string, string>));
-  }
+  out.push(...tabContentFiles(p));
   if (p.kobo?.template) out.push(p.kobo.template);
   if (p.talkManifest) out.push(p.talkManifest);
   // readingsIndex is deliberately excluded: gitignored, uploaded to Railway out of band.
@@ -65,8 +63,17 @@ for (const slug of dirs) {
     }
     if (p.name !== slug) errors.push(`name "${p.name}" does not match directory "${slug}"`);
     if (!fs.existsSync(path.join(root, 'projects', slug, 'languages.json'))) errors.push('languages.json missing');
+    let privateAbsent = 0;
     for (const rel of pathFields(p)) {
-      if (!fs.existsSync(path.join(root, rel))) errors.push(`missing file: ${rel}`);
+      if (fs.existsSync(path.join(root, rel))) continue;
+      // A gitignored file is absent from any checkout but the author's, by
+      // design (see tools/lib/private-files.ts); anything else missing is a bug.
+      if (isPrivateFile(rel)) privateAbsent++;
+      else errors.push(`missing file: ${rel}`);
+    }
+    if (privateAbsent) {
+      console.log(`  ${slug}: ${privateAbsent} private (gitignored) file(s) not in this checkout; ` +
+                  'they reach the deployment through push-content.ts from a checkout that has them');
     }
     const keys = (p.cases?.vignettes ?? []).map((v: any) => v.key);
     const dup = keys.filter((k: string, i: number) => keys.indexOf(k) !== i);

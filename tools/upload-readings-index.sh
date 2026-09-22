@@ -16,7 +16,7 @@
 # the next redeploy erases.
 #
 # Full re-deploy procedure after a syllabus change:
-#   1. python3 tools/build-ppol-corpus.py --gloss
+#   1. python3 tools/build-readings-corpus.py --gloss
 #   2. bash tools/upload-readings-index.sh ppol5013   (with the passphrase exported)
 #   3. git add projects/<slug>/content/readings/grounding.md && commit && push
 #      (the grounding map IS committed; the index is not)
@@ -51,13 +51,15 @@ fi
 
 if [[ ! -f "$INDEX" ]]; then
   echo "error: no index at $INDEX" >&2
-  echo "       Build it first: python3 tools/build-ppol-corpus.py --gloss" >&2
+  echo "       Build it first: python3 tools/build-readings-corpus.py --gloss" >&2
   exit 2
 fi
 
-# A WAL sidecar means the last build did not checkpoint; uploading the .db alone
-# would ship an index missing its most recent writes.
-if [[ -f "$INDEX-wal" ]]; then
+# A non-empty WAL sidecar means writes the .db does not hold yet; uploading the
+# .db alone would ship an index missing them. An EMPTY one is harmless: the
+# index is in WAL mode, so any reader (a --query, the local API) leaves a
+# zero-byte -wal behind after a clean close with nothing to checkpoint.
+if [[ -s "$INDEX-wal" ]]; then
   echo "error: $INDEX-wal exists, so the database has uncheckpointed writes." >&2
   echo "       Re-run the build (it VACUUMs and closes cleanly) before uploading." >&2
   exit 2
@@ -75,12 +77,20 @@ TOKEN=$(curl -fsS -X POST "$BASE_URL/api/admin/login" \
   -d "{\"passphrase\": $(printf '%s' "$ADMIN_PASSPHRASE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 
-echo "Uploading..."
+# Sent gzipped: the route's express.raw() inflates Content-Encoding: gzip by
+# default, and an index compresses to about 40% of its size. Uncompressed, a
+# 26 MB index over a slow uplink outlived Railway's request timeout and came
+# back 502 (2026-09-22).
+GZ="$(mktemp -t readings-index.XXXXXX)"
+trap 'rm -f "$GZ"' EXIT
+gzip -6 -c "$INDEX" > "$GZ"
+echo "Uploading $(( $(wc -c < "$GZ" | tr -d ' ') / 1000000 )) MB gzipped..."
 curl -fsS -X POST "$BASE_URL/api/admin/readings-index" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Project: $SLUG" \
   -H 'Content-Type: application/octet-stream' \
-  --data-binary "@$INDEX" \
+  -H 'Content-Encoding: gzip' \
+  --data-binary "@$GZ" \
   | python3 -m json.tool
 
 echo "Done. Verify with:"

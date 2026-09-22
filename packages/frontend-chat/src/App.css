@@ -725,6 +725,64 @@ code {
   margin: 0;
 }
 
+/* Talk-to-this-paper projects: the open paper's venue and DOI link under its
+   title, and the list a reader chooses from when the URL names no paper. */
+.vignette-info .paper-meta {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.paper-meta a {
+  color: inherit;
+}
+.paper-picker-back {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.paper-picker h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+.paper-picker ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.paper-picker button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-background);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.paper-picker button:hover {
+  border-color: var(--primary-color);
+}
+.paper-picker-title {
+  font-weight: 600;
+  line-height: 1.35;
+}
+.paper-picker-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
 /* Voice controls */
 .voice-controls {
   display: flex;

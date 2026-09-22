@@ -5,6 +5,14 @@
  * Push cases, system prompt, Kobo URL, and languages from a project.json
  * definition to a running deployment via its admin API.
  *
+ * Private files (gitignored by design: the papers project's paper texts and
+ * PDFs, see tools/lib/private-files.ts) are pushed when this checkout has them
+ * and skipped, with the deployed copy left in place, when it does not. So CI's
+ * push keeps everything else current, and the author's push after a rebuild
+ * (`npx tsx tools/push-content.ts papers --url ...`) delivers the private files.
+ * Private tab files (PDFs) go to the deployment's private store on its volume;
+ * vignette text goes to the database like any other vignette.
+ *
  * Usage:
  *   DEPLOY_URL=https://... npx tsx tools/push-content.ts <project-name>
  *   npx tsx tools/push-content.ts <project-name> --dry-run
@@ -12,9 +20,11 @@
  *   npx tsx tools/push-content.ts <project-name> --url <base-url>  # override DEPLOY_URL
  */
 
+import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { AdminApiClient } from './lib/api-client.js';
+import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
 
 interface ProjectJson {
   name: string;
@@ -33,6 +43,7 @@ interface ProjectJson {
   languages: string[];
   enableFeedback?: boolean;
   formless?: boolean;
+  tabs?: Array<{ contentFile?: string | Record<string, string> }>;
   deployment: {
     tablePrefix: string;
   };
@@ -46,6 +57,10 @@ async function loadProject(projectName: string): Promise<ProjectJson> {
 
 async function readFile(filePath: string): Promise<string> {
   return fs.readFile(path.resolve(filePath), 'utf8');
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  return fs.access(path.resolve(filePath)).then(() => true, () => false);
 }
 
 async function main() {
@@ -145,7 +160,15 @@ async function main() {
 
   // Push vignettes
   const localKeys = new Set(project.cases.vignettes.map(v => v.key));
+  let privateVignettesSkipped = 0;
   for (const vignette of project.cases.vignettes) {
+    if (!(await exists(vignette.file)) && isPrivateFile(vignette.file)) {
+      // Kept out of git by design; the key stays in localKeys, so the deployed
+      // copy is not treated as stale below.
+      console.log(`Vignette "${vignette.key}": ${vignette.file} is private (gitignored) and not in this checkout; deployed copy left in place.`);
+      privateVignettesSkipped++;
+      continue;
+    }
     const content = await readFile(vignette.file);
     console.log(`Vignette "${vignette.key}": ${vignette.file} (${content.length} chars)`);
     if (!dryRun) {
@@ -254,6 +277,54 @@ async function main() {
       await client.saveCaseTemplate(caseTemplateJson);
       console.log('  Pushed.');
     }
+  }
+
+  // Private tab files (PDFs kept out of git) -> the deployment's private store.
+  const privateFiles = tabContentFiles(project).filter(isPrivateFile);
+  if (privateFiles.length > 0) {
+    const store = await client.listPrivateContent();
+    const present: string[] = [];
+    for (const rel of privateFiles) if (await exists(rel)) present.push(rel);
+    console.log(`Private content: ${privateFiles.length} file(s) named, ${present.length} in this checkout`);
+    if (!store.configured) {
+      if (present.length > 0) {
+        console.error('ABORT: the deployment has no private store (PRIVATE_CONTENT_ROOT is not set), ' +
+                      `so ${present.length} private file(s) cannot be delivered. Set it to a path on the ` +
+                      'mounted volume (e.g. /data/private-content) and re-run.');
+        process.exit(1);
+      }
+      console.log('  Deployment has no private store and this checkout has none of the files; skipping.');
+    } else {
+      const remote = new Map(store.files.map(f => [f.path, f.sha256]));
+      let uploaded = 0;
+      for (const rel of present) {
+        const buf = await fs.readFile(path.resolve(rel));
+        const sha = createHash('sha256').update(buf).digest('hex');
+        if (remote.get(rel) === sha) continue;
+        console.log(`  Upload ${rel} (${Math.round(buf.length / 1000)} KB)`);
+        if (!dryRun) await client.putPrivateContent(rel, buf);
+        uploaded++;
+      }
+      const named = new Set(privateFiles);
+      const stale = store.files.map(f => f.path).filter(p => !named.has(p));
+      for (const rel of stale) {
+        console.log(`  Remove ${rel} (no longer named in project.json)`);
+        if (!dryRun) await client.deletePrivateContent(rel);
+      }
+      const missingEverywhere = privateFiles.filter(rel => !present.includes(rel) && !remote.has(rel));
+      console.log(`  ${uploaded} uploaded, ${present.length - uploaded} unchanged, ${stale.length} removed` +
+                  (present.length < privateFiles.length
+                    ? `; ${privateFiles.length - present.length} not in this checkout (deployed copies left in place)` : ''));
+      if (missingEverywhere.length > 0) {
+        console.warn(`  WARNING: ${missingEverywhere.length} private file(s) are neither here nor deployed; ` +
+                     'their tabs stay hidden until pushed from a checkout that has them.');
+      }
+    }
+  }
+
+  if (privateVignettesSkipped > 0) {
+    console.log(`\nNOTE: ${privateVignettesSkipped} private vignette(s) were not in this checkout and were left as deployed. ` +
+                `After rebuilding them, push from a checkout that has them: npx tsx tools/push-content.ts ${projectName} --url <deployment-url>`);
   }
 
   if (dryRun) {

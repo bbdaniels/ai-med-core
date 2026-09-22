@@ -100,7 +100,7 @@ Subcommands:
 ## lib/openai_gateway.py
 
 One HTTP layer for the OpenAI-compatible endpoint, shared by
-`build-ppol-corpus.py` and `build-legal-corpus.py`. Both builders used to carry
+`build-readings-corpus.py` and `build-legal-corpus.py`. Both builders used to carry
 their own copy of `load_env` / `api_post` / `embed_batch` / `pack`, and the
 copies were identical right up until they both needed the same fix.
 
@@ -187,15 +187,37 @@ differ: the corpus builder fills them in by number inside the window between
 surviving anchors, and the map builder demotes them to their structural page
 where that page fits the window, dropping them only where it does not.
 
-## build-ppol-corpus.py
+## build-readings-corpus.py
 
-Builds `projects/ppol5013/content/readings/readings.db`, the PPOL 5013/5014
-retrieval index, from `projects/ppol5013/readings-manifest.json`.
+Builds a project's retrieval index from its `readings-manifest.json`. Formerly
+`build-ppol-corpus.py`; generalized 2026-09-22 rather than copied for a second
+project. Defaults are the PPOL 5013/5014 index
+(`projects/ppol5013/readings-manifest.json` ->
+`projects/ppol5013/content/readings/readings.db`), unchanged; `--manifest` and
+`--out` select another. `ocr-cache/` is written beside the output database.
+
+The papers advisor's manifest, `projects/papers/readings-manifest.json`, is
+**generated** by `build-papers-content.py` from `library.tsv` (one schema, not a
+TSV reader in here). It has no `weeks`, so its chunk headers carry no assignment
+clause and this script leaves `projects/papers/content/readings/grounding.md`
+alone (that catalog is build-papers-content.py's output). A document's `doi` is
+stored in `documents.doi` and `readings.ts` puts `https://doi.org/<doi>` on the
+passage's `CITE AS` line; indexes built before the column existed render as
+before. The table shape lives in `lib/readings_schema.py`, shared with
+`build-legal-corpus.py`.
 
 ```bash
-python3 tools/build-ppol-corpus.py --gloss      # full build, one LLM gloss per document
-python3 tools/build-ppol-corpus.py --no-embed   # FTS5 only, no network
-python3 tools/build-ppol-corpus.py --query "minimum detectable effect" -k 5
+python3 tools/build-papers-content.py        # regenerates the papers manifest
+python3 tools/build-readings-corpus.py \
+    --manifest projects/papers/readings-manifest.json \
+    --out projects/papers/content/readings/readings.db
+bash tools/upload-readings-index.sh papers --url "$DEPLOY_URL"   # READINGS_INDEX_PAPERS on Railway
+```
+
+```bash
+python3 tools/build-readings-corpus.py --gloss      # full build, one LLM gloss per document
+python3 tools/build-readings-corpus.py --no-embed   # FTS5 only, no network
+python3 tools/build-readings-corpus.py --query "minimum detectable effect" -k 5
 bash tools/upload-readings-index.sh ppol5013    # then ship it (the db is never committed)
 ```
 
@@ -1630,9 +1652,10 @@ is the mixed case, not an edge of it.
 **No new retrieval code.** The platform's project-generic retrieval (built for
 ppol5013) already does hybrid BM25 + embeddings, RRF fusion, and the
 `search_readings` tool loop in `POST /api/chat`. This tool only produces the
-schema that code reads, and `SCHEMA` in it is byte-identical to the one in
-`build-ppol-corpus.py` for that reason -- two writers of one shape is exactly
-how the two drift apart. The HTTP layer both builders embed through is no longer
+schema that code reads, and it imports `SCHEMA` from `lib/readings_schema.py`,
+the same definition `build-readings-corpus.py` writes. (It used to carry its own
+copy with a comment promising the copies were byte-identical; two writers of one
+shape is exactly how the two drift apart, so the promise became an import.) The HTTP layer both builders embed through is no longer
 duplicated either; it is `lib/openai_gateway.py`, documented above.
 
 Legal metadata is **mapped onto** the reading columns rather than added beside

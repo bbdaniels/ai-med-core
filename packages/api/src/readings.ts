@@ -3,7 +3,7 @@
  *
  * A project opts in by declaring `readingsIndex` in its project.json; the value
  * is a repo-relative path to a SQLite file. Two builders write that schema --
- * tools/build-ppol-corpus.py for a course reading list, tools/build-legal-corpus.py
+ * tools/build-readings-corpus.py for a course reading list, tools/build-legal-corpus.py
  * for haivn_eip's library of Vietnamese legal instruments -- and this module
  * reads either without knowing which. The index holds one row per ~500-token
  * chunk with an FTS5 (BM25) index over it and, when the build could reach an
@@ -65,6 +65,8 @@ export interface ReadingChunk {
    * `supersededPassages` in haivn_eip's legal registry.
    */
   notice: ChunkNotice | null;
+  /** Bare DOI of the source document; null when it has none or the index predates the column. */
+  doi: string | null;
   header: string;
   text: string;
   score: number;
@@ -97,6 +99,12 @@ interface OpenIndex {
    * requirement that would take retrieval down entirely.
    */
   hasNotice: boolean;
+  /**
+   * Whether `documents.doi` exists. Added for the papers corpus; read only
+   * where present, for the same reason as `hasNotice` (uploaded indexes are
+   * not rebuilt on deploy).
+   */
+  hasDoi: boolean;
   mtimeMs: number;
   filePath: string;
 }
@@ -175,10 +183,13 @@ export function openReadingsIndex(repoRoot: string, projectSlug: string,
     );
     const hasNotice = (db.prepare('PRAGMA table_info(chunks)').all() as
                        Array<{ name: string }>).some(c => c.name === 'notice');
+    const hasDoi = (db.prepare('PRAGMA table_info(documents)').all() as
+                    Array<{ name: string }>).some(c => c.name === 'doi');
     const opened: OpenIndex = {
       db, dim, hasVectors: embedded > 0 && dim > 0,
       hasWeeks: scheduled > 0,
       hasNotice,
+      hasDoi,
       mtimeMs: stat.mtimeMs, filePath,
     };
     openIndexes.set(projectSlug, opened);
@@ -260,12 +271,14 @@ interface ChunkRow {
   venue: string | null;
   weeks: string;
   notice: string | null;
+  doi: string | null;
 }
 
 const chunkSelect = (index: OpenIndex) => `
   SELECT c.id, c.doc_id, c.section, c.page_start, c.page_end, c.header, c.text,
          ${index.hasNotice ? 'c.notice' : 'NULL AS notice'},
-         d.authors, d.author_short, d.year, d.title, d.venue, d.weeks
+         d.authors, d.author_short, d.year, d.title, d.venue, d.weeks,
+         ${index.hasDoi ? 'd.doi' : 'NULL AS doi'}
   FROM chunks c JOIN documents d ON d.id = c.doc_id
 `;
 
@@ -375,6 +388,7 @@ export function searchReadings(index: OpenIndex, query: string,
       pageEnd: row.page_end,
       weeks,
       notice: parseNotice(row.notice),
+      doi: row.doi || null,
       header: row.header,
       text: row.text,
       score,
@@ -557,7 +571,7 @@ export function formatSearchResults(
     const n = noticeOf.get(i);
     return [
       `--- passage ${i + 1} ---`,
-      `CITE AS: ${r.authorShort}${year}`,
+      `CITE AS: ${r.authorShort}${year}${r.doi ? `, https://doi.org/${r.doi}` : ''}`,
       `Full title: ${r.title}${r.venue ? ` (${r.venue})` : ''}`,
       ...(location ? [`Location: ${location}`] : []),
       ...(n === undefined ? [] : [`NOTICE ${n + 1} above applies to this passage.`]),

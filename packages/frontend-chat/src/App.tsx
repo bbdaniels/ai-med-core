@@ -313,6 +313,8 @@ interface ChatResponse {
   usage?: unknown;
 }
 
+class ChatSwitchedOffError extends Error {}
+
 const sendMessage = async ({ messages, vignetteKey, language, sessionToken }: {
   messages: Message[];
   vignetteKey: string;
@@ -324,7 +326,17 @@ const sendMessage = async ({ messages, vignetteKey, language, sessionToken }: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, vignetteKey, language, sessionToken }),
   });
-  if (!response.ok) throw new Error('Failed to send message');
+  if (!response.ok) {
+    // A talkManifest project switched off from the global admin page answers 503
+    // with code public_chat_disabled; its message is shown to the user verbatim.
+    if (response.status === 503) {
+      const body = await response.json().catch(() => ({}));
+      if (body?.code === 'public_chat_disabled' && typeof body.error === 'string') {
+        throw new ChatSwitchedOffError(body.error);
+      }
+    }
+    throw new Error('Failed to send message');
+  }
   return response.json();
 };
 
@@ -1094,7 +1106,9 @@ function ChatInterface() {
       console.error('Error initializing conversation:', error);
       setMessages([{
         role: 'assistant',
-        content: 'Error starting conversation. Please check your connection and try again.'
+        content: error instanceof ChatSwitchedOffError
+          ? error.message
+          : 'Error starting conversation. Please check your connection and try again.'
       }]);
       setIsLoading(false);
     }
@@ -1173,7 +1187,9 @@ function ChatInterface() {
       console.error('Error sending message:', error);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Connection error. Please check your internet connection and try again.'
+        content: error instanceof ChatSwitchedOffError
+          ? error.message
+          : 'Connection error. Please check your internet connection and try again.'
       }]);
       setIsLoading(false);
       sendInFlightRef.current = false;

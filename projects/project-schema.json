@@ -83,6 +83,10 @@
       "items": { "type": "string" },
       "description": "Language codes supported by this project"
     },
+    "talkManifest": {
+      "type": "string",
+      "description": "Repo-relative path to a JSON manifest {\"papers\": [{\"doi\", \"title\", \"vignette\"}]} served publicly at GET /api/talk-manifest/<slug> for external 'Talk to this paper' buttons. Declaring it puts the project behind the public_chat kill switch (default off): when off the manifest is empty and /api/chat, /api/tts, /api/realtime/session and /api/grade-session return 503 code public_chat_disabled."
+    },
     "deployment": {
       "type": "object",
       "required": ["tablePrefix"],

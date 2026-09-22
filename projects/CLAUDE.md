@@ -77,6 +77,7 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
   "enableVoice": false,             // TTS for assistant messages
   "formless": false,                // Skip the Kobo form tab entirely (Q&A chatbots)
   "enableFollowups": false,         // Inline AI-suggested follow-up questions above chat input
+  "talkManifest": "projects/papers/manifest.json", // Optional — public paper list + public_chat kill switch (see below)
   "docRefs": {                      // Optional — linkify document references in chat answers
     "tabId": "eip-doc",             // id of the tab the links point into (its `document` edition)
     "patterns": [                   // surface words -> anchor prefix (the {#sec-…}/{#app-…} ids in the document)
@@ -115,6 +116,21 @@ Projects with `"formless": true` are pure Q&A chatbots with no Kobo form (e.g. d
 - The frontend skips the auto-added form tab; define `tabs` in project.json to give users something to interact with (e.g. a `suggestions` tab)
 
 Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advisor; slug `haivn_eip`, served at `/haivn-eip/`, formerly `stitch`).
+
+### talkManifest — externally embedded advisors and the public-chat kill switch
+
+A formless advisor that other websites link into (e.g. a "Talk to this paper" button beside each publication) declares `"talkManifest": "projects/<slug>/manifest.json"`. The file lists what the external site may offer:
+
+```json
+{ "papers": [ { "doi": "10.xxxx/yyy", "title": "...", "vignette": "<vignette key>" } ] }
+```
+
+It is served without auth, to any origin, at `GET /api/talk-manifest/<slug>`. Declaring it also puts the project behind the per-project `public_chat` setting, which defaults to **off** and is flipped from the global admin page (`landing/admin.html`, "Public chat") or `PUT /api/admin/public-chat {"enabled": true}`, with no redeploy:
+
+- **On**: the manifest route returns the file (`Cache-Control: public, max-age=300`, so an external page may keep showing buttons for up to five minutes after switching off), and chat works normally.
+- **Off**: the manifest route returns `{"papers": []}` (`no-store`), so the external site renders no buttons, and `/api/chat`, `/api/tts`, `/api/realtime/session` and `/api/grade-session` answer 503 `{code: "public_chat_disabled"}`, so bookmarked chat links stop working at once. The frontend shows that error text as the assistant reply.
+
+Unknown slugs and projects without `talkManifest` get 404 from the manifest route; projects without `talkManifest` are untouched by the switch. A malformed manifest file is logged and served as `{"papers": []}`, never a 500.
 
 ## Tabs: Structure vs. Content
 

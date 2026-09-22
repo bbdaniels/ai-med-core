@@ -49,6 +49,7 @@ import {
   setProjectSetting,
   deleteProjectSetting,
   getAllProjectSettings,
+  isPublicChatEnabled,
   logSessionMessage,
   logSessionFormSubmit,
   logSessionTranscriptSaved,
@@ -225,6 +226,35 @@ const corsOptions: CorsOptions = {
   credentials: true, // Allow cookies to be sent with requests
   maxAge: 86400, // 24h preflight cache
 };
+
+// Public talk manifest: which papers a talkManifest project offers, fetched by
+// third-party pages to decide whether to render "Talk to this paper" buttons.
+// It is the ONE route open to any origin, so it is registered before the global
+// allowlisted CORS middleware and answers the request itself; the global policy
+// is not widened. It carries no credentials and nothing a browser could abuse.
+const talkManifestCors = cors({ origin: '*', methods: ['GET', 'OPTIONS'], maxAge: 86400 });
+app.options('/api/talk-manifest/:slug', talkManifestCors);
+app.get('/api/talk-manifest/:slug', talkManifestCors, async (req, res) => {
+  const slug = req.params.slug;
+  if (!validProjectSlugs.has(slug)) return res.status(404).json({ error: 'Unknown project' });
+  const config = await readProjectConfig(slug);
+  if (typeof config.talkManifest !== 'string' || !config.talkManifest) {
+    return res.status(404).json({ error: 'Project has no talk manifest' });
+  }
+  let enabled = false;
+  try {
+    enabled = await isPublicChatEnabled(slug);
+  } catch (err) {
+    console.error(`[talk-manifest] could not read public_chat for ${slug}; treating as off:`, err);
+  }
+  if (!enabled) {
+    res.set('Cache-Control', 'no-store');
+    return res.json({ papers: [] });
+  }
+  const manifest = await readTalkManifest(slug, config.talkManifest);
+  res.set('Cache-Control', 'public, max-age=300');
+  return res.json(manifest);
+});
 
 // Apply CORS only to API-style routes
 app.use('/api', cors(corsOptions));
@@ -490,6 +520,57 @@ const requireAccessCode = async (req: express.Request, res: express.Response,
   }
 };
 
+// ── Public-chat kill switch ──────────────────────────────────────────
+//
+// A project that declares `talkManifest` in project.json is reachable from
+// third-party pages ("Talk to this paper" buttons). Its `public_chat` project
+// setting (default off) turns it on and off from the global admin page with no
+// redeploy. Off empties the public manifest, so the external site renders no
+// buttons, AND closes every LLM-calling route, so bookmarked links stop working.
+// Projects without `talkManifest` never reach the setting lookup.
+
+const requirePublicChatIfDeclared = async (req: express.Request, res: express.Response,
+                                           next: express.NextFunction) => {
+  const slug = requestProjectSlug(req);
+  const config = await readProjectConfig(slug);
+  if (!config.talkManifest) return next();
+  let enabled = false;
+  try {
+    enabled = await isPublicChatEnabled(slug);
+  } catch (err) {
+    // Fail closed: a settings-read failure must not open a switched-off project.
+    console.error(`[public-chat] could not read public_chat for ${slug}; treating as off:`, err);
+  }
+  if (enabled) return next();
+  return res.status(503).json({
+    error: 'This assistant is currently switched off.',
+    code: 'public_chat_disabled',
+  });
+};
+
+/**
+ * The manifest a talkManifest project publishes: `{ papers: [{doi, title, vignette}] }`.
+ * Never throws: a missing or malformed file is logged and read as no papers.
+ */
+async function readTalkManifest(slug: string, relPath: string): Promise<{ papers: unknown[] }> {
+  try {
+    const resolved = path.resolve(REPO_ROOT, relPath);
+    if (!resolved.startsWith(path.join(REPO_ROOT, 'projects') + path.sep)) {
+      console.error(`[talk-manifest] ${slug}: talkManifest path escapes projects/: ${relPath}`);
+      return { papers: [] };
+    }
+    const parsed = JSON.parse(await fs.readFile(resolved, 'utf-8'));
+    if (!parsed || !Array.isArray(parsed.papers)) {
+      console.error(`[talk-manifest] ${slug}: ${relPath} has no "papers" array`);
+      return { papers: [] };
+    }
+    return { papers: parsed.papers };
+  } catch (err) {
+    console.error(`[talk-manifest] ${slug}: could not read ${relPath}:`, err);
+    return { papers: [] };
+  }
+}
+
 app.post('/api/access', accessLimiter, async (req, res) => {
   const slug = requestProjectSlug(req);
   const config = await readProjectConfig(slug);
@@ -634,7 +715,7 @@ if (process.env.NODE_ENV === 'production' && serveFrontend) {
 }
 
 // API Routes
-app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (req, res) => {
+app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requirePublicChatIfDeclared, async (req, res) => {
   try {
     const { messages, vignetteKey, language, sessionToken } = req.body as {
       messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -1132,7 +1213,7 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, async (r
 const TTS_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'] as const;
 type TTSVoice = typeof TTS_VOICES[number];
 
-app.post('/api/tts', ttsLimiter, async (req, res) => {
+app.post('/api/tts', ttsLimiter, requirePublicChatIfDeclared, async (req, res) => {
   try {
     const { text, voice } = req.body as { text?: string; voice?: string };
 
@@ -1184,7 +1265,7 @@ app.post('/api/tts', ttsLimiter, async (req, res) => {
 // directly to OpenAI; audio never flows through this server. Per-project opt-in
 // via `enableRealtime` in project.json; rate-limited as the cost guardrail.
 // Bills a DIRECT key (see OPENAI_REALTIME_KEY) — never the Harvard gateway.
-app.post('/api/realtime/session', realtimeLimiter, async (req, res) => {
+app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, async (req, res) => {
   try {
     const { vignetteKey, language } = req.body as {
       vignetteKey?: string;
@@ -1570,7 +1651,7 @@ app.post('/api/kobo-transcript', async (req, res) => {
 });
 
 // Grade session endpoint - returns grading results for all tokens in a session
-app.post('/api/grade-session', async (req, res) => {
+app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => {
   try {
     const { tokens, language } = req.body as {
       tokens?: string[];
@@ -2739,6 +2820,33 @@ app.put('/api/admin/payment-source', authenticateAdmin, requireContentWrite, asy
   } catch (error) {
     console.error('Error saving payment source:', error);
     return res.status(500).json({ error: 'Failed to save payment source' });
+  }
+});
+
+// Admin public-chat kill switch (only has an effect for projects declaring talkManifest)
+app.get('/api/admin/public-chat', authenticateAdmin, async (_req, res) => {
+  try {
+    const slug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
+    return res.json({ enabled: await isPublicChatEnabled(slug) });
+  } catch (error) {
+    console.error('Error fetching public chat setting:', error);
+    return res.status(500).json({ error: 'Failed to fetch public chat setting' });
+  }
+});
+
+app.put('/api/admin/public-chat', authenticateAdmin, requireContentWrite, async (req, res) => {
+  try {
+    const { enabled } = req.body as { enabled?: unknown };
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid value. "enabled" must be true or false.' });
+    }
+    const slug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
+    await setProjectSetting(slug, 'public_chat', enabled ? 'on' : 'off');
+    console.log(`Public chat for project "${slug}" set to "${enabled ? 'on' : 'off'}"`);
+    return res.json({ success: true, enabled });
+  } catch (error) {
+    console.error('Error saving public chat setting:', error);
+    return res.status(500).json({ error: 'Failed to save public chat setting' });
   }
 });
 

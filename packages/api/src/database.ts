@@ -1898,6 +1898,15 @@ export async function setProjectSetting(slug: string, key: string, value: string
   }
 }
 
+/**
+ * Per-project public-chat kill switch. Stored as project setting `public_chat`
+ * ('on' | 'off'). Unset means OFF: a project that opts in with `talkManifest`
+ * stays dark until someone switches it on from the global admin page.
+ */
+export async function isPublicChatEnabled(slug: string): Promise<boolean> {
+  return (await getProjectSetting(slug, 'public_chat')) === 'on';
+}
+
 export async function deleteProjectSetting(slug: string, key: string): Promise<void> {
   if (dbType === 'sqlite' && db) {
     db.prepare('DELETE FROM project_settings WHERE project_slug = ? AND setting_key = ?')

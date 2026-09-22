@@ -116,6 +116,7 @@ interface LanguageUISection {
     // talkManifest projects: heading of the paper picker, and the link back to it.
     pickerHeading?: string
     pickerBack?: string
+    pickerClose?: string
   }
   feedback?: {
     loading: string
@@ -484,6 +485,14 @@ function ChatInterface() {
   // can bypass the isLoading check. This ref updates synchronously.
   const sendInFlightRef = useRef(false);
   const wipEnabled = useMemo(() => new URLSearchParams(window.location.search).has('wip'), []);
+  // When the chat is embedded in another site's popout (the orcid-display
+  // "Talk to this paper" panel), the header's picker link makes no sense: the
+  // reader came for one paper. It becomes a Close control that asks the host
+  // page to dismiss the panel; the host listens for exactly this message.
+  const embeddedInFrame = useMemo(() => { try { return window.self !== window.top; } catch { return true; } }, []);
+  const closeEmbeddingFrame = useCallback(() => {
+    try { window.parent.postMessage({ type: 'orcid-display:talk-close' }, '*'); } catch { /* not embedded */ }
+  }, []);
   const resolvedTabs = useMemo(() => {
     // Prefer tabs from /api/tabs (new pattern); fall back to legacy langs.tabs (CBS pattern).
     const source = (apiTabs && apiTabs.length > 0) ? apiTabs : (langs?.tabs ?? null);
@@ -1798,7 +1807,11 @@ function ChatInterface() {
                             {selectedPaper.doi && (
                               <> · <a href={`https://doi.org/${selectedPaper.doi}`} target="_blank" rel="noopener noreferrer">https://doi.org/{selectedPaper.doi}</a></>
                             )}
-                            {pickerPapers.length > 1 && (
+                            {embeddedInFrame ? (
+                              <> · <button type="button" className="paper-picker-back" onClick={closeEmbeddingFrame}>
+                                {t('chat', 'pickerClose') || 'Close'}
+                              </button></>
+                            ) : pickerPapers.length > 1 && (
                               <> · <button type="button" className="paper-picker-back" onClick={() => openPaper(null)}>
                                 {t('chat', 'pickerBack') || 'All papers'}
                               </button></>

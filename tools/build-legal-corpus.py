@@ -106,7 +106,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import filelock                             # noqa: E402
 from lib import transcriptions                       # noqa: E402
 from lib import openai_gateway as gateway            # noqa: E402
-from lib.openai_gateway import api_post, load_env, pack, unpack  # noqa: E402,F401
+from lib.openai_gateway import EMBED_MODEL, api_post, load_env, pack, unpack  # noqa: E402,F401
 from lib.section_order import monotone_assignment    # noqa: E402
 from lib.readings_schema import SCHEMA                # noqa: E402
 
@@ -118,11 +118,11 @@ DB_PATH = LEGAL_DIR / "legal-corpus.db"
 # directory, because a rename is only atomic within one filesystem.
 BUILD_PATH = LEGAL_DIR / "legal-corpus.db.build"
 
-# The query embedding is issued by packages/api/src/server.ts with the model id
-# hardcoded there. A different model here would produce vectors of a different
-# dimension and a silently useless dense ranking, so these two constants are
-# pinned to that call, not chosen.
-EMBED_MODEL = "text-embedding-3-small"
+# The query embedding is issued by the API with the model in the gateway contract
+# (packages/chat-core/src/gateway.ts, mirrored in lib/openai_gateway.py, whence
+# EMBED_MODEL is imported above). A different model here would produce vectors
+# of a different dimension and a silently useless dense ranking, so the model is
+# read from that contract and the dimension is pinned to it, not chosen.
 EMBED_DIM = 1536
 EMBED_BATCH = 64
 

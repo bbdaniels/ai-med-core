@@ -1,0 +1,25 @@
+{
+  "name": "@ai-med/chat-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./talk-url": "./src/talk-url.ts",
+    "./test-support/fixture-index": "./test-support/fixture-index.ts"
+  },
+  "scripts": {
+    "test": "tsx --test src/*.test.ts src/chat/*.test.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.0",
+    "tsx": "^4.6.0",
+    "typescript": "^5.3.2"
+  }
+}

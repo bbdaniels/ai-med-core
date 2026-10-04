@@ -134,6 +134,21 @@ stands between a rebuild and a silently degraded index; do not remove it.
 
 Add an endpoint helper here rather than a second `urlopen` wrapper in a script.
 
+**The gateway contract with the API.** An index built here is queried by the
+API, so this module and `packages/chat-core/src/gateway.ts` hold the same four
+values: the env names `GATEWAY_URL_ENV` (`HARVARD_GATEWAY_URL`) and
+`API_KEY_ENV` (`OPENAI_API_KEY`), the default host `OPENAI_DIRECT_URL`, and the
+embedding model (`EMBED_MODEL` here, `EMBEDDING_MODEL` there). Both builders
+import `EMBED_MODEL` from this module rather than defining their own, so an
+index and the query embedding cannot use different models.
+`packages/chat-core/src/gateway-contract.test.ts` runs this module through
+`python3`, fails when any of the four values differs, and pins this side's
+request: `POST <gateway>/embeddings` with `Authorization: Bearer`, this
+module's `User-Agent`, and no `api-key` header. The API's client sends the
+gateway's `api-key` header as well; the two header policies both work against
+the gateway and are pinned as they are, not unified, until a live gateway test
+says otherwise.
+
 ## lib/filelock.py
 
 One exclusive advisory lock, for every tool here that writes a file two runs
@@ -1518,7 +1533,7 @@ instruments already shipped in this repo as text and as PDFs, so there is nothin
 to withhold, and committing removes the post-redeploy upload step that
 `upload-readings-index.sh` exists for. `projects/haivn_eip/project.json` declares
 it as `"readingsIndex"`; that one key is the whole wiring, and
-`packages/api/src/readings.ts` does the rest.
+`packages/chat-core/src/readings.ts` does the rest.
 
 **`projects/haivn_eip/project.json` no longer sets `"chatModel"`, and this
 paragraph used to say it did.** It was pinned to `gpt-4o` when this tier was
@@ -1566,7 +1581,7 @@ The annotation pipeline itself is symmetric and was verified so from the
 traces, not inferred: the notice is stamped, composed and rendered identically
 (`formatSearchResults` renders the notice in the session language's code,
 which the pipeline resolves through the project's languages list in
-`packages/api/src/chat/language.ts`, and nothing else in the chat route
+`packages/chat-core/src/chat/language.ts`, and nothing else in the chat route
 branches on language), and the `vi` text names Điều 104,
 all three cấp, the date and Điều 13 exactly as the `en` text does. Rendering the
 Vietnamese turn's notice in English was tried as a falsification and **proved

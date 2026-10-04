@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { EMBEDDING_MODEL } from '../src/gateway.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const READINGS_SCHEMA_PY = path.resolve(HERE, '../../../tools/lib/readings_schema.py');
@@ -88,7 +89,7 @@ export function buildFixtureIndex(dest: string, spec: { documents: FixtureDoc[];
       db.exec("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')");
       for (const [k, v] of [
         ['embedded_chunks', '0'], ['embedding_dim', '8'],
-        ['embedding_model', 'text-embedding-3-small'], ['built_at', '2026-10-01T00:00:00Z'],
+        ['embedding_model', EMBEDDING_MODEL], ['built_at', '2026-10-01T00:00:00Z'],
       ]) setMeta.run(k, v);
     })();
     // The schema turns WAL on; a read-only opener needs no sidecar files.

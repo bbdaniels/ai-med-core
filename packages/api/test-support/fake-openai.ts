@@ -18,6 +18,7 @@
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { EMBEDDING_MODEL } from '@ai-med/chat-core';
 
 export interface FakeToolCall {
   id?: string;
@@ -154,7 +155,7 @@ export class FakeOpenAI {
       : [...FAKE_EMBEDDING];
     return {
       object: 'list',
-      model: body?.model ?? 'text-embedding-3-small',
+      model: body?.model ?? EMBEDDING_MODEL,
       data: inputs.map((_: unknown, index: number) => ({ object: 'embedding', index, embedding: encoded })),
       usage: { prompt_tokens: 3, total_tokens: 3 },
     };

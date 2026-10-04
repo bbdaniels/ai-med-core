@@ -20,7 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
-import { talkContradictions } from '../packages/api/src/project-config.js';
+import { talkContradictions } from '../packages/chat-core/src/project-config.js';
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = process.env.AI_MED_REPO_ROOT?.trim() ? path.resolve(process.env.AI_MED_REPO_ROOT.trim()) : here;

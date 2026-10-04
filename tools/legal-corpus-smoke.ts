@@ -16,8 +16,9 @@ import { fileURLToPath } from 'url';
 import type OpenAI from 'openai';
 import {
   openReadingsIndex, readingsIndexInfo, searchReadings, formatSearchResults,
-} from '../packages/api/src/readings.js';
-import { openaiClients } from '../packages/api/src/openai-clients.js';
+} from '../packages/chat-core/src/readings.js';
+import { openaiClients } from '../packages/chat-core/src/openai-clients.js';
+import { EMBEDDING_MODEL } from '../packages/chat-core/src/gateway.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SLUG = 'haivn_eip';
@@ -68,9 +69,9 @@ async function main(): Promise<number> {
     let vector: Float32Array | null = null;
     if (client) {
       try {
-        // Exactly the call packages/api/src/server.ts makes per search.
+        // The call the chat pipeline's embedder makes per search (chat/retrieval.ts).
         const res = await client.embeddings.create({
-          model: 'text-embedding-3-small', input: query,
+          model: EMBEDDING_MODEL, input: query,
         });
         vector = new Float32Array(res.data[0].embedding);
       } catch (e) {

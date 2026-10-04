@@ -1,11 +1,11 @@
-// Run: npm -w @ai-med/api test
+// Run: npm -w @ai-med/chat-core test
 //
 // runChatTurn on an in-memory store and client: the order in which a request
-// is refused, that the first-turn hook runs before the client is chosen, and
-// that the pipeline is handed its client rather than building one.
+// is refused, and that the first-turn hook runs before the client is chosen.
+// That the pipeline is handed its client rather than building one is checked
+// in ../boundaries.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runChatTurn, ChatInputError, type ChatDeps, type ChatStore } from './pipeline.js';
@@ -97,14 +97,4 @@ test('a turn: prompt, answer, usage under the usage project, logs under the bare
   assert.deepEqual(a.rows.usage.map(u => [u.project, u.endpoint, u.model]), [['fixture_', '/api/chat', 'gpt-4o-mini']]);
   assert.deepEqual(a.rows.sessions, [['fixture', 'fixture-session-0001', 'doc']]);
   assert.deepEqual(a.rows.qa, [['fixture', 'fixture-session-0001', 'doc', 'Swahili', 'Question?', 'A.']]);
-});
-
-test('the pipeline is handed its client: nothing under src/chat builds or fetches one', () => {
-  for (const f of fs.readdirSync(HERE).filter(n => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {
-    const src = fs.readFileSync(path.join(HERE, f), 'utf8');
-    assert.doesNotMatch(src, /openaiClients\s*\(/, `${f} calls openaiClients()`);
-    assert.doesNotMatch(src, /clientForPaymentSource\s*\(/, `${f} chooses a client`);
-    assert.doesNotMatch(src, /new OpenAI\s*\(/, `${f} builds a client`);
-    assert.doesNotMatch(src, /openai-clients/, `${f} imports openai-clients`);
-  }
 });

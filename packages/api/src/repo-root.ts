@@ -9,7 +9,10 @@
  * test-support/tracked-view.ts). Nothing in a deployment sets it.
  *
  * This is the one definition; every module that needs the repository root
- * imports it from here.
+ * imports it from here. PACKAGE_DEFAULTS_DIR is defined here for the same
+ * reason: `here` is `src/` under tsx and `dist/` in the bundle, and both sit
+ * next to `defaults/`, so the path holds in either; a module in a deeper
+ * directory (db/) could not resolve it from its own location.
  */
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,3 +22,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = process.env.AI_MED_REPO_ROOT?.trim()
   ? path.resolve(process.env.AI_MED_REPO_ROOT.trim())
   : path.resolve(here, '../../..');
+
+/** packages/api/defaults: the seed content for a fresh deployment. */
+export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');

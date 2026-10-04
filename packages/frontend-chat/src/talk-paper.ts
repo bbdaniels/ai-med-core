@@ -15,9 +15,9 @@
  * publicRedirectUrl().
  */
 
-import { normalizeDoi, fillTalkPublicUrl } from '../../shared/src/talk-url';
+import { normalizeDoi, fillTalkPublicUrl } from '@ai-med/chat-core/talk-url';
 
-export { normalizeDoi, doiSlug, fillTalkPublicUrl } from '../../shared/src/talk-url';
+export { normalizeDoi, doiSlug, fillTalkPublicUrl } from '@ai-med/chat-core/talk-url';
 
 export interface TalkPaper {
   doi: string | null;

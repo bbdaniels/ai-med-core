@@ -1,4 +1,4 @@
-// Run: npm -w @ai-med/api test
+// Run: npm -w @ai-med/chat-core test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { languageCode, parseLanguageList, sameLanguage } from './language.js';

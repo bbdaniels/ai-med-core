@@ -33,6 +33,15 @@ USER_AGENT = "ai-med-corpus-builder/1.0"
 
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 
+# The gateway contract, shared with the API: packages/chat-core/src/gateway.ts
+# holds the same four values, and packages/chat-core/src/gateway-contract.test.ts
+# fails when the two drift. An index embedded here is queried by the API, so the
+# embedding model is not this module's to choose.
+GATEWAY_URL_ENV = "HARVARD_GATEWAY_URL"
+API_KEY_ENV = "OPENAI_API_KEY"
+OPENAI_DIRECT_URL = "https://api.openai.com/v1"
+EMBED_MODEL = "text-embedding-3-small"
+
 
 def load_env() -> dict[str, str]:
     """Environment first, repo-root .env second. No secret lives in this repo."""
@@ -51,11 +60,11 @@ def load_env() -> dict[str, str]:
 def api_post(env: dict[str, str], path: str, payload: dict,
              retries: int = 4) -> dict:
     # HARVARD_GATEWAY_URL, not OPENAI_BASE_URL: the server reads the same name
-    # (packages/api/src/openai-clients.ts), and the OpenAI SDKs never read it.
-    base = (env.get("HARVARD_GATEWAY_URL") or "https://api.openai.com/v1").rstrip("/")
-    key = env.get("OPENAI_API_KEY", "")
+    # (packages/chat-core/src/gateway.ts), and the OpenAI SDKs never read it.
+    base = (env.get(GATEWAY_URL_ENV) or OPENAI_DIRECT_URL).rstrip("/")
+    key = env.get(API_KEY_ENV, "")
     if not key:
-        raise RuntimeError("OPENAI_API_KEY is not set (environment or repo-root .env)")
+        raise RuntimeError(f"{API_KEY_ENV} is not set (environment or repo-root .env)")
     req = urllib.request.Request(
         f"{base}{path}",
         data=json.dumps(payload).encode(),

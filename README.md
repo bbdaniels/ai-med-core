@@ -118,7 +118,7 @@ those features return a clear error rather than being sent to the gateway. Leave
 OpenAI-compatible gateway can be substituted by pointing `HARVARD_GATEWAY_URL` at it.
 The variable is deliberately not `OPENAI_BASE_URL`: the OpenAI SDK reads that name
 from the environment on its own, so it could redirect clients the code never meant
-to send there. Every client is built in `packages/api/src/openai-clients.ts` with an
+to send there. Every client is built in `packages/chat-core/src/openai-clients.ts` with an
 explicit base URL.
 
 ## Cite this

@@ -17,13 +17,15 @@
  * OpenAI SDK reads OPENAI_BASE_URL (and OPENAI_ORG_ID, OPENAI_PROJECT_ID) from
  * the environment on its own; a name the SDK never reads can only take effect here.
  *
- * This is the only file in packages/api that may call `new OpenAI(`;
+ * The variable names, the default host and the embedding model are the gateway
+ * contract (gateway.ts), shared with the Python corpus builders.
+ *
+ * This is the only file in any package source or in tools that may call `new OpenAI(`;
  * openai-clients.test.ts enforces that.
  */
 
 import { OpenAI } from 'openai';
-
-export const OPENAI_DIRECT_URL = 'https://api.openai.com/v1';
+import { API_KEY_ENV, GATEWAY_URL_ENV, OPENAI_DIRECT_URL } from './gateway.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -56,11 +58,11 @@ function makeClient(apiKey: string, baseURL: string, defaultHeaders?: Record<str
 }
 
 export function buildOpenAIClients(env: Env = process.env): OpenAIClients {
-  const apiKey = env.OPENAI_API_KEY?.trim();
+  const apiKey = env[API_KEY_ENV]?.trim();
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY is not set: chat, grading and embeddings cannot run.');
   }
-  const gatewayURL = env.HARVARD_GATEWAY_URL?.trim() || '';
+  const gatewayURL = env[GATEWAY_URL_ENV]?.trim() || '';
   const usesGateway = gatewayURL !== '';
 
   const gateway = usesGateway

@@ -1,13 +1,12 @@
-// Run: npm -w @ai-med/api test   (node:test under tsx)
+// Run: npm -w @ai-med/chat-core test   (node:test under tsx)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { OpenAI } from 'openai';
-import {
-  buildOpenAIClients, clientForPaymentSource, DirectKeyMissingError, OPENAI_DIRECT_URL,
-} from './openai-clients.js';
+import { buildOpenAIClients, clientForPaymentSource, DirectKeyMissingError } from './openai-clients.js';
+import { OPENAI_DIRECT_URL } from './gateway.js';
 
 const GATEWAY = 'https://gateway.example.test/v1';
 const DECOY = 'https://decoy.example.invalid/v1';
@@ -73,8 +72,12 @@ test('a missing OPENAI_API_KEY fails loudly', () => {
 test('openai-clients.ts is the only place `new OpenAI(` appears', () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(here, '../../..');
-  const roots = [path.join(repoRoot, 'packages/api/src'), path.join(repoRoot, 'tools')];
-  const allowed = path.join(repoRoot, 'packages/api/src/openai-clients.ts');
+  const packages = path.join(repoRoot, 'packages');
+  const roots = [
+    ...readdirSync(packages).map((p) => path.join(packages, p, 'src')).filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } }),
+    path.join(repoRoot, 'tools'),
+  ];
+  const allowed = path.join(repoRoot, 'packages/chat-core/src/openai-clients.ts');
   const self = fileURLToPath(import.meta.url);
   const offenders: string[] = [];
   const walk = (dir: string): void => {

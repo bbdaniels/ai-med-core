@@ -1,4 +1,4 @@
-// Run: npm -w @ai-med/api test
+// Run: npm -w @ai-med/chat-core test
 process.env.TZ = 'UTC';
 
 import { test } from 'node:test';

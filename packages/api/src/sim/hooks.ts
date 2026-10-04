@@ -1,23 +1,12 @@
 /**
- * What differs between the two applications on one chat pipeline. The
- * pipeline asks its hooks for the blocks that precede the document in the
- * prompt, for the case template a response carries, and whether to keep a
- * record of a conversation's first turn.
+ * The simulator's hooks on the chat pipeline (AppHooks in @ai-med/chat-core).
+ * Document chat's hooks (talkHooks) live in chat-core; these are simulator
+ * code, so they stay in the API.
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { dateReferenceBlock } from './prompt.js';
-import type { ChatMessage, ChatProjectConfig } from './types.js';
-
-export interface AppHooks {
-  /** Blocks placed between the system prompt and the document, in order. */
-  promptPreamble(ctx: { now: Date; config: ChatProjectConfig }): string[];
-  /** The case template name a response carries for this document, or null. */
-  caseTemplateFor(documentKey: string): Promise<string | null>;
-  /** Called on a conversation's first turn, before the model is called. Never throws. */
-  onFirstTurn?(s: { systemPrompt: string; messages: ChatMessage[]; language: string | null | undefined; documentKey: string }): Promise<void>;
-}
+import { datePreamble, type AppHooks } from '@ai-med/chat-core';
 
 export interface HookDeps {
   /** The project's case-template mapping as stored (JSON text), or null. */
@@ -25,9 +14,6 @@ export interface HookDeps {
   /** Where first-turn prompt snapshots are written. */
   transcriptsDir: string;
 }
-
-/** Today's date and the recent past by name, before the document. */
-const datePreamble: AppHooks['promptPreamble'] = ({ now }) => [dateReferenceBlock(now)];
 
 /**
  * The simulator: the patient knows today's date and the recent past by name,
@@ -84,19 +70,5 @@ export function simulationHooks(deps: HookDeps): AppHooks {
         console.error('Failed to write initial request snapshot:', e);
       }
     },
-  };
-}
-
-/**
- * Document chat. A document has no case template, so a talk response carries
- * `caseTemplate: null` (formless pages never read it). There is no first-turn
- * hook: the raw prompt of a talk project holds its documents (a paper's full
- * text, a deck's unpublished results), and it is never written to disk. The
- * prompt preamble is still the simulator's.
- */
-export function talkHooks(): AppHooks {
-  return {
-    promptPreamble: datePreamble,
-    caseTemplateFor: async () => null,
   };
 }

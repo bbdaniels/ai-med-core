@@ -9,6 +9,7 @@ import {
   READINGS_MAX_RESULTS,
   type OpenIndex,
 } from '../readings.js';
+import { EMBEDDING_MODEL } from '../gateway.js';
 import type { CompletionClient, Issue } from './completion.js';
 import { sameLanguage, type LanguageEntry } from './language.js';
 import type { TokenUsage } from './types.js';
@@ -75,7 +76,7 @@ export function makeEmbedder(client: CompletionClient): (q: string) => Promise<F
   return async (q: string) => {
     try {
       const embedding = await client.embeddings.create({
-        model: 'text-embedding-3-small',
+        model: EMBEDDING_MODEL,
         input: q,
       });
       const vec = embedding.data?.[0]?.embedding;

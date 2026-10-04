@@ -3,9 +3,8 @@
  *
  * One implementation for both the frontend (manifest matching, the top-level
  * redirect in talk-paper.ts) and the API (the per-paper publicUrl it adds to
- * GET /api/talk-manifest/:slug). Both import this file by relative path: the
- * API bundle treats package imports as external, and a runtime import of a
- * .ts package would fail under plain node.
+ * GET /api/talk-manifest/:slug). Both import it as `@ai-med/chat-core/talk-url`;
+ * the API's production bundle inlines workspace source (packages/api/build.mjs).
  *
  * The slug must match orcid-display's slugForWork() character for character,
  * because the author's publications page opens a paper's popout from

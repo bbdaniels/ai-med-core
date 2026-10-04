@@ -7,9 +7,9 @@ import type { OpenAI } from 'openai';
 import path from 'path';
 import fs from 'fs/promises';
 import { logTokenUsage, activeProjectPrefix, getProjectSetting } from './database.js';
-import { clientForPaymentSource } from './openai-clients.js';
+import { clientForPaymentSource } from '@ai-med/chat-core';
 import { REPO_ROOT } from './repo-root.js';
-import { estimateCost } from './chat/usage.js';
+import { estimateCost } from '@ai-med/chat-core';
 
 async function resolveGradingClient(projectSlug: string): Promise<OpenAI> {
   const paymentSource = await getProjectSetting(projectSlug, 'payment_source');

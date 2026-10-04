@@ -15,8 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer, FIXED_CLOCK_URL, DEFAULT_TEST_NOW, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
 import { buildTrackedView } from '../test-support/tracked-view.js';
-import { buildFixtureIndex } from '../test-support/fixture-index.js';
-import { openReadingsIndex, searchReadings } from './readings.js';
+import { buildFixtureIndex } from '@ai-med/chat-core/test-support/fixture-index';
+import { openReadingsIndex, searchReadings } from '@ai-med/chat-core';
 
 let h: Harness;
 let tmp = '';

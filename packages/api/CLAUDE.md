@@ -2,24 +2,34 @@
 
 Express REST API serving the AI-MED platform. Handles LLM chat, database, admin panel, and Kobo form proxying.
 
-## Key File
+## Layout
 
-`src/server.ts` -- monolith containing all routes, middleware, and database initialization. ~1200 lines.
+The API is one of two applications' homes on the chat engine, `@ai-med/chat-core` (`packages/chat-core/`, see its CLAUDE.md). The engine owns the chat pipeline, readings search, the OpenAI clients and project flag resolution; this package owns HTTP, the database, Kobo, grading and the simulator.
 
-`src/chat/` -- the `/api/chat` pipeline. `runChatTurn` (`pipeline.ts`) validates the request, assembles the prompt (`prompt.ts`, `grounding.ts`), completes with the response_format ladder (`completion.ts`) and the retrieval loop (`retrieval.ts`), logs usage (`usage.ts`, which also holds `estimateCost`) and parses the answer (`answer.ts`). What differs between the simulator and document chat is in `hooks.ts`: a talk response carries `caseTemplate: null`, and only the simulator writes the first turn's raw prompt to `transcripts/initial_*.txt` (a talk prompt holds its documents, which never go to disk). The route in `server.ts` only reads the project config, picks the hooks, and passes in the store and a client chosen by payment source; nothing under `src/chat/` builds or fetches a client (`pipeline.test.ts` checks).
+- `src/server.ts`: startup, middleware (CORS, body limits, the `X-Project` tenancy middleware, rate limits, admin and access-code auth) and most routes (admin, Kobo and Enketo proxies, transcripts, grading, TTS, realtime, tabs, config).
+- `src/routes/chat.ts`: `POST /api/chat`, a thin route over chat-core's `runChatTurn`. It reads the project's chat config, picks the hooks (`talkHooks()` for a talk project, `simulationHooks()` otherwise), and passes `engineStore` and a client chosen by the project's `payment_source`. server.ts mounts it behind the rate limits, the access code and the public-chat switch, in that order.
+- `src/talk/routes.ts`: document chat's routes. The public talk manifest (`GET /api/talk-manifest/:slug`, the one route open to any origin, mounted before the allowlisted CORS middleware; the papers characterization case `talk-manifest-cors` pins that) and `requirePublicChatIfDeclared`, the kill switch every LLM-calling route of a `talkManifest` project passes.
+- `src/sim/hooks.ts`: `simulationHooks()`. The simulator's prompt preamble, the case template a response names, and the first turn's raw prompt written to `transcripts/initial_*.txt` (a talk prompt holds its documents, which never go to disk).
+- `src/db/`: the database, split by owner (below). `src/database.ts` re-exports it, so import sites import from there.
+- `src/grading.ts`, `src/npj26.ts`: real-time feedback grading, and the npj26 review tool's global tables.
 
 ## Database
 
 - **Dev**: SQLite via `better-sqlite3` (path from `DATABASE_URL=sqlite://./local-dev.db`)
 - **Prod**: PostgreSQL via `pg` (standard connection string)
-- **Multi-tenancy**: `X-Project` header triggers `runWithProject()` which sets table prefix in `AsyncLocalStorage`. All queries use `getTablePrefix()` to scope tables (e.g., `demo_admin_content`, `cbs_admin_content`).
-- **Schema**: Single `admin_content` table with `content_type` discriminator (`system_prompt`, `vignette`, `kobo_form_url`, `kobo_form_uid`, `languages`, `case_template`). Separate `vignette_assignments` table for user-to-vignette mapping.
+- **Multi-tenancy**: `X-Project` header triggers `runWithProject()` which sets the table prefix in `AsyncLocalStorage`. Project-scoped queries resolve their table through `activeAdminTable()` / `activeAssignmentsTable()` (e.g., `demo_admin_content`, `cbs_admin_content`).
+- **Schema**: Single `admin_content` table with `content_type` discriminator (`system_prompt`, `vignette`, `kobo_form_url`, `kobo_form_uid`, `languages`, `case_template`). Separate `vignette_assignments` table for user-to-vignette mapping. Global tables (no prefix): `token_usage`, `qa_log`, `session_log`, `project_settings`.
+- **Split by owner** (`src/db/`). One connection and one tenancy context serve both apps, and `admin_content` is one physical table holding both apps' rows, so the SQL stays here rather than in chat-core; chat-core owns the contract (`ChatStore`), this package the implementation.
+  - `connection.ts`: the SQLite handle or Postgres pool, the tenancy context, table names, and all DDL.
+  - `engine-store.ts`: the engine's rows and ledgers. System prompt, documents (vignettes) and languages in `admin_content`; `token_usage`, `qa_log`, `session_log` messages, `project_settings`. Exports `engineStore`, the pipeline's `ChatStore`.
+  - `sim-store.ts`: the simulator's. Vignette assignments, the Kobo form URL and UID, the case template, the form and transcript marks on `session_log`, and `getAllAdminContent`. It may import the engine store; the engine store never imports it.
+  - `init.ts`: `initDatabase`, `ensureProjectTables` and the seeding they run, which writes both owners' rows. Seed content comes from `packages/api/defaults/` (`PACKAGE_DEFAULTS_DIR` in `repo-root.ts`).
 
 ## API Endpoints
 
 ### Public
-- `POST /api/chat` -- AI chat (GPT-4o-mini). Rate limited: 1 req/sec burst, 100/15min. Body `{messages, documentKey, language, sessionToken}`; `vignetteKey` is accepted as an alias of `documentKey` forever, and a request that sends both with different values is refused (400 `documentKey and vignetteKey differ`; `chat/request.ts`). Returns `{message, followups[], beyondScope, usage, caseTemplate}`. When project has `enableFollowups: true`, uses JSON mode and returns 2-3 contextual follow-up questions plus the beyond-scope flag.
-- `GET /api/config` -- Returns koboFormUrl, koboFormUid, languages, tablePrefix, app (`simulation` or `talk`), enableFeedback, enableVoice, formless, enableFollowups, docRefs (the document-reference linking config, or null; see frontend `doc-refs.ts`). The flags are resolved by `resolveProjectFlags` (`src/project-config.ts`): a project declaring `"app": "talk"` reports the advisor flags talk implies (formless, enableFollowups, skipWelcome true; enableFeedback false) unless it sets them itself
+- `POST /api/chat` -- AI chat (GPT-4o-mini). Rate limited: 1 req/sec burst, 100/15min. Body `{messages, documentKey, language, sessionToken}`; `vignetteKey` is accepted as an alias of `documentKey` forever, and a request that sends both with different values is refused (400 `documentKey and vignetteKey differ`; chat-core `chat/request.ts`). Returns `{message, followups[], beyondScope, usage, caseTemplate}`. When project has `enableFollowups: true`, uses JSON mode and returns 2-3 contextual follow-up questions plus the beyond-scope flag.
+- `GET /api/config` -- Returns koboFormUrl, koboFormUid, languages, tablePrefix, app (`simulation` or `talk`), enableFeedback, enableVoice, formless, enableFollowups, docRefs (the document-reference linking config, or null; see frontend `doc-refs.ts`). The flags are resolved by `resolveProjectFlags` (`packages/chat-core/src/project-config.ts`): a project declaring `"app": "talk"` reports the advisor flags talk implies (formless, enableFollowups, skipWelcome true; enableFeedback false) unless it sets them itself
 - `GET /api/tabs` -- Returns `{tabs: [{id, type, order, pinned, content}]}` for the active project. Reads `tabs` array from project.json and resolves each `contentFile` from the filesystem. Returns empty array if project omits `tabs` (frontend then falls back to legacy `langs.tabs`).
 - `GET /api/vignettes` -- Vignette keys (filtered by `?uid=` if assignments exist). With `requireKnownVignette`, `?vignette=<key>` (or its alias `?doc=<key>`; `?vignette=` wins) answers 404 `unknown_vignette` for a key the deployment does not hold
 - `GET /api/languages` -- The project's `languages.json`, read from the database (the copy the admin Translations tab writes). This is the **only** runtime source of UI strings: the frontend keeps no static-file fallback, and the API no longer mirrors the JSON to `frontend-chat/public` (dev) or `frontend-chat/dist` (prod). That mirror existed solely to feed a `${BASE_URL}languages.json` fetch in the frontend's catch block; no build ever published that path (GitHub Pages returned 404 for every project), so both sides were removed 2026-09-08 rather than leaving a second source that drifts from the DB.
@@ -78,12 +88,12 @@ project-prefixed) with a `project` column, one row per chat turn.
 id | project | session_token | vignette_key | language | question | answer | created_at
 ```
 
-- **Write**: `POST /api/chat` calls `logQaTurn()` (`database.ts`) when the project sets
+- **Write**: `POST /api/chat` calls `logQaTurn()` (`db/engine-store.ts`) when the project sets
   `logConversations: true` in `project.json`. Fire-and-forget: the promise is caught and
   warned, so a logging failure can never break a reply. `session_token` is the same
   transcript token the frontend generates, which is what lets turns be regrouped into
   conversations; it is `NULL` when a turn arrives without one.
-- **Read**: `getQaLog()` (`database.ts`) behind `GET /api/admin/qa-log`. Both the SQLite and
+- **Read**: `getQaLog()` (`db/engine-store.ts`) behind `GET /api/admin/qa-log`. Both the SQLite and
   Postgres branches normalize `created_at` to the same ISO-8601 UTC string, so a client sees
   one format regardless of backend. Ordered `(created_at, id)` ascending for stable
   pagination and chronological export.
@@ -181,7 +191,7 @@ Other gotchas:
 ## Build
 
 ```bash
-npm run build    # esbuild → dist/server.js (ESM, external packages)
+npm run build    # build.mjs: esbuild → dist/server.js (ESM; @ai-med/* bundled from source, every other package external)
 npm run dev      # tsx watch
 npm start        # NODE_ENV=production node dist/server.js
 ```

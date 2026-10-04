@@ -1,14 +1,13 @@
 import express from 'express';
 import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
-import { openaiClients, clientForPaymentSource, DirectKeyMissingError, OPENAI_DIRECT_URL } from './openai-clients.js';
+import { openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost } from '@ai-med/chat-core';
 import path from 'path';
 import fs from 'fs/promises';
 import { readdirSync, readFileSync } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
-import { fillTalkPublicUrl } from '../../shared/src/talk-url.js';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import {
@@ -51,11 +50,9 @@ import {
   deleteProjectSetting,
   getAllProjectSettings,
   isPublicChatEnabled,
-  logSessionMessage,
   logSessionFormSubmit,
   logSessionTranscriptSaved,
   getSessionStats,
-  logQaTurn,
   getQaLog,
   QA_LOG_MAX_LIMIT,
 } from './database.js';
@@ -68,14 +65,9 @@ import {
   exportNpj26Csv,
   TOKEN_RE as NPJ26_TOKEN_RE,
 } from './npj26.js';
-import { openReadingsIndex } from './readings.js';
 import { REPO_ROOT } from './repo-root.js';
-import { loadChatProjectConfig } from './chat/config.js';
-import { resolveProjectFlags } from './project-config.js';
-import { simulationHooks, talkHooks } from './chat/hooks.js';
-import { runChatTurn, ChatInputError, type ChatStore } from './chat/pipeline.js';
-import { resolveDocumentKey, type ChatRequestBody } from './chat/request.js';
-import { estimateCost } from './chat/usage.js';
+import { talkRoutes } from './talk/routes.js';
+import { chatRouter } from './routes/chat.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -206,42 +198,16 @@ const corsOptions: CorsOptions = {
   maxAge: 86400, // 24h preflight cache
 };
 
-// Public talk manifest: which papers a talkManifest project offers, fetched by
-// third-party pages to decide whether to render "Talk to this paper" buttons.
-// It is the ONE route open to any origin, so it is registered before the global
-// allowlisted CORS middleware and answers the request itself; the global policy
-// is not widened. It carries no credentials and nothing a browser could abuse.
-const talkManifestCors = cors({ origin: '*', methods: ['GET', 'OPTIONS'], maxAge: 86400 });
-app.options('/api/talk-manifest/:slug', talkManifestCors);
-app.get('/api/talk-manifest/:slug', talkManifestCors, async (req, res) => {
-  const slug = req.params.slug;
-  if (!validProjectSlugs.has(slug)) return res.status(404).json({ error: 'Unknown project' });
-  const config = await readProjectConfig(slug);
-  if (typeof config.talkManifest !== 'string' || !config.talkManifest) {
-    return res.status(404).json({ error: 'Project has no talk manifest' });
-  }
-  let enabled = false;
-  try {
-    enabled = await isPublicChatEnabled(slug);
-  } catch (err) {
-    console.error(`[talk-manifest] could not read public_chat for ${slug}; treating as off:`, err);
-  }
-  if (!enabled) {
-    res.set('Cache-Control', 'no-store');
-    return res.json({ papers: [] });
-  }
-  const manifest = await readTalkManifest(slug, config.talkManifest);
-  // talkPublicUrl projects: each paper also carries its canonical public link
-  // (the author's page with that paper's popout open), filled server side.
-  const template = typeof config.talkPublicUrl === 'string' ? config.talkPublicUrl : '';
-  const papers = template
-    ? manifest.papers.map(p => (p && typeof p === 'object'
-      ? { ...p, publicUrl: fillTalkPublicUrl(template, (p as { doi?: string | null }).doi) }
-      : p))
-    : manifest.papers;
-  res.set('Cache-Control', 'public, max-age=300');
-  return res.json({ papers });
+// Document chat's routes (talk/routes.ts). The public talk manifest is the ONE
+// route open to any origin, so its router is mounted here, before the global
+// allowlisted CORS middleware below; the global policy is not widened.
+const talk = talkRoutes({
+  isValidProject: slug => validProjectSlugs.has(slug),
+  readProjectConfig,
+  requestProjectSlug,
 });
+app.use(talk.manifestRouter);
+const { requirePublicChatIfDeclared } = talk;
 
 // Apply CORS only to API-style routes
 app.use('/api', cors(corsOptions));
@@ -537,57 +503,6 @@ const requireAccessCode = async (req: express.Request, res: express.Response,
   });
 };
 
-// ── Public-chat kill switch ──────────────────────────────────────────
-//
-// A project that declares `talkManifest` in project.json is reachable from
-// third-party pages ("Talk to this paper" buttons). Its `public_chat` project
-// setting (default off) turns it on and off from the global admin page with no
-// redeploy. Off empties the public manifest, so the external site renders no
-// buttons, AND closes every LLM-calling route, so bookmarked links stop working.
-// Projects without `talkManifest` never reach the setting lookup.
-
-const requirePublicChatIfDeclared = async (req: express.Request, res: express.Response,
-                                           next: express.NextFunction) => {
-  const slug = requestProjectSlug(req);
-  const config = await readProjectConfig(slug);
-  if (!config.talkManifest) return next();
-  let enabled = false;
-  try {
-    enabled = await isPublicChatEnabled(slug);
-  } catch (err) {
-    // Fail closed: a settings-read failure must not open a switched-off project.
-    console.error(`[public-chat] could not read public_chat for ${slug}; treating as off:`, err);
-  }
-  if (enabled) return next();
-  return res.status(503).json({
-    error: 'This assistant is currently switched off.',
-    code: 'public_chat_disabled',
-  });
-};
-
-/**
- * The manifest a talkManifest project publishes: `{ papers: [{doi, title, vignette}] }`.
- * Never throws: a missing or malformed file is logged and read as no papers.
- */
-async function readTalkManifest(slug: string, relPath: string): Promise<{ papers: unknown[] }> {
-  try {
-    const resolved = path.resolve(REPO_ROOT, relPath);
-    if (!resolved.startsWith(path.join(REPO_ROOT, 'projects') + path.sep)) {
-      console.error(`[talk-manifest] ${slug}: talkManifest path escapes projects/: ${relPath}`);
-      return { papers: [] };
-    }
-    const parsed = JSON.parse(await fs.readFile(resolved, 'utf-8'));
-    if (!parsed || !Array.isArray(parsed.papers)) {
-      console.error(`[talk-manifest] ${slug}: ${relPath} has no "papers" array`);
-      return { papers: [] };
-    }
-    return { papers: parsed.papers };
-  } catch (err) {
-    console.error(`[talk-manifest] ${slug}: could not read ${relPath}:`, err);
-    return { papers: [] };
-  }
-}
-
 // ── Private project content ──────────────────────────────────────────
 //
 // Some files a project serves are deliberately not in the repository: the
@@ -804,59 +719,8 @@ if (process.env.NODE_ENV === 'production' && serveFrontend) {
 
 // API Routes
 
-// The chat pipeline's view of the database (chat/pipeline.ts).
-const chatStore: ChatStore = {
-  getSystemPrompt,
-  getLanguages,
-  async getDocument(key) {
-    const vignette = (await getAllVignettes()).find(v => v.key === key);
-    return vignette ? { key: vignette.key, content: vignette.content } : null;
-  },
-  logTokenUsage,
-  logQaTurn,
-  logSessionMessage,
-};
-
-app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requirePublicChatIfDeclared, async (req, res) => {
-  try {
-    const body = (req.body ?? {}) as ChatRequestBody;
-    const { messages, language, sessionToken } = body;
-    // documentKey, or vignetteKey as every deployed page sends it (chat/request.ts).
-    const documentKey = resolveDocumentKey(body);
-    const usageProject = activeProjectPrefix();
-    const slug = (usageProject || '').replace(/_+$/, '');
-    const config = await loadChatProjectConfig(REPO_ROOT, slug || 'demo', usageProject);
-
-    const turn = await runChatTurn({ messages, documentKey, language, sessionToken }, {
-      repoRoot: REPO_ROOT,
-      config,
-      store: chatStore,
-      hooks: config.app === 'talk'
-        ? talkHooks()
-        : simulationHooks({ getCaseTemplate, transcriptsDir: path.resolve(REPO_ROOT, 'transcripts') }),
-      now: () => new Date(),
-      // Billed per project: the payment source picks the client for this request.
-      client: async () => clientForPaymentSource(await getProjectSetting(slug || 'default', 'payment_source')),
-      openIndex: cfg => (cfg.readingsIndexPath ? openReadingsIndex(REPO_ROOT, cfg.slug, cfg.readingsIndexPath) : null),
-    });
-
-    res.json({
-      message: turn.message,
-      followups: turn.followups,
-      beyondScope: turn.beyondScope,
-      usage: turn.usage,
-      caseTemplate: turn.caseTemplate,
-    });
-  } catch (error) {
-    if (error instanceof ChatInputError) return res.status(error.status).json({ error: error.message });
-    if (error instanceof DirectKeyMissingError) return res.status(503).json({ error: error.message });
-    console.error('OpenAI API error:', error);
-    res.status(500).json({
-      error: 'Failed to generate response',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+// The chat pipeline's route (routes/chat.ts), behind the same guards in the same order.
+app.use(chatRouter([chatBurstLimiter, chatLimiter, requireAccessCode, requirePublicChatIfDeclared]));
 
 // Text-to-speech endpoint
 const TTS_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'] as const;
@@ -2647,7 +2511,7 @@ app.get('/api/config', async (_req, res) => {
       } catch { /* ignore parse errors */ }
     }
 
-    // The project's flags, resolved from project.json (project-config.ts):
+    // The project's flags, resolved from project.json (chat-core project-config.ts):
     // a talk project implies the advisor flags it leaves unset.
     const projectSlug = (activeProjectPrefix() || 'demo').replace(/_+$/, '') || 'demo';
     const projectConfigPath = path.join(REPO_ROOT, 'projects', projectSlug, 'project.json');

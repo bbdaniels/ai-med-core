@@ -1,4 +1,4 @@
-// Run: npm -w @ai-med/api test   (node:test under tsx)
+// Run: npm -w @ai-med/chat-core test   (node:test under tsx)
 //
 // project.json flag resolution (project-config.ts), and the validator's
 // contradiction check, run on a throwaway projects directory.

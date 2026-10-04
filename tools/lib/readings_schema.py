@@ -1,6 +1,6 @@
 """The one SQLite shape every reading index is written in.
 
-packages/api/src/readings.ts reads every project's index with one
+packages/chat-core/src/readings.ts reads every project's index with one
 implementation, so the tables are not any builder's to design. Both builders
 (tools/build-readings-corpus.py for bibliographic corpora, tools/build-legal-
 corpus.py for haivn_eip's legal library) used to carry their own copy of this

@@ -27,11 +27,15 @@
 //         "documents": [{ "key": "...", "file": "fixtures/case.md" }],   // pushed as vignettes
 //         "caseTemplate": { ... } | "...",          // saved as the case template
 //         "settings": { "payment_source": "...", "public_chat": "on" },
-//         "readingsIndex": "fixtures/index.json"    // a fixture index spec (see test-support/fixture-index.ts)
+//         "readingsIndex": "fixtures/index.json"    // a fixture index spec (see chat-core test-support/fixture-index.ts)
 //       },
 //       "turns": [ {
 //         "name": "...",
 //         "body": { ...the /api/chat request body },
+//         "http"?: { "path": "/api/...", "method"?: "GET", "origin"?: "...", "headers": ["..."] },
+//                                                   // instead of body: one plain request under the
+//                                                   // case's X-Project; records its status and the
+//                                                   // named response headers (null when absent)
 //         "fake": [ FakeReply | { "reject": 400, "body"?: {...} } ] | { "reject": [400, ...], "then"?: [FakeReply] },
 //         "settings"?: { ... },                     // applied before this turn
 //         "auth"?: false                            // send no access token on this turn
@@ -43,18 +47,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
-import { buildFixtureIndex } from '../test-support/fixture-index.js';
+import { buildFixtureIndex } from '@ai-med/chat-core/test-support/fixture-index';
 import type { FakeReply } from '../test-support/fake-openai.js';
-import { loadChatProjectConfig } from './chat/config.js';
-import { corpusGroundingFile } from './chat/grounding.js';
+import { loadChatProjectConfig, corpusGroundingFile } from '@ai-med/chat-core';
 
 const PROJECTS = path.join(REPO_ROOT, 'projects');
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
 
 type FakeStep = FakeReply | { reject: number; body?: object };
+interface HttpProbe {
+  path: string;
+  method?: string;
+  origin?: string;
+  headers: string[];
+}
 interface Turn {
   name: string;
-  body: Record<string, unknown>;
+  body?: Record<string, unknown>;
+  http?: HttpProbe;
   fake?: FakeStep[] | { reject: Array<number | { status: number; body?: object }>; then?: FakeReply[] };
   settings?: Record<string, string>;
   auth?: boolean;
@@ -216,6 +226,21 @@ for (const c of cases) {
     const recorded: any[] = [];
     for (const turn of c.turns) {
       if (turn.settings) applySettings(turn.settings);
+      if (turn.http) {
+        const probe = turn.http;
+        const res = await fetch(`${harness.base}${probe.path}`, {
+          method: probe.method ?? 'GET',
+          headers: { 'X-Project': c.project, ...(probe.origin ? { Origin: probe.origin } : {}) },
+        });
+        await res.arrayBuffer();
+        recorded.push({
+          name: turn.name,
+          status: res.status,
+          headers: Object.fromEntries(probe.headers.map(h => [h.toLowerCase(), res.headers.get(h)])),
+        });
+        continue;
+      }
+      const body = turn.body ?? {};
       harness.fake.clearQueue();
       for (const step of fakeSteps(turn.fake)) {
         if ('reject' in step && typeof step.reject === 'number') harness.fake.rejectNext(step.reject, step.body);
@@ -226,16 +251,16 @@ for (const c of cases) {
       const qaBefore = harness.qaLog(c.project).length;
       const initialBefore = new Set(harness.initialSnapshots());
 
-      const res = await harness.chat(c.project, turn.body, turn.auth === false ? undefined : token);
+      const res = await harness.chat(c.project, body, turn.auth === false ? undefined : token);
 
       assert.equal(harness.fake.pending(), 0,
         `${c.name}/${turn.name}: ${harness.fake.pending()} scripted fake replies were never requested`);
       // A first-turn snapshot is a file in the server's own transcripts/
       // (the harness's checkout view) naming this turn's document and first
       // message.
-      const msgs = Array.isArray(turn.body.messages) ? turn.body.messages as Array<{ content?: unknown }> : [];
+      const msgs = Array.isArray(body.messages) ? body.messages as Array<{ content?: unknown }> : [];
       const firstText = typeof msgs[0]?.content === 'string' ? JSON.stringify(msgs[0].content) : null;
-      const named = turn.body.documentKey ?? turn.body.vignetteKey;
+      const named = body.documentKey ?? body.vignetteKey;
       const docKey = typeof named === 'string' ? JSON.stringify(named) : null;
       const newSnapshots = harness.initialSnapshots().filter(s => !initialBefore.has(s));
       recorded.push({

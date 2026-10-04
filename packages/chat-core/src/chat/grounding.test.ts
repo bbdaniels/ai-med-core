@@ -1,4 +1,4 @@
-// Run: npm -w @ai-med/api test
+// Run: npm -w @ai-med/chat-core test
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

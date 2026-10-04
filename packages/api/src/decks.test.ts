@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { buildDeckVignettes, parsePack, writeDeck, MAX_CHARS } from '../../../tools/sync-deck-packs.js';
 import { AdminApiClient } from '../../../tools/lib/api-client.js';
-import { resolveProjectFlags } from './project-config.js';
+import { resolveProjectFlags } from '@ai-med/chat-core';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../../..');

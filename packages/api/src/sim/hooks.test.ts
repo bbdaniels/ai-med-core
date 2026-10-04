@@ -3,7 +3,8 @@
 // What differs between the simulator's hooks and document chat's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { simulationHooks, talkHooks, type HookDeps } from './hooks.js';
+import { talkHooks } from '@ai-med/chat-core';
+import { simulationHooks, type HookDeps } from './hooks.js';
 
 const deps: HookDeps = {
   getCaseTemplate: async () => JSON.stringify({ vignetteTemplates: { 'doc-a': 'fixture_template' } }),

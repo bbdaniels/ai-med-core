@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
+    "build": "node build.mjs",
     "start": "NODE_ENV=production node dist/server.js",
-    "test": "tsx --test src/*.test.ts src/chat/*.test.ts",
+    "test": "tsx --test src/*.test.ts src/sim/*.test.ts",
     "test:chat": "tsx --test src/chat-characterization.test.ts",
     "type-check": "tsc --noEmit"
   },

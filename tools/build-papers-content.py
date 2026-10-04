@@ -44,8 +44,9 @@ Everything the project serves about a paper is derived here, and nowhere else:
 
 Which rows become vignettes:
   * one per bibkey; a bibkey's first non-XML row carries its metadata;
-  * a working-paper or preprint twin of a published article in the library
-    (notes say "WP twin of <bibkey>") is not a vignette of its own;
+  * a working-paper, preprint or accepted-manuscript twin of a published
+    article in the library (notes say "WP twin of <bibkey>" or "AM twin of
+    <bibkey>") is not a vignette of its own;
   * the text comes from the PMC XML when there is one (the published text,
     with real section structure), otherwise from the PDF;
   * a work with neither has no vignette and is reported, not faked.
@@ -182,7 +183,7 @@ def select_papers(rows: list[dict]) -> tuple[list[dict], list[tuple[str, str]]]:
     papers, skipped = [], []
     for bibkey, group in by_key.items():
         primary = next((r for r in group if r["version"] != "xml"), group[0])
-        twin = re.search(r"WP twin of (\w+)", primary.get("notes", ""))
+        twin = re.search(r"\b(?:WP|AM) twin of (\w+)", primary.get("notes", ""))
         xml = LIBRARY / f"{bibkey}.xml"
         pdf = LIBRARY / f"{bibkey}.pdf"
         has_pdf = primary["version"] not in ("missing", "xml") and pdf.exists()
@@ -202,7 +203,7 @@ def select_papers(rows: list[dict]) -> tuple[list[dict], list[tuple[str, str]]]:
         paper["servable"] = primary["servable"] == "yes" and has_pdf
         paper["has_text"] = bool(paper["xml"] or paper["pdf"])
         if paper["twin_of"]:
-            skipped.append((bibkey, f"working-paper/preprint twin of {paper['twin_of']}"))
+            skipped.append((bibkey, f"working-paper/preprint/accepted-manuscript twin of {paper['twin_of']}"))
         elif not paper["has_text"]:
             skipped.append((bibkey, "no PDF or XML in the library"))
         papers.append(paper)
@@ -592,7 +593,7 @@ def grounding(all_papers: list[dict], talkable: set[str],
                 f"Authors: {author_line(authors.get(p['bibkey']))}."]
         bits.append(f"DOI link: https://doi.org/{p['doi']}." if p["doi"] else "No DOI.")
         if p["twin_of"]:
-            bits.append("Working-paper or preprint version of \""
+            bits.append("Working-paper, preprint or accepted-manuscript version of \""
                         f"{titles[p['twin_of']]}\"; discuss the published article.")
         elif p["key"] in talkable:
             bits.append("Open access; the reader can talk to it and open its PDF here."

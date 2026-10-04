@@ -36,19 +36,6 @@ export default function GradingScreen({ tokens, language, translations, onComple
   const [status, setStatus] = useState<'loading' | 'grading' | 'complete' | 'error'>('loading');
   const [transcriptFeedbacks, setTranscriptFeedbacks] = useState<TranscriptFeedback[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
-  const [expandedSessions, setExpandedSessions] = useState<Set<number>>(new Set([0])); // First session expanded by default
-
-  const toggleSession = (index: number) => {
-    setExpandedSessions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(index)) {
-        newSet.delete(index);
-      } else {
-        newSet.add(index);
-      }
-      return newSet;
-    });
-  };
 
   useEffect(() => {
     gradeSession();
@@ -124,7 +111,7 @@ export default function GradingScreen({ tokens, language, translations, onComple
     <div className="grading-screen">
       <div className="feedback-content">
         <div className="feedback-carousel">
-          {transcriptFeedbacks.map(({ token, feedback }, transcriptIdx) => (
+          {transcriptFeedbacks.map(({ token, feedback }) => (
             <div key={token} className="feedback-card">
               {feedback.openingStatement && (
                 <div className="opening-statement">

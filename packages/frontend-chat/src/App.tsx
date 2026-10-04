@@ -1064,9 +1064,11 @@ function ChatInterface() {
   // Tiny translation helper
   function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullable<LanguageUISection[S]>>(section: S, key: K): string {
     const code = selectedLanguageCode || 'en';
-    const localized = langs?.ui?.[code]?.[section] as LanguageUISection[S] | undefined;
-    const fallback = langs?.ui?.['en']?.[section] as LanguageUISection[S] | undefined;
-    const value = (localized?.[key] ?? fallback?.[key]) as unknown;
+    // K is a key of the section S, but TypeScript cannot index the union of
+    // section types with it, so read through a record view of the section.
+    const localized = langs?.ui?.[code]?.[section] as Record<K, unknown> | undefined;
+    const fallback = langs?.ui?.['en']?.[section] as Record<K, unknown> | undefined;
+    const value = localized?.[key] ?? fallback?.[key];
     return typeof value === 'string' ? (value as string) : '';
   }
 

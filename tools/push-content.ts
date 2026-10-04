@@ -18,6 +18,12 @@
  *   npx tsx tools/push-content.ts <project-name> --dry-run
  *   npx tsx tools/push-content.ts <project-name> --local   # push to localhost dev server
  *   npx tsx tools/push-content.ts <project-name> --url <base-url>  # override DEPLOY_URL
+ *   npx tsx tools/push-content.ts <project-name> --prune   # allow a guarded removal
+ *
+ * Deployed vignettes that project.json no longer names are removed, except
+ * that tools/lib/stale-removal.ts refuses every removal without --prune when
+ * the local list is empty, the project sets requireKnownVignette, or more than
+ * max(3, 25%) of the deployed vignettes would go. Refused keys are printed.
  */
 
 import { createHash } from 'crypto';
@@ -25,6 +31,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { AdminApiClient } from './lib/api-client.js';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
+import { planStaleRemoval, refusalReason } from './lib/stale-removal.js';
 
 interface ProjectJson {
   name: string;
@@ -43,6 +50,7 @@ interface ProjectJson {
   languages: string[];
   enableFeedback?: boolean;
   formless?: boolean;
+  requireKnownVignette?: boolean;
   tabs?: Array<{ contentFile?: string | Record<string, string> }>;
   deployment: {
     tablePrefix: string;
@@ -67,12 +75,13 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const isLocal = args.includes('--local');
+  const prune = args.includes('--prune');
   const urlFlagIdx = args.indexOf('--url');
   const urlOverride = urlFlagIdx !== -1 ? args[urlFlagIdx + 1] : undefined;
   const projectName = args.find(a => !a.startsWith('--') && (urlFlagIdx === -1 || a !== args[urlFlagIdx + 1]));
 
   if (!projectName) {
-    console.error('Usage: npx tsx tools/push-content.ts <project-name> [--dry-run] [--local] [--url <base-url>]');
+    console.error('Usage: npx tsx tools/push-content.ts <project-name> [--dry-run] [--local] [--url <base-url>] [--prune]');
     process.exit(1);
   }
 
@@ -177,12 +186,20 @@ async function main() {
     }
   }
 
-  // Remove remote vignettes not in project.json
+  // Remove remote vignettes not in project.json, behind the prune guard
+  // (tools/lib/stale-removal.ts): never a mass deletion without --prune.
   const remote = await client.getContent();
-  const staleKeys = remote.vignettes
-    .map((v: { key: string }) => v.key)
-    .filter((k: string) => !localKeys.has(k));
-  for (const key of staleKeys) {
+  const remoteKeys: string[] = remote.vignettes.map((v: { key: string }) => v.key);
+  const requireKnownVignette = project.requireKnownVignette === true;
+  const plan = planStaleRemoval([...localKeys], remoteKeys, { prune, requireKnownVignette });
+  if (plan.refused.length > 0) {
+    console.warn(`WARNING: refusing to remove ${plan.refused.length} deployed vignette(s): ` +
+                 `${refusalReason([...localKeys], remoteKeys, requireKnownVignette)}.`);
+    for (const key of plan.refused) console.warn(`  kept "${key}"`);
+    console.warn(`  If they really should go, commit the project.json and re-run with --prune: ` +
+                 `npx tsx tools/push-content.ts ${projectName} --prune --url <deployment-url>`);
+  }
+  for (const key of plan.remove) {
     console.log(`Removing stale vignette "${key}"`);
     if (!dryRun) {
       await client.deleteVignette(key);

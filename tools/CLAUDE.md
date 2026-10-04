@@ -26,6 +26,16 @@ ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts demo --local
 
 Requires `ADMIN_PASSPHRASE` to match the target deployment's configured value.
 
+### Stale vignettes and the prune guard
+
+A deployed vignette that `project.json` no longer names is stale, and the push removes it. CI runs this push for every project on every merge to main, so a `project.json` that was not committed after a content sync would delete live content. `tools/lib/stale-removal.ts` (`planStaleRemoval`) therefore refuses **every** removal, unless `--prune` is passed, when any of these holds:
+
+- the checkout's `project.json` names no vignettes;
+- the project sets `requireKnownVignette` (its keys are deep links people hold);
+- more than max(3, 25% of the deployed vignettes) would go.
+
+A refusal removes nothing, prints each kept key, and the push carries on with everything else. When the removal is intended, commit the `project.json` and re-run with `--prune`. Tests: `packages/api/src/stale-removal.test.ts`.
+
 ### Assignments sync
 
 When `projects/<name>/assignments.json` exists, `push-content.ts` diffs the local rows against the remote DB (via `GET /api/admin/vignette-assignments`) using the `(uid, vignette_key)` pair as the key. It then:
@@ -37,6 +47,16 @@ When `projects/<name>/assignments.json` exists, `push-content.ts` diffs the loca
 The file format is a JSON array of `{ "uid": "...", "vignette_key": "..." }` objects. Same `uid` can appear multiple times (e.g., teech participants who get both a text and a voice vignette). Assignment row count in the DB stays in sync with the file on every push to main via the existing CI step in `deploy-pages.yml`.
 
 Projects without an `assignments.json` file skip this step silently — the tool also still supports formless and non-assignment projects unchanged.
+
+## smoke-chat.ts
+
+The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a merge is a production deploy):
+
+```bash
+ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url https://api.ai-med.live
+```
+
+For each project with a private `projects/<slug>/tests/smoke.json` (`{"vignetteKey", "question", "language"?}`), or each one named with `--projects a,b`, it checks that `/api/config` answers, that `/api/vignettes` refuses without a token when the project is gated (codes from `ACCESS_CODE_<SLUG>`) and answers with one, that one `/api/chat` turn returns a message, followups when the project is structured, and usage, and that a talk-manifest project lists papers. With `ADMIN_PASSPHRASE` set, each turn's cost is the deployment's own `token_usage` estimate; without it only token counts print. A run costs about a cent. Turns carry a `smoke-chat-<timestamp>` session token, so they can be told apart in `qa_log` exports. Exits 1 on any failure. Test: `packages/api/src/smoke-chat.test.ts`.
 
 ## export-conversations.ts
 

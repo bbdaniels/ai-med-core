@@ -1229,7 +1229,6 @@ export default function AdminDashboard({ token, onLogout, readOnly = false }: Ad
             sessionStats={sessionStats}
             isLoading={isLoadingUsage}
             days={usageDays}
-            readOnly={readOnly}
             onDaysChange={(d) => { setUsageDays(d); loadUsage(d); }}
             onRefresh={() => loadUsage()}
           />

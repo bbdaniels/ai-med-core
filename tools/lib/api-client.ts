@@ -225,6 +225,16 @@ export class AdminApiClient {
     });
   }
 
+  // --- Usage ---
+
+  /** The deployment's token_usage summary for this project over the last `days` days. */
+  async getTokenUsage(days = 1): Promise<{
+    totals: { prompt_tokens: number; completion_tokens: number; estimated_cost: number };
+    [k: string]: unknown;
+  }> {
+    return this.request(`/api/admin/token-usage?days=${days}`);
+  }
+
   // --- Conversation log endpoints ---
 
   async getQaLog(params: {

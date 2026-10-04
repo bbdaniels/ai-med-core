@@ -16,7 +16,6 @@ interface AdminUsageTabProps {
   sessionStats: SessionStats | null;
   isLoading: boolean;
   days: number;
-  readOnly?: boolean;
   onDaysChange: (days: number) => void;
   onRefresh: () => void;
 }
@@ -26,7 +25,6 @@ export default function AdminUsageTab({
   sessionStats,
   isLoading,
   days,
-  readOnly = false,
   onDaysChange,
   onRefresh,
 }: AdminUsageTabProps) {

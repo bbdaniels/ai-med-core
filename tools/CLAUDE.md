@@ -191,10 +191,14 @@ where that page fits the window, dropping them only where it does not.
 
 Builds a project's retrieval index from its `readings-manifest.json`. Formerly
 `build-ppol-corpus.py`; generalized 2026-09-22 rather than copied for a second
-project. Defaults are the PPOL 5013/5014 index
-(`projects/ppol5013/readings-manifest.json` ->
-`projects/ppol5013/content/readings/readings.db`), unchanged; `--manifest` and
-`--out` select another. `ocr-cache/` is written beside the output database.
+project. The default manifest is PPOL 5013/5014's
+(`projects/ppol5013/readings-manifest.json`); `--manifest` selects another. The
+output database follows the manifest: `content/readings/readings.db` beside it,
+the same path `upload-readings-index.sh` uploads from, so
+`--manifest projects/papers/readings-manifest.json` builds the papers index and
+never touches PPOL's. (Until 2026-10-04 the output defaulted to the PPOL index
+whatever manifest was passed, which overwrote it once.) `--out` is only for a
+database somewhere else. `ocr-cache/` is written beside the output database.
 
 The papers advisor's manifest, `projects/papers/readings-manifest.json`, is
 **generated** by `build-papers-content.py` from `library.tsv` (one schema, not a
@@ -208,9 +212,7 @@ before. The table shape lives in `lib/readings_schema.py`, shared with
 
 ```bash
 python3 tools/build-papers-content.py        # regenerates the papers manifest
-python3 tools/build-readings-corpus.py \
-    --manifest projects/papers/readings-manifest.json \
-    --out projects/papers/content/readings/readings.db
+python3 tools/build-readings-corpus.py --manifest projects/papers/readings-manifest.json
 bash tools/upload-readings-index.sh papers --url "$DEPLOY_URL"   # READINGS_INDEX_PAPERS on Railway
 ```
 

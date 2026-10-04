@@ -35,8 +35,7 @@ Everything the project serves about a paper is derived here, and nowhere else:
                               document per paper with a PDF, with its DOI.
                               Build the index from it with
                                 python3 tools/build-readings-corpus.py \
-                                  --manifest projects/papers/readings-manifest.json \
-                                  --out projects/papers/content/readings/readings.db
+                                  --manifest projects/papers/readings-manifest.json
   content/library/authors.json
                               author lists by bibkey, from Crossref (or the PMC
                               XML, or the CV's .bib), cached so a rebuild needs
@@ -44,9 +43,11 @@ Everything the project serves about a paper is derived here, and nowhere else:
 
 Which rows become vignettes:
   * one per bibkey; a bibkey's first non-XML row carries its metadata;
-  * a working-paper, preprint or accepted-manuscript twin of a published
-    article in the library (notes say "WP twin of <bibkey>" or "AM twin of
-    <bibkey>") is not a vignette of its own;
+  * a working-paper, preprint or accepted-manuscript version of a published
+    article in the library is not a vignette of its own. Which file is a
+    version of which article comes from versions.json in Ben's site repo, the
+    one pairing file his web page and CV also read (see lib/paper_versions.py);
+    the library manifest carries per-file facts only;
   * the text comes from the PMC XML when there is one (the published text,
     with real section structure), otherwise from the PDF;
   * a work with neither has no vignette and is reported, not faked.
@@ -73,7 +74,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import pdf_text  # noqa: E402
+from lib import paper_versions, pdf_text  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT = REPO_ROOT / "projects" / "papers"
@@ -175,15 +176,22 @@ def vignette_key(bibkey: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", bibkey)
 
 
-def select_papers(rows: list[dict]) -> tuple[list[dict], list[tuple[str, str]]]:
-    """One record per bibkey, in manifest order, with its text source resolved."""
+def select_papers(rows: list[dict], versions: list[dict]
+                  ) -> tuple[list[dict], list[tuple[str, str]]]:
+    """One record per bibkey, in manifest order, with its text source resolved.
+
+    `versions` is versions.json's paper list; it alone decides which bibkey is
+    another version of which published article.
+    """
     by_key: dict[str, list[dict]] = {}
     for r in rows:
         by_key.setdefault(r["bibkey"], []).append(r)
+    primaries = {k: next((r for r in g if r["version"] != "xml"), g[0])
+                 for k, g in by_key.items()}
+    twin_of = paper_versions.pair_versions(list(primaries.values()), versions)
     papers, skipped = [], []
     for bibkey, group in by_key.items():
-        primary = next((r for r in group if r["version"] != "xml"), group[0])
-        twin = re.search(r"\b(?:WP|AM) twin of (\w+)", primary.get("notes", ""))
+        primary = primaries[bibkey]
         xml = LIBRARY / f"{bibkey}.xml"
         pdf = LIBRARY / f"{bibkey}.pdf"
         has_pdf = primary["version"] not in ("missing", "xml") and pdf.exists()
@@ -198,7 +206,7 @@ def select_papers(rows: list[dict]) -> tuple[list[dict], list[tuple[str, str]]]:
             "license": primary["license"],
             "pdf": pdf if has_pdf else None,
             "xml": xml if xml.exists() else None,
-            "twin_of": twin.group(1) if twin and twin.group(1) in by_key else None,
+            "twin_of": twin_of.get(bibkey),
         }
         paper["servable"] = primary["servable"] == "yes" and has_pdf
         paper["has_text"] = bool(paper["xml"] or paper["pdf"])
@@ -610,6 +618,9 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sync", nargs="?", const=str(CV_PDFS), metavar="DIR",
                     help=f"mirror PDFs, XML and _manifest.txt from DIR first (default {CV_PDFS})")
+    ap.add_argument("--versions", type=Path, default=paper_versions.VERSIONS_FILE,
+                    help="the version-pairing file shared with the web page and CV "
+                         f"(default {paper_versions.VERSIONS_FILE})")
     ap.add_argument("--refresh-authors", action="store_true",
                     help="re-fetch every author list instead of using authors.json")
     args = ap.parse_args()
@@ -617,7 +628,10 @@ def main() -> int:
     if args.sync:
         sync_from_cv(Path(args.sync).expanduser())
 
-    papers, skipped = select_papers(read_library())
+    if not args.versions.is_file():
+        sys.exit(f"error: {args.versions} not found; it pairs working papers, preprints "
+                 "and accepted manuscripts with their articles (pass --versions)")
+    papers, skipped = select_papers(read_library(), paper_versions.load_versions(args.versions))
     authors = load_authors(papers, args.refresh_authors)
     talkable = [p for p in papers if p["has_text"] and not p["twin_of"]]
 

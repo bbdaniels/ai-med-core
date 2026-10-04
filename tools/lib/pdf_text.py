@@ -159,7 +159,21 @@ WATERMARK = re.compile(r"^\s*For Benjamin Daniels\b.*$", re.M)
 
 def clean(text: str) -> str:
     text = WATERMARK.sub("", text)
-    text = text.replace("­", "")            # soft hyphen
+    # A soft hyphen ending a line is where the typesetter broke a word (Elsevier
+    # sets every line-break hyphen this way). Dropping only the character left
+    # "en\nrolled", which reads as two words. When the next line continues the
+    # word, join the halves; when it does not (a two-column page interleaves a
+    # footnote or the other column), keep the break as a visible hyphen so a
+    # later reflow can still join it.
+    soft_breaks = re.search(r"­[ \t]*\n", text) is not None
+    text = re.sub(r"­[ \t]*\n[ \t]*(?=[a-z])", "", text)
+    if soft_breaks:
+        # This typesetter marks its own word breaks, so a hard hyphen or an en
+        # dash at a line end belongs to a compound ("provider-\npatient",
+        # "non-\nECM", "doctor\u2013\npatient"): keep it, join the line.
+        text = re.sub(r"(?<=[A-Za-z])([-\u2013])[ \t]*\n[ \t]*(?=[A-Za-z])", r"\1", text)
+    text = re.sub(r"­[ \t]*\n", "-\n", text)
+    text = text.replace("­", "")       # any other soft hyphen
     text = re.sub(r"-\n(?=[a-z])", "", text)     # de-hyphenate line breaks
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

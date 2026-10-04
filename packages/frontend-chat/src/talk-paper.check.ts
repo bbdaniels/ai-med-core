@@ -1,6 +1,6 @@
 // Standalone check: npx tsx packages/frontend-chat/src/talk-paper.check.ts
 import assert from 'node:assert/strict';
-import { normalizeDoi, doiSlug, fillTalkPublicUrl, publicRedirectUrl, requestedVignette, type TalkPaper } from './talk-paper.js';
+import { normalizeDoi, doiSlug, fillTalkPublicUrl, publicRedirectUrl, readDocumentParam, readVignetteParam, requestedVignette, type TalkPaper } from './talk-paper.js';
 
 const papers: TalkPaper[] = [
   { doi: '10.1371/journal.pmed.1002653', title: 'Variations', vignette: 'kwan2018variations' },
@@ -21,6 +21,16 @@ assert.equal(requestedVignette('', papers), null);
 // ?vignette= wins over ?paper=, and junk is rejected
 assert.equal(requestedVignette('?vignette=legovini2019science&paper=10.1371/journal.pmed.1002653', papers), 'legovini2019science');
 assert.equal(requestedVignette('?vignette=<x>', papers), null);
+// ?doc= names a document directly: alone, it opens it; ?vignette= wins over it; it wins over ?paper=
+assert.equal(readDocumentParam('?doc=legovini2019science'), 'legovini2019science');
+assert.equal(readDocumentParam('?vignette=kwan2018variations&doc=legovini2019science'), 'kwan2018variations');
+assert.equal(readDocumentParam('?doc=<x>'), null);
+assert.equal(readVignetteParam('?doc=legovini2019science'), 'legovini2019science');
+assert.equal(requestedVignette('?doc=legovini2019science&paper=10.1371/journal.pmed.1002653', papers), 'legovini2019science');
+// a deck slide key (deck id, two hyphens, slide id) by either name
+assert.equal(readDocumentParam('?vignette=fixture-deck--main-effect'), 'fixture-deck--main-effect');
+assert.equal(readDocumentParam('?doc=fixture-deck--main-effect'), 'fixture-deck--main-effect');
+assert.equal(requestedVignette('?doc=fixture-deck--main-effect', []), 'fixture-deck--main-effect');
 
 
 // talkPublicUrl: slugs match orcid-display's slugForWork, the redirect fills the template
@@ -38,4 +48,4 @@ assert.equal(publicRedirectUrl(tpl, '', papers), 'https://www.benjaminbdaniels.c
 assert.equal(publicRedirectUrl(tpl, '?paper=10.9999/nope', papers), 'https://www.benjaminbdaniels.com/publications/');
 assert.equal(publicRedirectUrl(tpl, '?vignette=legovini2019science', papers), 'https://www.benjaminbdaniels.com/publications/');
 
-console.log('talk-paper checks: 18/18 passed');
+console.log('talk-paper checks: 26/26 passed');

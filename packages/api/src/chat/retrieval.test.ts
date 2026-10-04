@@ -68,7 +68,7 @@ const loop = (client: CompletionClient, over: Partial<Parameters<typeof runRetri
     convo: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }],
     issue: makeIssuer(client, { model: 'gpt-4o-mini', structured: false }),
     index,
-    language: null,
+    languageCode: null,
     restate: async q => q,
     embed: makeEmbedder(client),
     log: () => {},
@@ -112,6 +112,33 @@ test('the hop cap: past the last hop the tools are withheld', async () => {
   assert.equal(r.response.choices[0].message.content, 'Done.');
 });
 
+test('the hop cap is hard: a tool call past it is ignored, never run', async () => {
+  // A reply to the tool-less request that still asks to search, with or
+  // without an answer beside it.
+  const late = (content: string | null) => {
+    const r: any = search({ query: 'd' }, 'call-late');
+    r.choices[0].message.content = content;
+    return r;
+  };
+  for (const content of ['Answered anyway.', null]) {
+    const m = memoryClient([search({ query: 'a' }), search({ query: 'b' }), search({ query: 'c' }), late(content)]);
+    const r = await loop(m.client);
+    assert.equal(m.chats.length, 4);                 // no fifth completion
+    assert.equal(m.embeds.length, 3);                // the late query is never embedded
+    assert.deepEqual(r.searches.map(s => s.asked), ['a', 'b', 'c']);
+    assert.equal(r.usages.length, 4);
+    assert.equal(r.response.choices[0].message.content, content);
+    assert.ok(!r.convo.some((c: any) => c.tool_call_id === 'call-late'));
+  }
+  // maxHops 0: one tool-less completion, and its tool call is ignored too.
+  const m0 = memoryClient([late('Zero.')]);
+  const r0 = await loop(m0.client, { maxHops: 0 });
+  assert.equal(m0.chats.length, 1);
+  assert.equal(m0.chats[0].tools, undefined);
+  assert.equal(m0.embeds.length, 0);
+  assert.equal(r0.response.choices[0].message.content, 'Zero.');
+});
+
 test('an empty query is answered with an instruction, not a search', async () => {
   const m = memoryClient([search({ query: '' }), answer('A.')]);
   const r = await loop(m.client);
@@ -139,6 +166,12 @@ test('a search that throws tells the model the search is unavailable', async () 
 test('restatement: skipped in the corpus language, run before the embedding otherwise', async () => {
   const same = memoryClient([]);
   assert.equal(await makeRestater(same.client, 'Vietnamese', ' vietnamese ')('hỏi'), 'hỏi');
+  assert.equal(same.chats.length, 0);
+  // The page sends the name its languages list shows; the corpus is declared in English.
+  const list = [{ code: 'en', name: 'English' }, { code: 'vi', name: 'Tiếng Việt' }];
+  for (const session of ['Tiếng Việt', 'Vietnamese', 'tieng viet', 'vi']) {
+    assert.equal(await makeRestater(same.client, 'Vietnamese', session, list)('hỏi'), 'hỏi', session);
+  }
   assert.equal(same.chats.length, 0);
   assert.equal(await makeRestater(same.client, null, 'English')('q'), 'q');
   assert.equal(same.chats.length, 0);

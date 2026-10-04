@@ -1564,8 +1564,10 @@ the end of that section.
 
 The annotation pipeline itself is symmetric and was verified so from the
 traces, not inferred: the notice is stamped, composed and rendered identically
-(`formatSearchResults` picks the language with `noticeLanguage`, and nothing
-else in the chat route branches on language), and the `vi` text names Điều 104,
+(`formatSearchResults` renders the notice in the session language's code,
+which the pipeline resolves through the project's languages list in
+`packages/api/src/chat/language.ts`, and nothing else in the chat route
+branches on language), and the `vi` text names Điều 104,
 all three cấp, the date and Điều 13 exactly as the `en` text does. Rendering the
 Vietnamese turn's notice in English was tried as a falsification and **proved
 nothing**: 2 of its 3 runs retrieved no notice at all, so the variable under

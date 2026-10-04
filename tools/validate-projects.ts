@@ -7,8 +7,12 @@
  * Runs as the first step of `npm run build` and of the deploy workflow, so a
  * field that is not declared in the schema fails the build instead of being
  * silently ignored by the API. Beyond the JSON Schema it checks the things a
- * schema cannot: the slug matches its directory, and every repo-relative path
- * the file names exists (or is private, i.e. gitignored: see lib/private-files.ts).
+ * schema cannot: the slug matches its directory, every repo-relative path the
+ * file names exists (or is private, i.e. gitignored: see lib/private-files.ts),
+ * and a talk project sets no flag that contradicts `app: "talk"`.
+ *
+ * AI_MED_REPO_ROOT, when set, names the checkout whose projects/ are validated
+ * (the schema is always this repository's); the tests use it on a temp tree.
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -16,9 +20,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
+import { talkContradictions } from '../packages/api/src/project-config.js';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const schema = JSON.parse(fs.readFileSync(path.join(root, 'projects/project-schema.json'), 'utf8'));
+const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = process.env.AI_MED_REPO_ROOT?.trim() ? path.resolve(process.env.AI_MED_REPO_ROOT.trim()) : here;
+const schema = JSON.parse(fs.readFileSync(path.join(here, 'projects/project-schema.json'), 'utf8'));
 const ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(ajv);
 const validate = ajv.compile(schema);
@@ -41,6 +47,7 @@ function pathFields(p: any): string[] {
   out.push(...tabContentFiles(p));
   if (p.kobo?.template) out.push(p.kobo.template);
   if (p.talkManifest) out.push(p.talkManifest);
+  if (p.groundingFile) out.push(p.groundingFile);
   // readingsIndex is deliberately excluded: gitignored, uploaded to Railway out of band.
   return out.filter(Boolean);
 }
@@ -61,6 +68,7 @@ for (const slug of dirs) {
         errors.push(`${err.instancePath || '/'} ${err.message}${err.params?.additionalProperty ? ` (${err.params.additionalProperty})` : ''}`);
       }
     }
+    errors.push(...talkContradictions(p));
     if (p.name !== slug) errors.push(`name "${p.name}" does not match directory "${slug}"`);
     if (!fs.existsSync(path.join(root, 'projects', slug, 'languages.json'))) errors.push('languages.json missing');
     let privateAbsent = 0;

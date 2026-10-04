@@ -143,6 +143,14 @@
         }
       }
     },
+    "app": {
+      "enum": ["simulation", "talk"],
+      "description": "Which application the project is: the clinical simulator (default) or document chat. talk implies formless, enableFeedback:false, skipWelcome and enableFollowups, and needs no kobo block; explicit flags are still accepted and win over the implied ones. Without app, formless:true means talk, as before"
+    },
+    "groundingFile": {
+      "type": "string",
+      "description": "Repo-relative path to the corpus grounding file appended to the prompt after the document (a compact index of the corpus the project answers from)"
+    },
     "enableFeedback": { "type": "boolean", "description": "Real-time grading feedback after form submission" },
     "enableFollowups": { "type": "boolean", "description": "Inline AI-suggested follow-up question chips above the chat input" },
     "enableVoice": { "type": "boolean", "description": "TTS playback of assistant messages" },
@@ -175,7 +183,7 @@
     "readingsQueryLanguage": {
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z ]{1,31}$",
-      "description": "Language the corpus is written in; queries are restated into it before retrieval"
+      "description": "Language the corpus is written in, named in English; queries are restated into it before retrieval, except in a session already in it (the session language is matched through languages.json, so \"Tiếng Việt\" matches \"Vietnamese\")"
     },
     "talkManifest": {
       "type": "string",
@@ -199,7 +207,12 @@
       }
     }
   },
-  "if": { "properties": { "formless": { "const": true } }, "required": ["formless"] },
+  "if": {
+    "anyOf": [
+      { "properties": { "formless": { "const": true } }, "required": ["formless"] },
+      { "properties": { "app": { "const": "talk" } }, "required": ["app"] }
+    ]
+  },
   "then": {},
   "else": { "required": ["kobo"] },
   "allOf": [

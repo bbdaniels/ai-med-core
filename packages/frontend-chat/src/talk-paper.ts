@@ -6,7 +6,8 @@
  * and the project's public talk manifest (/api/talk-manifest/<slug>) maps each
  * DOI to a vignette key. A direct ?vignette=<key> also works and wins over
  * ?paper=, the same precedence the LTI launch branch (lti-1.3-mvp) gives its
- * instructor override.
+ * instructor override. ?doc=<key> is the same direct link under the document
+ * name; ?vignette= wins over it, and it wins over ?paper=.
  *
  * A project may also declare talkPublicUrl: the author's own page is the public
  * front door, and this app is only the backend behind its popout iframe. Opened
@@ -27,10 +28,22 @@ export interface TalkPaper {
   servable?: boolean;
 }
 
-/** A ?vignette= value, or null when absent or not a plausible key. */
+const plausibleKey = (key: string | null): string | null =>
+  key && /^[A-Za-z0-9_-]{1,100}$/.test(key) ? key : null;
+
+/**
+ * The document a link names directly: ?vignette=, else ?doc=. Null when
+ * neither is present or plausible. ?paper= needs the manifest; see
+ * requestedVignette().
+ */
+export function readDocumentParam(search: string): string | null {
+  const params = new URLSearchParams(search);
+  return plausibleKey(params.get('vignette')) ?? plausibleKey(params.get('doc'));
+}
+
+/** The old name of readDocumentParam(), kept for callers that use it. */
 export function readVignetteParam(search: string): string | null {
-  const key = new URLSearchParams(search).get('vignette');
-  return key && /^[A-Za-z0-9_-]{1,100}$/.test(key) ? key : null;
+  return readDocumentParam(search);
 }
 
 /** The ?paper= value, or null. */
@@ -40,11 +53,11 @@ export function readPaperParam(search: string): string | null {
 }
 
 /**
- * The vignette a deep link asks for: ?vignette= first, then ?paper= looked up
- * in the manifest. Null when the link names nothing, or nothing known.
+ * The vignette a deep link asks for: ?vignette=, then ?doc=, then ?paper=
+ * looked up in the manifest. Null when the link names nothing, or nothing known.
  */
 export function requestedVignette(search: string, papers: TalkPaper[]): string | null {
-  const direct = readVignetteParam(search);
+  const direct = readDocumentParam(search);
   if (direct) return direct;
   const wanted = normalizeDoi(readPaperParam(search));
   if (!wanted) return null;

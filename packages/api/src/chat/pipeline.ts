@@ -9,6 +9,7 @@
  */
 import { parseStructuredAnswer } from './answer.js';
 import { makeIssuer, type CompletionClient } from './completion.js';
+import { languageCode, parseLanguageList } from './language.js';
 import { loadCorpusGrounding } from './grounding.js';
 import type { AppHooks } from './hooks.js';
 import { assemblePrompt } from './prompt.js';
@@ -19,6 +20,8 @@ import type { OpenIndex } from '../readings.js';
 
 export interface ChatStore extends UsageSink {
   getSystemPrompt(): Promise<string | null>;
+  /** The project's languages.json as stored (the copy /api/languages serves), or null. */
+  getLanguages(): Promise<string | null>;
   getDocument(key: string): Promise<{ key: string; content: string } | null>;
   logQaTurn(project: string, sessionToken: string | null, documentKey: string | null, language: string | null, q: string, a: string): Promise<void>;
   logSessionMessage(project: string, sessionToken: string, documentKey: string): Promise<void>;
@@ -93,12 +96,16 @@ export async function runChatTurn(req: ChatTurnRequest, deps: ChatDeps): Promise
   ];
 
   const client = await deps.client();
+  const index = deps.openIndex(config);
+  // The session language is a name as the page shows it ("Tiếng Việt"); the
+  // project's languages list says which language it is.
+  const languages = index ? parseLanguageList(await store.getLanguages()) : [];
   const { response, usages } = await runRetrievalLoop({
     convo,
     issue: makeIssuer(client, { model: config.chatModel, structured: config.enableFollowups }),
-    index: deps.openIndex(config),
-    language,
-    restate: makeRestater(client, config.readingsQueryLanguage, language),
+    index,
+    languageCode: languageCode(language, languages),
+    restate: makeRestater(client, config.readingsQueryLanguage, language, languages),
     embed: makeEmbedder(client),
   });
 

@@ -355,7 +355,9 @@ const sendMessage = async ({ messages, vignetteKey, language, sessionToken }: {
   const response = await apiFetch(api('/api/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, vignetteKey, language, sessionToken }),
+    // documentKey is the document's name in the API; vignetteKey carries the
+    // same key so an API rolled back to before documentKey still answers.
+    body: JSON.stringify({ messages, documentKey: vignetteKey, vignetteKey, language, sessionToken }),
   });
   if (!response.ok) {
     // A talkManifest project switched off from the global admin page answers 503
@@ -883,8 +885,8 @@ function ChatInterface() {
     return () => { cancelled = true; };
   }, [configLoaded, requireAccessCode, urlAccessCode]);
 
-  // Resolve the vignette the URL asks for (?vignette=, or ?paper=<DOI> through the
-  // talk manifest) before any vignette is chosen. A manifest that fails to load,
+  // Resolve the vignette the URL asks for (?vignette=, ?doc=, or ?paper=<DOI>
+  // through the talk manifest) before any vignette is chosen. A manifest that fails to load,
   // or is empty because public chat is switched off, just means no ?paper= match.
   useEffect(() => {
     if (!configLoaded) return;
@@ -1160,6 +1162,7 @@ function ChatInterface() {
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('vignette');
+      url.searchParams.delete('doc');
       const doi = key ? talkPapers.find(p => p.vignette === key)?.doi : null;
       if (doi) url.searchParams.set('paper', doi);
       else url.searchParams.delete('paper');

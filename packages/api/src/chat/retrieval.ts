@@ -10,6 +10,7 @@ import {
   type OpenIndex,
 } from '../readings.js';
 import type { CompletionClient, Issue } from './completion.js';
+import { sameLanguage, type LanguageEntry } from './language.js';
 import type { TokenUsage } from './types.js';
 
 /**
@@ -27,12 +28,14 @@ import type { TokenUsage } from './types.js';
  * it, it is a fixed sub-cent overhead on a search, and logging it under the
  * project's chatModel would misattribute both the model and the cost.
  * A session already in the corpus language (an English session on the
- * English papers corpus) has nothing to restate, so it skips the call.
+ * English papers corpus, a "Tiếng Việt" session on the corpus declared
+ * "Vietnamese") has nothing to restate, so it skips the call. The two names are
+ * compared through the project's languages list (chat/language.ts).
  */
 export function makeRestater(client: CompletionClient, corpusLanguage: string | null,
-                             sessionLanguage: string | null | undefined): (q: string) => Promise<string> {
-  const sessionInCorpusLanguage = !!corpusLanguage && !!sessionLanguage
-    && sessionLanguage.trim().toLowerCase() === corpusLanguage.toLowerCase();
+                             sessionLanguage: string | null | undefined,
+                             languages: LanguageEntry[] = []): (q: string) => Promise<string> {
+  const sessionInCorpusLanguage = sameLanguage(sessionLanguage, corpusLanguage, languages);
   return async (raw: string): Promise<string> => {
     if (!corpusLanguage || sessionInCorpusLanguage) return raw;
     try {
@@ -91,8 +94,8 @@ export interface RetrievalLoopArgs {
   index: OpenIndex | null;
   /** Hops that may offer the search tool. Default 3. */
   maxHops?: number;
-  /** The session language (a language name), for the notices a result may carry. */
-  language: string | null | undefined;
+  /** The session language's code (e.g. 'vi'), for the notices a result may carry; null renders them in English. */
+  languageCode: string | null;
   restate: (q: string) => Promise<string>;
   embed: (q: string) => Promise<Float32Array | null>;
   log?: (line: string) => void;
@@ -109,10 +112,13 @@ export interface RetrievalLoopResult {
  * Complete, answering every search the model asks for, until it answers. Past
  * the last hop the tools are withheld, which forces the model to answer from
  * what it already retrieved rather than looping on a query that is never going
- * to match. Without an index there is exactly one completion.
+ * to match. The cap is hard: that tool-less request is the last one, and a
+ * tool call in its reply is ignored, never run, so a turn makes at most
+ * maxHops + 1 completions and maxHops rounds of searches. Without an index
+ * there is exactly one completion.
  */
 export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalLoopResult> {
-  const { convo, issue, index, language, restate, embed } = a;
+  const { convo, issue, index, languageCode, restate, embed } = a;
   const maxHops = a.maxHops ?? 3;
   const log = a.log ?? ((line: string) => console.log(line));
   const usages: TokenUsage[] = [];
@@ -128,6 +134,12 @@ export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalL
     const assistantMsg = response.choices?.[0]?.message;
     const toolCalls = assistantMsg?.tool_calls;
     if (!index || !toolCalls?.length) break;
+    if (!offerTools) {
+      // Past the cap. No tool was offered, so a tool call here is not answered:
+      // the reply stands as the turn's answer.
+      log(`[readings] hop cap (${maxHops}) reached; ignoring ${toolCalls.length} tool call(s)`);
+      break;
+    }
 
     convo.push(assistantMsg);
     for (const call of toolCalls) {
@@ -162,7 +174,7 @@ export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalL
           // so an unscheduled corpus is not described to the model as course
           // readings assigned in weeks it does not have.
           content = formatSearchResults(searchQuery, results,
-                                        { language, scheduled: index.hasWeeks });
+                                        { languageCode, scheduled: index.hasWeeks });
         }
       } catch (e) {
         console.error('[readings] tool call failed:', e);

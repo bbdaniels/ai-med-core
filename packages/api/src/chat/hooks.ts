@@ -26,6 +26,9 @@ export interface HookDeps {
   transcriptsDir: string;
 }
 
+/** Today's date and the recent past by name, before the document. */
+const datePreamble: AppHooks['promptPreamble'] = ({ now }) => [dateReferenceBlock(now)];
+
 /**
  * The simulator: the patient knows today's date and the recent past by name,
  * a response names the vignette's case template, and the first turn's raw
@@ -33,7 +36,7 @@ export interface HookDeps {
  */
 export function simulationHooks(deps: HookDeps): AppHooks {
   return {
-    promptPreamble: ({ now }) => [dateReferenceBlock(now)],
+    promptPreamble: datePreamble,
 
     async caseTemplateFor(documentKey) {
       // Look up template name from case template mapping
@@ -84,7 +87,16 @@ export function simulationHooks(deps: HookDeps): AppHooks {
   };
 }
 
-/** Document chat. Identical to the simulator for now; Phase 2 (T2.7) makes it diverge. */
-export function talkHooks(deps: HookDeps): AppHooks {
-  return simulationHooks(deps);
+/**
+ * Document chat. A document has no case template, so a talk response carries
+ * `caseTemplate: null` (formless pages never read it). There is no first-turn
+ * hook: the raw prompt of a talk project holds its documents (a paper's full
+ * text, a deck's unpublished results), and it is never written to disk. The
+ * prompt preamble is still the simulator's.
+ */
+export function talkHooks(): AppHooks {
+  return {
+    promptPreamble: datePreamble,
+    caseTemplateFor: async () => null,
+  };
 }

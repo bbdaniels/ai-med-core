@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { ChatProjectConfig, KnownChatModel } from './types.js';
 import { KNOWN_CHAT_MODELS } from './usage.js';
+import { resolveProjectFlags } from '../project-config.js';
 
 /**
  * Read the project's chat settings. A project.json that is missing or does not
@@ -16,19 +17,21 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   // When follow-ups are enabled, the model returns JSON: {answer, followups,
   // beyondScope} via response_format. logConversations gates qa_log writes
   // (formless Q&A advisors like haivn_eip whose consent states turns are logged).
-  let enableFollowups = false;
+  // `app` and enableFollowups are resolved (project-config.ts): a talk project
+  // implies followups.
+  let flags = resolveProjectFlags({});
   let logConversations = false;
-  let formless = false;
   let readingsIndexPath: string | null = null;
   let readingsQueryLanguage: string | null = null;
   let chatModel: KnownChatModel = 'gpt-4o-mini';
+  let groundingFile: string | null = null;
   try {
     const cfgPath = path.join(repoRoot, 'projects', slug, 'project.json');
     const cfg = JSON.parse(await fs.readFile(cfgPath, 'utf-8'));
-    enableFollowups = cfg.enableFollowups === true;
+    flags = resolveProjectFlags(cfg);
     logConversations = cfg.logConversations === true;
-    formless = cfg.formless === true;
     readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
+    groundingFile = typeof cfg.groundingFile === 'string' && cfg.groundingFile ? cfg.groundingFile : null;
     // The language the corpus is WRITTEN in, when that is not the language its
     // users ask in. haivn_eip's legal library is entirely Vietnamese, so an
     // English question searches it across a language boundary: the BM25 half
@@ -59,13 +62,12 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   return {
     slug,
     usageProject,
-    // Until project.json declares `app`, a formless project is document chat.
-    app: formless ? 'talk' : 'simulation',
-    enableFollowups,
+    app: flags.app,
+    enableFollowups: flags.enableFollowups,
     logConversations,
     readingsIndexPath,
     readingsQueryLanguage,
     chatModel,
-    groundingFile: null,
+    groundingFile,
   };
 }

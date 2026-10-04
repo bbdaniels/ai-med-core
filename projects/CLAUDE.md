@@ -73,10 +73,12 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
   // Declaring one id TWICE — once "pdf", once "document" — makes those two
   // entries one tab with a Text/PDF switcher (see "Two editions, one tab" below).
   "languages": ["en", "th"],
+  "app": "simulation",              // "simulation" (default) or "talk" (document chat; see Talk Projects below)
   "enableFeedback": false,          // Real-time grading/feedback
   "enableVoice": false,             // TTS for assistant messages
-  "formless": false,                // Skip the Kobo form tab entirely (Q&A chatbots)
-  "enableFollowups": false,         // Inline AI-suggested follow-up questions above chat input
+  "formless": false,                // Skip the Kobo form tab entirely (Q&A chatbots); implied by "app": "talk"
+  "enableFollowups": false,         // Inline AI-suggested follow-up questions above chat input; implied by "app": "talk"
+  "groundingFile": "projects/demo/content/readings/grounding.md", // Optional — corpus index appended to the prompt after the document
   "talkManifest": "projects/papers/manifest.json", // Optional — public paper list + public_chat kill switch (see below)
   "talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}", // Optional — the public page that fronts a talkManifest project (see below)
   "docRefs": {                      // Optional — linkify document references in chat answers
@@ -112,12 +114,12 @@ anchors can adopt it by declaring its own `tabId` + word/prefix `patterns`.
 
 `projects/project-schema.json` declares every field a `project.json` may carry (`additionalProperties: false`), and `npm run validate:projects` (`tools/validate-projects.ts`) checks every project against it plus the things a schema cannot express: slug equals directory name, `languages.json` present, every referenced file exists, vignette keys unique. It runs first in `npm run build` and in `deploy-pages.yml`, so a new field must be added to the schema in the same commit that first uses it, or the build fails.
 
-## Formless Projects
+## Talk Projects (formless)
 
-Projects with `"formless": true` are pure Q&A chatbots with no Kobo form (e.g. document advisors). For these projects:
+Document chat (papers, decks, course readings, document advisors) declares `"app": "talk"`. Talk implies `formless: true`, `enableFeedback: false`, `skipWelcome: true` and `enableFollowups: true`; leave them out. An explicit flag still wins over an implied one, and `chatOnly` is never implied. `tools/validate-projects.ts` rejects `"app": "talk"` together with `formless: false` or `enableFeedback: true`. The resolution is `resolveProjectFlags` in `packages/api/src/project-config.ts`, the one place these flags are read; `/api/config` emits the resolved flags. A project without `app` is resolved as before: `formless: true` makes it talk, with nothing implied. For these projects:
 - Omit the `kobo` block entirely
 - Omit `cases/<template>/scoring_rubric.json` + `assessment_checklist.json` (no grading)
-- Set `enableFeedback: false`
+- A corpus index for the prompt goes in `groundingFile` (repo-relative). Without it the pipeline looks in `content/legal/grounding.md`, then `content/readings/grounding.md`
 - The frontend skips the auto-added form tab; define `tabs` in project.json to give users something to interact with (e.g. a `suggestions` tab)
 
 Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advisor; slug `haivn_eip`, served at `/haivn-eip/`, formerly `stitch`).
@@ -137,7 +139,7 @@ It is served without auth, to any origin, at `GET /api/talk-manifest/<slug>`. De
 
 Unknown slugs and projects without `talkManifest` get 404 from the manifest route; projects without `talkManifest` are untouched by the switch. A malformed manifest file is logged and served as `{"papers": []}`, never a 500.
 
-**`talkPublicUrl`: the author's page is the only public front door.** The app is the backend behind an iframe popout on another site and must not act as a public landing page itself. A project that declares `"talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}"` redirects every top-level visit (`window.self === window.top`) with `location.replace`: a link naming a manifest paper (`?paper=<DOI>` or `?vignette=<key>`) goes to the template filled for that paper, and any other visit goes to the template with everything from `#` stripped. Inside an iframe nothing changes. `{slug}` is the DOI lower-cased with every run outside `[a-z0-9]` collapsed to `-` and trimmed, exactly as orcid-display's `slugForWork` builds its `#talk-doi-<slug>` ids; `{doi}` is the URL-encoded DOI. The manifest route then also returns each paper's filled `publicUrl`, so any consumer can link canonically. The slug and template fill live in one place, `packages/shared/src/talk-url.ts`, imported by both the API and `packages/frontend-chat/src/talk-paper.ts` (checks: `npx tsx packages/frontend-chat/src/talk-paper.check.ts`). The redirect is skipped when the page is served from `localhost`, `127.0.0.1` or `[::1]`, so a dev server still renders top-level in a plain tab.
+**`talkPublicUrl`: the author's page is the only public front door.** The app is the backend behind an iframe popout on another site and must not act as a public landing page itself. A project that declares `"talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}"` redirects every top-level visit (`window.self === window.top`) with `location.replace`: a link naming a manifest paper (`?paper=<DOI>`, `?vignette=<key>` or `?doc=<key>`) goes to the template filled for that paper, and any other visit goes to the template with everything from `#` stripped. Inside an iframe nothing changes. `{slug}` is the DOI lower-cased with every run outside `[a-z0-9]` collapsed to `-` and trimmed, exactly as orcid-display's `slugForWork` builds its `#talk-doi-<slug>` ids; `{doi}` is the URL-encoded DOI. The manifest route then also returns each paper's filled `publicUrl`, so any consumer can link canonically. The slug and template fill live in one place, `packages/shared/src/talk-url.ts`, imported by both the API and `packages/frontend-chat/src/talk-paper.ts` (checks: `npx tsx packages/frontend-chat/src/talk-paper.check.ts`). The redirect is skipped when the page is served from `localhost`, `127.0.0.1` or `[::1]`, so a dev server still renders top-level in a plain tab.
 
 ## Private content (files kept out of git)
 
@@ -163,7 +165,7 @@ Tab structure (id, type, order, pinned, label) lives in `project.json`. Tab cont
 ### Tab types
 
 - **`content`** — sectioned markdown cards (heading + content + optional image) rendered via `ContentPanel`. Best for per-scene guides, instructions, reference material organized as distinct sections. CBS-style.
-- **`form`** — Kobo assessment form rendered via `NativeKoboForm` (Enketo). Auto-added by the frontend unless `formless: true`.
+- **`form`** — Kobo assessment form rendered via `NativeKoboForm` (Enketo). Auto-added by the frontend unless the project is formless (`"app": "talk"`).
 - **`suggestions`** — grouped clickable question buttons that auto-send to chat on click. Content file is JSON with `{label, intro, sections: [{heading, questions[]}]}`.
 - **`document`** — single markdown file rendered as formatted HTML (headings, tables, bold, lists, links). Content file is raw `.md`. Good for embedding reference documents. Ships with a sticky find bar (match counter, prev/next, Enter / Shift+Enter, Escape to clear) and scrolls in-panel to `{#anchor}` heading ids, so a generated contents list at the top of the file works as navigation.
 

@@ -45,6 +45,8 @@ import path from 'node:path';
 import { startServer, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
 import { buildFixtureIndex } from '../test-support/fixture-index.js';
 import type { FakeReply } from '../test-support/fake-openai.js';
+import { loadChatProjectConfig } from './chat/config.js';
+import { corpusGroundingFile } from './chat/grounding.js';
 
 const PROJECTS = path.join(REPO_ROOT, 'projects');
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
@@ -99,8 +101,8 @@ const cases = discovered.filter(c => fs.existsSync(path.join(PROJECTS, c.project
 const waiting = discovered.filter(c => !cases.includes(c));
 
 // What the project's own texts look like, so the snapshot can say where they go
-// instead of repeating them.
-function redactions(project: string): Array<[string, string]> {
+// instead of repeating them. The grounding file is the one the pipeline reads.
+async function redactions(project: string): Promise<Array<[string, string]>> {
   const out: Array<[string, string]> = [];
   const cfg = JSON.parse(fs.readFileSync(path.join(PROJECTS, project, 'project.json'), 'utf8'));
   const sp = cfg.cases?.systemPrompt;
@@ -108,15 +110,10 @@ function redactions(project: string): Array<[string, string]> {
     const text = fs.readFileSync(path.join(REPO_ROOT, sp), 'utf8');
     if (text) out.push([text, '<<SYSTEM_PROMPT>>']);
   }
-  const contentDir = path.join(PROJECTS, project, 'content');
-  if (fs.existsSync(contentDir)) {
-    for (const sub of fs.readdirSync(contentDir).sort()) {
-      const g = path.join(contentDir, sub, 'grounding.md');
-      if (fs.existsSync(g)) {
-        const text = fs.readFileSync(g, 'utf8');
-        if (text) out.push([text, `<<GROUNDING ${path.relative(REPO_ROOT, g)}>>`]);
-      }
-    }
+  const g = await corpusGroundingFile(REPO_ROOT, await loadChatProjectConfig(REPO_ROOT, project, ''));
+  if (g && fs.existsSync(g)) {
+    const text = fs.readFileSync(g, 'utf8');
+    if (text) out.push([text, `<<GROUNDING ${path.relative(REPO_ROOT, g)}>>`]);
   }
   return out.sort((a, b) => b[0].length - a[0].length);
 }
@@ -215,7 +212,7 @@ for (const c of cases) {
     applySettings({ payment_source: 'harvard', public_chat: 'off', ...(c.setup?.settings ?? {}) });
     const token = c.accessCode ? await harness.access(c.project, c.accessCode) : undefined;
 
-    const rules = redactions(c.project);
+    const rules = await redactions(c.project);
     const recorded: any[] = [];
     for (const turn of c.turns) {
       if (turn.settings) applySettings(turn.settings);
@@ -238,7 +235,8 @@ for (const c of cases) {
       // message.
       const msgs = Array.isArray(turn.body.messages) ? turn.body.messages as Array<{ content?: unknown }> : [];
       const firstText = typeof msgs[0]?.content === 'string' ? JSON.stringify(msgs[0].content) : null;
-      const docKey = typeof turn.body.vignetteKey === 'string' ? JSON.stringify(turn.body.vignetteKey) : null;
+      const named = turn.body.documentKey ?? turn.body.vignetteKey;
+      const docKey = typeof named === 'string' ? JSON.stringify(named) : null;
       const newSnapshots = harness.initialSnapshots().filter(s => !initialBefore.has(s));
       recorded.push({
         name: turn.name,

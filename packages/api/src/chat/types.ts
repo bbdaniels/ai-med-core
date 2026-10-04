@@ -34,7 +34,7 @@ export interface ChatProjectConfig {
   readingsQueryLanguage: string | null;
   /** Resolved; the default is 'gpt-4o-mini'. */
   chatModel: KnownChatModel;
-  /** Declared grounding file (Phase 2); null uses the legacy candidates. */
+  /** The declared grounding file, repo-relative; null looks in the legacy locations. */
   groundingFile: string | null;
 }
 

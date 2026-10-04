@@ -4,6 +4,10 @@
  * the prompt — never the full corpus text — so the advisor knows what exists
  * and how to cite it without blowing the token budget. haivn_eip indexes legal
  * instruments; ppol5013 and papers index readings.
+ *
+ * A project names its file in project.json (`groundingFile`, repo-relative). A
+ * project that does not is looked up at the legacy locations, so a project.json
+ * from before the field still grounds the same way.
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -15,12 +19,40 @@ const LEGACY_CANDIDATES = [
   ['content', 'readings', 'grounding.md'],
 ];
 
-/** The grounding text, or '' when the project has none. */
-export async function loadCorpusGrounding(repoRoot: string, cfg: ChatProjectConfig): Promise<string> {
+/**
+ * The absolute path of the project's grounding file, or null when it has none.
+ * A declared path is resolved against the repo root and must stay inside it
+ * (it is repo content, not user input, but a bad edit must not read outside
+ * the tree), as readings index paths are.
+ */
+export async function corpusGroundingFile(repoRoot: string, cfg: Pick<ChatProjectConfig, 'slug' | 'groundingFile'>): Promise<string | null> {
+  const root = path.resolve(repoRoot);
+  if (cfg.groundingFile) {
+    const declared = path.resolve(root, cfg.groundingFile);
+    if (!declared.startsWith(root + path.sep)) {
+      console.warn(`[grounding] ${cfg.slug}: groundingFile escapes the repo root, ignoring`);
+      return null;
+    }
+    return declared;
+  }
   for (const rel of LEGACY_CANDIDATES) {
+    const candidate = path.join(root, 'projects', cfg.slug, ...rel);
     try {
-      return await fs.readFile(path.join(repoRoot, 'projects', cfg.slug, ...rel), 'utf-8');
+      await fs.access(candidate);
+      return candidate;
     } catch { /* try the next candidate */ }
   }
-  return '';
+  return null;
+}
+
+/** The grounding text, or '' when the project has none. */
+export async function loadCorpusGrounding(repoRoot: string, cfg: ChatProjectConfig): Promise<string> {
+  const file = await corpusGroundingFile(repoRoot, cfg);
+  if (!file) return '';
+  try {
+    return await fs.readFile(file, 'utf-8');
+  } catch {
+    if (cfg.groundingFile) console.warn(`[grounding] ${cfg.slug}: cannot read ${cfg.groundingFile}`);
+    return '';
+  }
 }

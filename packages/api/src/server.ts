@@ -71,9 +71,10 @@ import {
 import { openReadingsIndex } from './readings.js';
 import { REPO_ROOT } from './repo-root.js';
 import { loadChatProjectConfig } from './chat/config.js';
+import { resolveProjectFlags } from './project-config.js';
 import { simulationHooks, talkHooks } from './chat/hooks.js';
 import { runChatTurn, ChatInputError, type ChatStore } from './chat/pipeline.js';
-import type { ChatMessage } from './chat/types.js';
+import { resolveDocumentKey, type ChatRequestBody } from './chat/request.js';
 import { estimateCost } from './chat/usage.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -806,6 +807,7 @@ if (process.env.NODE_ENV === 'production' && serveFrontend) {
 // The chat pipeline's view of the database (chat/pipeline.ts).
 const chatStore: ChatStore = {
   getSystemPrompt,
+  getLanguages,
   async getDocument(key) {
     const vignette = (await getAllVignettes()).find(v => v.key === key);
     return vignette ? { key: vignette.key, content: vignette.content } : null;
@@ -817,22 +819,21 @@ const chatStore: ChatStore = {
 
 app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requirePublicChatIfDeclared, async (req, res) => {
   try {
-    const { messages, vignetteKey, language, sessionToken } = req.body as {
-      messages: ChatMessage[];
-      vignetteKey: string;
-      language?: string | null;
-      sessionToken?: string | null;
-    };
+    const body = (req.body ?? {}) as ChatRequestBody;
+    const { messages, language, sessionToken } = body;
+    // documentKey, or vignetteKey as every deployed page sends it (chat/request.ts).
+    const documentKey = resolveDocumentKey(body);
     const usageProject = activeProjectPrefix();
     const slug = (usageProject || '').replace(/_+$/, '');
     const config = await loadChatProjectConfig(REPO_ROOT, slug || 'demo', usageProject);
-    const hookDeps = { getCaseTemplate, transcriptsDir: path.resolve(REPO_ROOT, 'transcripts') };
 
-    const turn = await runChatTurn({ messages, documentKey: vignetteKey, language, sessionToken }, {
+    const turn = await runChatTurn({ messages, documentKey, language, sessionToken }, {
       repoRoot: REPO_ROOT,
       config,
       store: chatStore,
-      hooks: config.app === 'talk' ? talkHooks(hookDeps) : simulationHooks(hookDeps),
+      hooks: config.app === 'talk'
+        ? talkHooks()
+        : simulationHooks({ getCaseTemplate, transcriptsDir: path.resolve(REPO_ROOT, 'transcripts') }),
       now: () => new Date(),
       // Billed per project: the payment source picks the client for this request.
       client: async () => clientForPaymentSource(await getProjectSetting(slug || 'default', 'payment_source')),
@@ -1337,7 +1338,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
       return res.status(500).json({ error: 'Failed to load project configuration' });
     }
 
-    if (!projectConfig.enableFeedback) {
+    if (!resolveProjectFlags(projectConfig).enableFeedback) {
       return res.status(403).json({ error: 'Feedback not enabled for this project' });
     }
 
@@ -2070,7 +2071,9 @@ app.get('/api/vignettes', requireAccessCode, async (req, res) => {
     // link (a slide, in the decks project). A link naming a key the deployment
     // does not hold is refused here, so the page can say so; it must never
     // open some other vignette under the requested one's name.
-    const wanted = typeof req.query.vignette === 'string' ? req.query.vignette : null;
+    // ?doc= is an alias of ?vignette=; ?vignette= wins when both are given.
+    const wanted = typeof req.query.vignette === 'string' ? req.query.vignette
+      : typeof req.query.doc === 'string' ? req.query.doc : null;
     if (wanted !== null) {
       const config = await readProjectConfig(requestProjectSlug(req));
       if (config.requireKnownVignette === true && !vignettes.some(v => v.key === wanted)) {
@@ -2644,50 +2647,13 @@ app.get('/api/config', async (_req, res) => {
       } catch { /* ignore parse errors */ }
     }
 
-    // Load project config to get enableFeedback flag
-    // Remove trailing underscore from table prefix to get project slug
+    // The project's flags, resolved from project.json (project-config.ts):
+    // a talk project implies the advisor flags it leaves unset.
     const projectSlug = (activeProjectPrefix() || 'demo').replace(/_+$/, '') || 'demo';
     const projectConfigPath = path.join(REPO_ROOT, 'projects', projectSlug, 'project.json');
-    let enableFeedback = false;
-    let enableVoice = false;
-    let enableRealtime = false;
-    let formless = false;
-    let enableFollowups = false;
-    let skipWelcome = false;
-    let dragDropAllocation = false;
-    let requireAccessCode = false;
-    let chatOnly = false;
-    // The frontend must refuse a deep link whose vignette is unknown (or absent)
-    // instead of opening the first vignette. See /api/vignettes.
-    let requireKnownVignette = false;
-    // Whether the project publishes a talk manifest (the frontend then resolves
-    // ?paper=<DOI> against /api/talk-manifest/<slug>). Only the flag: the path
-    // is a server-side detail.
-    let talkManifest = false;
-    // The public page that fronts a talkManifest project (URL template with
-    // {slug}/{doi}); a top-level visit is redirected there. Empty when unset.
-    let talkPublicUrl = '';
-    // Optional document-reference linking config (see doc-refs.ts on the frontend).
-    // Passed through verbatim when present; absent for projects that don't opt in.
-    let docRefs: unknown = null;
+    let flags = resolveProjectFlags({});
     try {
-      const configContent = await fs.readFile(projectConfigPath, 'utf-8');
-      const projectConfig = JSON.parse(configContent);
-      enableFeedback = projectConfig.enableFeedback || false;
-      enableVoice = projectConfig.enableVoice || false;
-      enableRealtime = projectConfig.enableRealtime || false;
-      formless = projectConfig.formless || false;
-      enableFollowups = projectConfig.enableFollowups || false;
-      skipWelcome = projectConfig.skipWelcome || false;
-      dragDropAllocation = projectConfig.dragDropAllocation || false;
-      requireAccessCode = projectConfig.requireAccessCode || false;
-      chatOnly = projectConfig.chatOnly || false;
-      requireKnownVignette = projectConfig.requireKnownVignette === true;
-      talkManifest = typeof projectConfig.talkManifest === 'string' && projectConfig.talkManifest !== '';
-      talkPublicUrl = typeof projectConfig.talkPublicUrl === 'string' ? projectConfig.talkPublicUrl : '';
-      if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
-        docRefs = projectConfig.docRefs;
-      }
+      flags = resolveProjectFlags(JSON.parse(await fs.readFile(projectConfigPath, 'utf-8')));
     } catch (error) {
       console.warn(`Could not load project config for ${projectSlug}:`, error);
     }
@@ -2697,19 +2663,27 @@ app.get('/api/config', async (_req, res) => {
       koboFormUid: koboUid || '',
       languages,
       tablePrefix: activeProjectPrefix(),
-      enableFeedback,
-      enableVoice,
-      enableRealtime,
-      formless,
-      enableFollowups,
-      skipWelcome,
-      dragDropAllocation,
-      requireAccessCode,
-      chatOnly,
-      requireKnownVignette,
-      talkManifest,
-      talkPublicUrl,
-      docRefs,
+      // Which application the project is: 'simulation' or 'talk'.
+      app: flags.app,
+      enableFeedback: flags.enableFeedback,
+      enableVoice: flags.enableVoice,
+      enableRealtime: flags.enableRealtime,
+      formless: flags.formless,
+      enableFollowups: flags.enableFollowups,
+      skipWelcome: flags.skipWelcome,
+      dragDropAllocation: flags.dragDropAllocation,
+      requireAccessCode: flags.requireAccessCode,
+      chatOnly: flags.chatOnly,
+      // The frontend must refuse a deep link whose vignette is unknown (or
+      // absent) instead of opening the first vignette. See /api/vignettes.
+      requireKnownVignette: flags.requireKnownVignette,
+      // Only the flag (the frontend then resolves ?paper=<DOI> against
+      // /api/talk-manifest/<slug>); the manifest path is a server-side detail.
+      talkManifest: flags.talkManifest,
+      // A top-level visit to a talkManifest project is redirected here.
+      talkPublicUrl: flags.talkPublicUrl,
+      // Document-reference linking config (frontend doc-refs.ts), or null.
+      docRefs: flags.docRefs,
     });
   } catch (error) {
     console.error('Error reading config:', error);

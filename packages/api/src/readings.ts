@@ -453,30 +453,6 @@ function parseNotice(raw: string | null): ChunkNotice | null {
   return { rank: 1, text: { en: raw } };
 }
 
-/**
- * The language code to render a notice in, from the language NAME the chat
- * request carries ("English", "Tiếng Việt", "Vietnamese").
- *
- * A notice is an instruction to the model about the passage above it, so it is
- * written in the language the answer is being written in and only that one:
- * shipping every language on every search doubled the cost of the annotation
- * for no reading the model was going to do. Unknown or absent falls back to
- * English, which every notice carries.
- */
-const NOTICE_LANGUAGE_PATTERNS: Array<[string, RegExp]> = [
-  ['vi', /^(vi|vie|vietnamese|tieng viet)\b/],
-];
-
-export function noticeLanguage(language?: string | null): string {
-  const norm = (language ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!norm) return 'en';
-  for (const [code, pattern] of NOTICE_LANGUAGE_PATTERNS) {
-    if (pattern.test(norm)) return code;
-  }
-  return 'en';
-}
-
 function noticeText(notice: ChunkNotice, code: string): string | null {
   const t = notice.text;
   return t[code] ?? t.en ?? Object.values(t)[0] ?? null;
@@ -503,7 +479,7 @@ function noticeText(notice: ChunkNotice, code: string): string | null {
 export function formatSearchResults(
   query: string,
   results: ReadingChunk[],
-  options: { language?: string | null; scheduled?: boolean } = {},
+  options: { languageCode?: string | null; scheduled?: boolean } = {},
 ): string {
   const sources = options.scheduled ? 'indexed course readings' : 'indexed sources';
   if (!results.length) {
@@ -533,7 +509,12 @@ export function formatSearchResults(
   // note already carries the weaker one's correction inside it. So: highest
   // rank wins, its distinct texts are printed once each, and a passage below
   // that rank carries no pointer.
-  const lang = noticeLanguage(options.language);
+  // A notice is an instruction to the model about the passage it covers, so it
+  // is rendered in the language the answer is being written in, and only that
+  // one: the session language's code, resolved by the caller from the
+  // project's languages list (chat/language.ts). A language the notice was not
+  // written in, or none, falls back to English, which every notice carries.
+  const lang = options.languageCode || 'en';
   const topRank = results.reduce(
     (best, r) => (r.notice && r.notice.rank > best ? r.notice.rank : best), -Infinity);
   const notices: string[] = [];

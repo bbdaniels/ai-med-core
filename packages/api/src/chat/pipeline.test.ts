@@ -25,6 +25,7 @@ function setup() {
   const rows = { usage: [] as any[], qa: [] as any[], sessions: [] as any[] };
   const store: ChatStore = {
     async getSystemPrompt() { events.push('getSystemPrompt'); return 'SYS'; },
+    async getLanguages() { return null; },
     async getDocument(key) { events.push(`getDocument ${key}`); return key === 'doc' ? { key, content: 'DOC' } : null; },
     async logTokenUsage(e) { rows.usage.push(e); },
     async logQaTurn(...a) { rows.qa.push(a); },

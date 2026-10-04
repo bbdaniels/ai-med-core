@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { buildDeckVignettes, parsePack, writeDeck, MAX_CHARS } from '../../../tools/sync-deck-packs.js';
 import { AdminApiClient } from '../../../tools/lib/api-client.js';
+import { resolveProjectFlags } from './project-config.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../../..');
@@ -194,7 +195,7 @@ test('the project is gated, logged, and on the small model', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'projects/decks/project.json'), 'utf8'));
   assert.equal(cfg.requireAccessCode, true);
   assert.equal(cfg.logConversations, true);
-  assert.equal(cfg.enableFollowups, true);           // the JSON channel that carries beyondScope
+  assert.equal(resolveProjectFlags(cfg).enableFollowups, true);  // the JSON channel that carries beyondScope
   assert.equal(cfg.chatModel, 'gpt-4o-mini');
   assert.equal(cfg.talkManifest, undefined);         // no public, unauthenticated slide list
   assert.equal(cfg.requireKnownVignette, true);      // an unknown slide is refused, never swapped
@@ -277,6 +278,11 @@ test('an unknown slide is refused, never swapped for the first one', async () =>
   const body = await unknown.json() as any;
   assert.equal(body.code, 'unknown_vignette');
   assert.equal(body.vignetteKeys, undefined);          // no list to fall back on
+
+  // ?doc= is the same check under its new name; ?vignette= wins over it.
+  assert.equal((await fetch(`${base}/api/vignettes?doc=${KEY_MAIN}`, { headers })).status, 200);
+  assert.equal((await fetch(`${base}/api/vignettes?doc=${DECK}--no-such-slide`, { headers })).status, 404);
+  assert.equal((await fetch(`${base}/api/vignettes?vignette=${KEY_MAIN}&doc=${DECK}--no-such-slide`, { headers })).status, 200);
 
   // The gate comes first: without the code the answer is 401, not 404.
   assert.equal((await fetch(`${base}/api/vignettes?vignette=${DECK}--no-such-slide`, { headers: P })).status, 401);

@@ -4,10 +4,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { REPO_ROOT } from './repo-root.js';
 
 const { Pool } = pg;
 
-// Repo root (3 levels up from packages/api/src/)
+// This module's directory; defaults/ sits next to src/ and dist/.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -143,8 +144,7 @@ async function seedProjectFromFilesIfEmpty(slug: string): Promise<void> {
     // Any content at all means this project is managed elsewhere. Leave it alone.
     if (existingPrompt || existingVignettes.length > 0) return;
 
-    const repoRoot = path.resolve(__dirname, '../../..');
-    const projectDir = path.join(repoRoot, 'projects', slug);
+    const projectDir = path.join(REPO_ROOT, 'projects', slug);
 
     let config: Record<string, any>;
     try {
@@ -158,7 +158,7 @@ async function seedProjectFromFilesIfEmpty(slug: string): Promise<void> {
 
     const promptPath = config?.cases?.systemPrompt;
     if (typeof promptPath === 'string' && promptPath) {
-      await saveSystemPrompt(await fs.readFile(path.resolve(repoRoot, promptPath), 'utf8'));
+      await saveSystemPrompt(await fs.readFile(path.resolve(REPO_ROOT, promptPath), 'utf8'));
       console.log('  ✓ System prompt seeded');
     }
 
@@ -166,7 +166,18 @@ async function seedProjectFromFilesIfEmpty(slug: string): Promise<void> {
     let sortOrder = 0;
     for (const vignette of vignettes) {
       if (!vignette?.key || !vignette?.file) continue;
-      const content = await fs.readFile(path.resolve(repoRoot, vignette.file), 'utf8');
+      let content: string;
+      try {
+        content = await fs.readFile(path.resolve(REPO_ROOT, vignette.file), 'utf8');
+      } catch (error) {
+        // A private vignette (gitignored, e.g. a paper's full text) is absent from
+        // a checkout that was never given it. Skip it and seed the rest: aborting
+        // here left the project half seeded (prompt saved, languages not), and
+        // because the prompt was then present the seed never ran again.
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+        console.log(`  ℹ Vignette "${vignette.key}" skipped: ${vignette.file} is not in this checkout`);
+        continue;
+      }
       await saveVignette(vignette.key, content, sortOrder++);
       console.log(`  ✓ Vignette "${vignette.key}" seeded`);
     }

@@ -80,7 +80,7 @@ export interface ReadingsIndexInfo {
   builtAt: string;
 }
 
-interface OpenIndex {
+export interface OpenIndex {
   db: Database.Database;
   dim: number;
   hasVectors: boolean;

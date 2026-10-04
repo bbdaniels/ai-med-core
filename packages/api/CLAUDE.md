@@ -6,6 +6,8 @@ Express REST API serving the AI-MED platform. Handles LLM chat, database, admin 
 
 `src/server.ts` -- monolith containing all routes, middleware, and database initialization. ~1200 lines.
 
+`src/chat/` -- the `/api/chat` pipeline. `runChatTurn` (`pipeline.ts`) validates the request, assembles the prompt (`prompt.ts`, `grounding.ts`), completes with the response_format ladder (`completion.ts`) and the retrieval loop (`retrieval.ts`), logs usage (`usage.ts`, which also holds `estimateCost`) and parses the answer (`answer.ts`). What differs between the simulator and document chat is in `hooks.ts`. The route in `server.ts` only reads the project config, picks the hooks, and passes in the store and a client chosen by payment source; nothing under `src/chat/` builds or fetches a client (`pipeline.test.ts` checks).
+
 ## Database
 
 - **Dev**: SQLite via `better-sqlite3` (path from `DATABASE_URL=sqlite://./local-dev.db`)

@@ -68,17 +68,16 @@ import {
   exportNpj26Csv,
   TOKEN_RE as NPJ26_TOKEN_RE,
 } from './npj26.js';
-import {
-  openReadingsIndex,
-  searchReadings,
-  formatSearchResults,
-  searchReadingsTool,
-  READINGS_MAX_RESULTS,
-} from './readings.js';
+import { openReadingsIndex } from './readings.js';
+import { REPO_ROOT } from './repo-root.js';
+import { loadChatProjectConfig } from './chat/config.js';
+import { simulationHooks, talkHooks } from './chat/hooks.js';
+import { runChatTurn, ChatInputError, type ChatStore } from './chat/pipeline.js';
+import type { ChatMessage } from './chat/types.js';
+import { estimateCost } from './chat/usage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 // Load .env from repo root
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
@@ -136,24 +135,6 @@ const REALTIME_MAX_SESSION_SECONDS = parseInt(process.env.REALTIME_MAX_SESSION_S
 // All runtime Kobo calls (XForm fetch, submission search, bulk update, OpenRosa
 // submission POST) go through this host.
 const KOBO_KF_BASE = (process.env.KOBO_KF_BASE || 'https://kf.kobotoolbox.org').replace(/\/$/, '');
-
-// Cost estimation for OpenAI models (USD per token/character)
-function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
-  const pricing: Record<string, { input: number; output: number }> = {
-    'gpt-4o-mini': { input: 0.15 / 1_000_000, output: 0.60 / 1_000_000 },
-    'gpt-4o': { input: 2.50 / 1_000_000, output: 10.00 / 1_000_000 },
-    'gpt-4o-mini-tts': { input: 12.00 / 1_000_000, output: 0 }, // ~$0.015/min ≈ $12/1M chars
-    'tts-1': { input: 15.00 / 1_000_000, output: 0 }, // $15/1M chars
-    'tts-1-hd': { input: 30.00 / 1_000_000, output: 0 },
-  };
-  const p = pricing[model] || { input: 0, output: 0 };
-  return promptTokens * p.input + completionTokens * p.output;
-}
-
-// Chat models a project may select via `chatModel` in project.json. Kept in step
-// with estimateCost's pricing table: a model missing from that table would be
-// billed to the usage log as zero.
-const KNOWN_CHAT_MODELS = new Set(['gpt-4o-mini', 'gpt-4o']);
 
 // JWT Configuration
 // No fallback secret. A default here would let a misconfigured deployment sign
@@ -821,500 +802,55 @@ if (process.env.NODE_ENV === 'production' && serveFrontend) {
 }
 
 // API Routes
+
+// The chat pipeline's view of the database (chat/pipeline.ts).
+const chatStore: ChatStore = {
+  getSystemPrompt,
+  async getDocument(key) {
+    const vignette = (await getAllVignettes()).find(v => v.key === key);
+    return vignette ? { key: vignette.key, content: vignette.content } : null;
+  },
+  logTokenUsage,
+  logQaTurn,
+  logSessionMessage,
+};
+
 app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requirePublicChatIfDeclared, async (req, res) => {
   try {
     const { messages, vignetteKey, language, sessionToken } = req.body as {
-      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+      messages: ChatMessage[];
       vignetteKey: string;
       language?: string | null;
       sessionToken?: string | null;
     };
+    const usageProject = activeProjectPrefix();
+    const slug = (usageProject || '').replace(/_+$/, '');
+    const config = await loadChatProjectConfig(REPO_ROOT, slug || 'demo', usageProject);
+    const hookDeps = { getCaseTemplate, transcriptsDir: path.resolve(REPO_ROOT, 'transcripts') };
 
-    if (!vignetteKey) {
-      return res.status(400).json({ error: 'vignetteKey is required' });
-    }
-
-    // Look up content server-side - sensitive data never leaves the server
-    const systemPrompt = await getSystemPrompt();
-    const vignettes = await getAllVignettes();
-    const vignette = vignettes.find(v => v.key === vignetteKey);
-
-    if (!vignette) {
-      return res.status(400).json({ error: 'Invalid vignette key' });
-    }
-
-    // Validate language parameter - only allow reasonable language names
-    // (prevents prompt injection via the language field)
-    if (language && !/^[\p{L}\p{M}\s\-()]{1,50}$/u.test(language)) {
-      return res.status(400).json({ error: 'Invalid language parameter' });
-    }
-
-    // Build complete system prompt server-side
-    const now = new Date();
-    const fmt = (d: Date) => d.toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    const turn = await runChatTurn({ messages, documentKey: vignetteKey, language, sessionToken }, {
+      repoRoot: REPO_ROOT,
+      config,
+      store: chatStore,
+      hooks: config.app === 'talk' ? talkHooks(hookDeps) : simulationHooks(hookDeps),
+      now: () => new Date(),
+      // Billed per project: the payment source picks the client for this request.
+      client: async () => clientForPaymentSource(await getProjectSetting(slug || 'default', 'payment_source')),
+      openIndex: cfg => (cfg.readingsIndexPath ? openReadingsIndex(REPO_ROOT, cfg.slug, cfg.readingsIndexPath) : null),
     });
-    const daysAgo = (n: number) => {
-      const d = new Date(now);
-      d.setDate(d.getDate() - n);
-      return fmt(d);
-    };
-    const dateRef = [
-      `Today is ${fmt(now)}.`,
-      `Yesterday was ${daysAgo(1)}.`,
-      `Two days ago was ${daysAgo(2)}.`,
-      `Three days ago was ${daysAgo(3)}.`,
-      `Four days ago was ${daysAgo(4)}.`,
-      `One week ago was ${daysAgo(7)}.`,
-    ].join(' ');
-    const chatProjectSlug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'demo';
-
-    // Check if this project opts into inline follow-up suggestions and/or durable
-    // conversation logging. When follow-ups are enabled, the model returns JSON:
-    // {answer, followups, beyondScope} via response_format. logConversations gates qa_log writes
-    // (formless Q&A advisors like haivn_eip whose consent states turns are logged).
-    let enableFollowups = false;
-    let logConversations = false;
-    let readingsIndexPath: string | null = null;
-    let readingsQueryLanguage: string | null = null;
-    let projectChatModel: string | null = null;
-    try {
-      const cfgPath = path.join(REPO_ROOT, 'projects', chatProjectSlug, 'project.json');
-      const cfg = JSON.parse(await fs.readFile(cfgPath, 'utf-8'));
-      enableFollowups = cfg.enableFollowups === true;
-      logConversations = cfg.logConversations === true;
-      readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
-      // The language the corpus is WRITTEN in, when that is not the language its
-      // users ask in. haivn_eip's legal library is entirely Vietnamese, so an
-      // English question searches it across a language boundary: the BM25 half
-      // matches almost nothing, and the dense half is left to separate one Điều
-      // from four hundred on a cross-lingual similarity, which returns confident
-      // near-misses — the right decree and the wrong article. Declaring the
-      // language here makes the tool loop restate every query in it before
-      // searching, so it no longer matters what language the model searched in.
-      // A project that omits the key (ppol5013) searches exactly as it did.
-      // A language NAME, as in the `language` field, since it goes into a prompt.
-      if (typeof cfg.readingsQueryLanguage === 'string'
-          && /^[A-Za-z][A-Za-z ]{1,31}$/.test(cfg.readingsQueryLanguage.trim())) {
-        readingsQueryLanguage = cfg.readingsQueryLanguage.trim();
-      } else if (typeof cfg.readingsQueryLanguage === 'string') {
-        console.warn(`[readings] ${chatProjectSlug}: unusable readingsQueryLanguage, ignoring`);
-      }
-      // Per-project chat model. gpt-4o-mini is the platform default and is right
-      // for the roleplay projects; a grounded advisor that must attribute a year
-      // to the correct paper needs the stronger model. Restricted to models the
-      // cost table knows, so a typo cannot silently log every call as free.
-      if (typeof cfg.chatModel === 'string' && KNOWN_CHAT_MODELS.has(cfg.chatModel)) {
-        projectChatModel = cfg.chatModel;
-      } else if (typeof cfg.chatModel === 'string') {
-        console.warn(`[chat] ${chatProjectSlug}: unknown chatModel "${cfg.chatModel}", using the default`);
-      }
-    } catch { /* ignore — default off */ }
-
-    // Corpus grounding: a project may ship a compact index of the corpus it
-    // answers from (authored, or generated by the project's own tooling). We
-    // append that index — never the full corpus text — so the advisor knows what
-    // exists and how to cite it without blowing the token budget. haivn_eip
-    // indexes legal instruments; ppol5013 indexes a course reading schedule.
-    // Absent file = no-op.
-    let corpusGrounding = '';
-    for (const rel of [['content', 'legal', 'grounding.md'],
-                       ['content', 'readings', 'grounding.md']]) {
-      try {
-        corpusGrounding = await fs.readFile(
-          path.join(REPO_ROOT, 'projects', chatProjectSlug, ...rel), 'utf-8');
-        break;
-      } catch { /* try the next candidate */ }
-    }
-
-    const structuredInstruction = enableFollowups
-      ? '\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.'
-      : '';
-
-    const completeSystemPrompt =
-      (systemPrompt || '') +
-      `\n\n${dateRef}` +
-      `\n\n${vignette.content}` +
-      (corpusGrounding ? `\n\n${corpusGrounding}` : '') +
-      structuredInstruction +
-      (language ? `\n\nSPEAK ONLY IN ${language}` : '');
-
-    // If this is the initial request (first user message), write RAW system instructions
-    // and the initial payload into a transcript snippet immediately.
-    if (Array.isArray(messages) && messages.length === 1) {
-      try {
-        const transcriptsDir = path.resolve(REPO_ROOT, 'transcripts');
-        await fs.mkdir(transcriptsDir, { recursive: true });
-
-        const fileName = `initial_${new Date().toISOString().replace(/[:.]/g, '-')}_${randomUUID().slice(0, 8)}.txt`;
-        const filePath = path.join(transcriptsDir, fileName);
-
-        const headerLines: string[] = [];
-        headerLines.push('Initial Request Snapshot');
-        headerLines.push(`Created: ${new Date().toISOString()}`);
-        headerLines.push('');
-
-        const bodyParts: string[] = [];
-        bodyParts.push('RAW System Instructions Sent to OpenAI:');
-        bodyParts.push(completeSystemPrompt);
-        bodyParts.push('');
-        bodyParts.push('Initial Request Payload:');
-        bodyParts.push(JSON.stringify({ messages, language, vignetteKey }, null, 2));
-        bodyParts.push('');
-
-        const content = headerLines.join('\n') + bodyParts.join('\n') + '\n';
-        await fs.writeFile(filePath, content, 'utf8');
-      } catch (e) {
-        console.error('Failed to write initial request snapshot:', e);
-      }
-    }
-
-    const finalMessages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
-      { role: 'system', content: completeSystemPrompt },
-      ...messages,
-    ];
-
-    // Select OpenAI client based on per-project payment source setting
-    const projectSlug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
-    const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
-    let chatClient: ReturnType<typeof clientForPaymentSource>;
-    try {
-      chatClient = clientForPaymentSource(paymentSource);
-    } catch (e) {
-      if (e instanceof DirectKeyMissingError) return res.status(503).json({ error: e.message });
-      throw e;
-    }
-
-    const chatModel = projectChatModel || 'gpt-4o-mini';
-
-    // The conversation the model sees. It grows during the retrieval loop below:
-    // an assistant turn holding tool calls, then one tool result per call.
-    const convo: any[] = [...finalMessages];
-
-    const baseChatRequest = {
-      model: chatModel,
-      max_tokens: 1000,
-      temperature: 0.7,
-    };
-    const schemaRequest = {
-      ...baseChatRequest,
-      response_format: {
-        type: 'json_schema' as const,
-        json_schema: {
-          name: 'chat_response',
-          strict: true,
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['answer', 'followups', 'beyondScope'],
-            properties: {
-              answer: {
-                type: 'string',
-                description: 'Concise plain-prose response. Maximum 1-3 short sentences. NO markdown (no **bold**, *italics*, # headings, - bullets, numbered lists, tables, or code blocks). Write as natural flowing sentences like a quick text message to a colleague.',
-              },
-              followups: {
-                type: 'array',
-                items: { type: 'string' },
-                minItems: 2,
-                maxItems: 3,
-                description: '2-3 short specific follow-up questions the user might naturally ask next, each under 12 words.',
-              },
-              beyondScope: {
-                type: 'boolean',
-                description: 'True when the answer states anything the reference content does not itself cover (declined, out-of-scope, partially covered, or general framing added around the reference content). False only when every statement is drawn from the reference content.',
-              },
-            },
-          },
-        },
-      },
-    };
-    // Issue one completion over the conversation so far, keeping the existing
-    // response_format fallback ladder: a gateway that rejects json_schema drops to
-    // json_object, and one that rejects that drops to plain text. `tools` is
-    // omitted entirely when the project has no corpus, so nothing changes for the
-    // projects that came before this one.
-    const issue = async (tools: unknown[] | null) => {
-      const withTools = (req: Record<string, unknown>) =>
-        (tools && tools.length ? { ...req, tools, tool_choice: 'auto' } : req);
-      const request = { ...baseChatRequest, messages: convo };
-      if (!enableFollowups) {
-        return chatClient.chat.completions.create(withTools(request) as any);
-      }
-      try {
-        return await chatClient.chat.completions.create(
-          withTools({ ...schemaRequest, messages: convo }) as any);
-      } catch (e) {
-        console.warn('json_schema rejected, retrying with json_object fallback:', e instanceof Error ? e.message : e);
-        try {
-          return await chatClient.chat.completions.create(withTools({
-            ...request,
-            response_format: { type: 'json_object' as const },
-          }) as any);
-        } catch (e2) {
-          console.warn('json_object also rejected, retrying without response_format:', e2 instanceof Error ? e2.message : e2);
-          return chatClient.chat.completions.create(withTools(request) as any);
-        }
-      }
-    };
-
-    const usages: Array<{ prompt_tokens?: number; completion_tokens?: number;
-                          [k: string]: unknown }> = [];
-
-    // ── retrieval loop ──
-    // The model may search the corpus, read what came back, and search again. It
-    // is capped: past the last hop the tools are withheld, which forces the model
-    // to answer from what it already retrieved rather than looping on a query
-    // that is never going to match.
-    const readingsIndex = readingsIndexPath
-      ? openReadingsIndex(REPO_ROOT, chatProjectSlug, readingsIndexPath)
-      : null;
-    const MAX_TOOL_HOPS = 3;
-
-    // Restate a search query in the language the corpus is written in.
-    //
-    // This is enforcement, not encouragement. A system prompt can ask the model
-    // to search in Vietnamese and it will, sometimes; the times it does not are
-    // indistinguishable in the answer, because a cross-lingual search returns
-    // six real articles of the right instrument and none of them the one asked
-    // about. Normalizing here means the model's own language discipline stops
-    // mattering. Cheap model, deterministic temperature, and a failure just
-    // searches the query as written — degraded, never broken.
-    //
-    // Deliberately not logged to token_usage: like the query embedding beside
-    // it, it is a fixed sub-cent overhead on a search, and logging it under the
-    // project's chatModel would misattribute both the model and the cost.
-    // A session already in the corpus language (an English session on the
-    // English papers corpus) has nothing to restate, so it skips the call.
-    const sessionInCorpusLanguage = !!readingsQueryLanguage && !!language
-      && language.trim().toLowerCase() === readingsQueryLanguage.toLowerCase();
-    const toCorpusLanguage = async (raw: string): Promise<string> => {
-      if (!readingsQueryLanguage || sessionInCorpusLanguage) return raw;
-      try {
-        const restated = await chatClient.chat.completions.create({
-          model: 'gpt-4o-mini',
-          max_tokens: 200,
-          temperature: 0,
-          messages: [
-            {
-              role: 'system',
-              content:
-                `Restate the search query in ${readingsQueryLanguage}, in the vocabulary ` +
-                `an official ${readingsQueryLanguage} document would use for it. Keep every ` +
-                'instrument number, article number, date, abbreviation and proper noun exactly ' +
-                'as written. Do not answer the query, do not explain, do not add context: ' +
-                'reply with the restated query and nothing else. If it is already in ' +
-                `${readingsQueryLanguage}, reply with it unchanged.`,
-            },
-            { role: 'user', content: raw },
-          ],
-        } as any);
-        const out = (restated.choices?.[0]?.message?.content || '').trim();
-        return out ? out.slice(0, 500) : raw;
-      } catch (e) {
-        console.warn('[readings] query restatement failed; searching as written:',
-                     e instanceof Error ? e.message : e);
-        return raw;
-      }
-    };
-
-    let response: any;
-    for (let hop = 0; ; hop++) {
-      const offerTools = readingsIndex && hop < MAX_TOOL_HOPS
-        ? [searchReadingsTool(readingsIndex)] : null;
-      response = await issue(offerTools);
-      if (response.usage) usages.push({ ...response.usage });
-
-      const assistantMsg = response.choices?.[0]?.message;
-      const toolCalls = assistantMsg?.tool_calls;
-      if (!readingsIndex || !toolCalls?.length) break;
-
-      convo.push(assistantMsg);
-      for (const call of toolCalls) {
-        let content: string;
-        try {
-          const args = JSON.parse(call.function?.arguments || '{}');
-          const askedQuery = typeof args.query === 'string' ? args.query.slice(0, 500) : '';
-          if (!askedQuery) {
-            content = 'search_readings requires a non-empty query string.';
-          } else {
-            // Both halves of the hybrid search run over the corpus's language,
-            // so the restatement has to happen before the embedding, not after.
-            const searchQuery = await toCorpusLanguage(askedQuery);
-            // Embed the query with the same model the index was built with. A
-            // failure here is not fatal: search falls back to BM25 alone.
-            let queryVector: Float32Array | null = null;
-            try {
-              const embedding = await chatClient.embeddings.create({
-                model: 'text-embedding-3-small',
-                input: searchQuery,
-              });
-              const vec = embedding.data?.[0]?.embedding;
-              if (Array.isArray(vec)) queryVector = Float32Array.from(vec);
-            } catch (e) {
-              console.warn('[readings] query embedding failed; BM25 only:', e instanceof Error ? e.message : e);
-            }
-            const week = typeof args.week === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.week)
-              ? args.week : null;
-            const limit = Number.isInteger(args.limit)
-              ? Math.min(READINGS_MAX_RESULTS, Math.max(1, args.limit)) : undefined;
-            const results = searchReadings(readingsIndex, searchQuery, queryVector,
-                                           { week, limit });
-            const asked = searchQuery === askedQuery ? '' : `"${askedQuery}" -> `;
-            console.log(`[readings] ${asked}"${searchQuery}"${week ? ` week=${week}` : ''} -> ${results.length} passages`);
-            // The model is shown the query that was actually run, not the one it
-            // asked for: a "no passage matches" line naming a query nobody ran is
-            // a lie, and seeing the corpus's own wording nudges the next search.
-            // The notice a retrieved passage may carry is an instruction about
-            // that passage, so it is rendered in the language the answer is
-            // being written in rather than in every language the corpus holds.
-            // `scheduled` is the corpus's own answer to "does this index have a
-            // class schedule?" -- the same bit `searchReadingsTool` branches on --
-            // so an unscheduled corpus is not described to the model as course
-            // readings assigned in weeks it does not have.
-            content = formatSearchResults(searchQuery, results,
-                                          { language, scheduled: readingsIndex.hasWeeks });
-          }
-        } catch (e) {
-          console.error('[readings] tool call failed:', e);
-          content = 'The reading search failed. Tell the student the search is ' +
-                    'unavailable right now rather than answering from memory.';
-        }
-        convo.push({ role: 'tool', tool_call_id: call.id, content });
-      }
-    }
-
-    // Log token usage for every hop.
-    for (const u of usages) {
-      logTokenUsage({
-        project: activeProjectPrefix(),
-        endpoint: '/api/chat',
-        model: chatModel,
-        prompt_tokens: u.prompt_tokens || 0,
-        completion_tokens: u.completion_tokens || 0,
-        estimated_cost: estimateCost(chatModel, u.prompt_tokens || 0, u.completion_tokens || 0),
-      });
-    }
-
-    // Look up template name from case template mapping
-    let templateName: string | null = null;
-    try {
-      const caseTemplateData = await getCaseTemplate();
-      if (caseTemplateData) {
-        const parsed = JSON.parse(caseTemplateData);
-        templateName = parsed.vignetteTemplates?.[vignetteKey] || null;
-        console.log(`[DEBUG] Case template for ${vignetteKey}: ${templateName}`);
-      } else {
-        console.log(`[DEBUG] No case template data in DB`);
-      }
-    } catch (e) {
-      console.warn('Failed to parse case template mapping:', e);
-    }
-
-    // Log session engagement (non-blocking)
-    if (sessionToken && typeof sessionToken === 'string' && sessionToken.length >= 16) {
-      const project = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
-      logSessionMessage(project, sessionToken, vignetteKey).catch(e =>
-        console.warn('Failed to log session message:', e)
-      );
-    }
-
-    // When follow-ups are enabled, parse the JSON response and split into
-    // {message, followups, beyondScope}. If parsing fails, fall back to returning
-    // the raw content with empty followups and beyondScope unset (false) — the
-    // frontend's standing disclaimer covers the answer either way, so a missing
-    // flag degrades to "no per-answer marker", never to a wrong claim of coverage.
-    let messageText = response.choices[0]?.message?.content || 'No response generated';
-    let followups: string[] = [];
-    let beyondScope = false;
-    if (enableFollowups) {
-      // Even with strict json_schema, the model has been observed to occasionally
-      // emit a valid JSON object followed by whitespace padding. Brace-match the
-      // JSON prefix to be safe.
-      const extractJsonObject = (s: string): string | null => {
-        const start = s.indexOf('{');
-        if (start === -1) return null;
-        let depth = 0;
-        let inString = false;
-        let escape = false;
-        for (let i = start; i < s.length; i++) {
-          const ch = s[i];
-          if (escape) { escape = false; continue; }
-          if (ch === '\\') { escape = true; continue; }
-          if (ch === '"') { inString = !inString; continue; }
-          if (inString) continue;
-          if (ch === '{') depth++;
-          else if (ch === '}') {
-            depth--;
-            if (depth === 0) return s.slice(start, i + 1);
-          }
-        }
-        return null;
-      };
-
-      const jsonStr = extractJsonObject(messageText);
-      if (jsonStr) {
-        try {
-          const parsed = JSON.parse(jsonStr);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            if (typeof parsed.answer === 'string' && parsed.answer.trim().length > 0) {
-              messageText = parsed.answer;
-            }
-            if (Array.isArray(parsed.followups)) {
-              followups = parsed.followups
-                .filter((f: unknown) => typeof f === 'string' && f.trim().length > 0)
-                .slice(0, 3);
-            }
-            beyondScope = parsed.beyondScope === true || parsed.beyondScope === 'true';
-          }
-        } catch (e) {
-          console.warn('Follow-ups JSON parse failed on extracted object; returning raw content:', e);
-        }
-      } else {
-        console.warn('Follow-ups: no JSON object found in response');
-      }
-      // Last-resort guard: if we ended up with empty/whitespace content, surface an error instead
-      if (!messageText || messageText.trim().length === 0) {
-        messageText = 'Sorry, I had trouble generating a response. Please try rephrasing your question.';
-        followups = [];
-        beyondScope = false;
-      }
-    }
-
-    // Durable conversation log (opt-in per project). Records the user's question
-    // (the last user message) paired with the answer just generated. Non-blocking;
-    // a logging failure must never break the chat response.
-    if (logConversations) {
-      const lastUser = [...messages].reverse().find(m => m.role === 'user');
-      if (lastUser && lastUser.content.trim()) {
-        const project = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
-        logQaTurn(
-          project,
-          (typeof sessionToken === 'string' && sessionToken.length >= 16) ? sessionToken : null,
-          vignetteKey || null,
-          language || null,
-          lastUser.content,
-          messageText,
-        ).catch(e => console.warn('Failed to log qa turn:', e));
-      }
-    }
 
     res.json({
-      message: messageText,
-      followups,
-      beyondScope,
-      // Summed across retrieval hops, so a searched answer reports what it
-      // actually cost rather than only its final turn.
-      usage: usages.length ? {
-        prompt_tokens: usages.reduce((n, u) => n + (u.prompt_tokens || 0), 0),
-        completion_tokens: usages.reduce((n, u) => n + (u.completion_tokens || 0), 0),
-        total_tokens: usages.reduce(
-          (n, u) => n + (u.prompt_tokens || 0) + (u.completion_tokens || 0), 0),
-      } : undefined,
-      caseTemplate: templateName
+      message: turn.message,
+      followups: turn.followups,
+      beyondScope: turn.beyondScope,
+      usage: turn.usage,
+      caseTemplate: turn.caseTemplate,
     });
   } catch (error) {
+    if (error instanceof ChatInputError) return res.status(error.status).json({ error: error.message });
+    if (error instanceof DirectKeyMissingError) return res.status(503).json({ error: error.message });
     console.error('OpenAI API error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate response',
       details: error instanceof Error ? error.message : 'Unknown error'
     });

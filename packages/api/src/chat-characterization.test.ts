@@ -233,8 +233,9 @@ for (const c of cases) {
 
       assert.equal(harness.fake.pending(), 0,
         `${c.name}/${turn.name}: ${harness.fake.pending()} scripted fake replies were never requested`);
-      // A first-turn snapshot is a file in transcripts/ naming this turn's
-      // document and first message; other test files may write there too.
+      // A first-turn snapshot is a file in the server's own transcripts/
+      // (the harness's checkout view) naming this turn's document and first
+      // message.
       const msgs = Array.isArray(turn.body.messages) ? turn.body.messages as Array<{ content?: unknown }> : [];
       const firstText = typeof msgs[0]?.content === 'string' ? JSON.stringify(msgs[0].content) : null;
       const docKey = typeof turn.body.vignetteKey === 'string' ? JSON.stringify(turn.body.vignetteKey) : null;

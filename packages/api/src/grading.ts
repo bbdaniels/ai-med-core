@@ -5,14 +5,11 @@
 
 import type { OpenAI } from 'openai';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import { logTokenUsage, activeProjectPrefix, getProjectSetting } from './database.js';
 import { clientForPaymentSource } from './openai-clients.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '../../..');
+import { REPO_ROOT } from './repo-root.js';
+import { estimateCost } from './chat/usage.js';
 
 async function resolveGradingClient(projectSlug: string): Promise<OpenAI> {
   const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
@@ -291,15 +288,13 @@ CRITICAL: ALL text in your response MUST be written in the language with ISO 639
       // Log token usage
       if (response.usage) {
         const u = response.usage;
-        const costPerPrompt = 0.15 / 1_000_000;
-        const costPerCompletion = 0.60 / 1_000_000;
         logTokenUsage({
           project: activeProjectPrefix(),
           endpoint: '/api/grade-session',
           model: MODEL,
           prompt_tokens: u.prompt_tokens || 0,
           completion_tokens: u.completion_tokens || 0,
-          estimated_cost: (u.prompt_tokens || 0) * costPerPrompt + (u.completion_tokens || 0) * costPerCompletion,
+          estimated_cost: estimateCost(MODEL, u.prompt_tokens || 0, u.completion_tokens || 0),
         });
       }
 

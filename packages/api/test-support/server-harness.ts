@@ -13,17 +13,16 @@
  * - The clock is fixed (AI_MED_TEST_NOW, see fixed-clock.mjs) and TZ is UTC, so
  *   the date block in a prompt is reproducible.
  *
- * `chat()` keeps 1.2 s between turns, because /api/chat allows one request a
- * second per client. `stop()` removes the first-turn prompt snapshots
- * (transcripts/initial_*) that appeared since `startServer()`.
+ * - The server reads a view of the checkout (AI_MED_REPO_ROOT), not the
+ *   working copy itself: the tracked files under projects/ only, so gitignored
+ *   private content never changes what a test sees, and an empty transcripts/
+ *   of its own (see tracked-view.ts). A snapshot recorded from a working copy
+ *   that holds private paper texts is therefore the one CI expects, and two
+ *   harnesses alive at once never see each other's first-turn prompt files.
  *
- * The server writes those snapshots to the repository's one transcripts/
- * directory and cannot be pointed elsewhere, so a file cannot tell which server
- * wrote it. Two harnesses alive at once would each read and delete the other's
- * snapshots, which is why the api test script runs its test files one at a
- * time (--test-concurrency=1). The real fix is a per-server transcripts
- * directory, which arrives when the first-turn snapshot moves behind the
- * simulator hook with an injected transcriptsDir.
+ * `chat()` keeps 1.2 s between turns, because /api/chat allows one request a
+ * second per client. `stop()` removes the view, the database and with them
+ * the first-turn prompt snapshots (transcripts/initial_*) this server wrote.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import http from 'node:http';
@@ -35,11 +34,11 @@ import type { AddressInfo } from 'node:net';
 import Database from 'better-sqlite3';
 import { AdminApiClient } from '../../../tools/lib/api-client.js';
 import { FakeOpenAI } from './fake-openai.js';
+import { buildTrackedView } from './tracked-view.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '../../..');
 export const API_DIR = path.join(REPO_ROOT, 'packages/api');
-export const TRANSCRIPTS_DIR = path.join(REPO_ROOT, 'transcripts');
 export const FIXED_CLOCK_URL = pathToFileURL(path.join(HERE, 'fixed-clock.mjs')).href;
 /** A Thursday. The date block then reads "Today is Thursday, October 1, 2026." */
 export const DEFAULT_TEST_NOW = '2026-10-01T12:00:00Z';
@@ -84,6 +83,8 @@ export interface Harness {
   base: string;
   fake: FakeOpenAI;
   dbPath: string;
+  /** The checkout view the server reads (AI_MED_REPO_ROOT); its transcripts/ is this server's own. */
+  root: string;
   chat(project: string, body: Record<string, unknown>, token?: string): Promise<ChatResult>;
   /** POST /api/access; returns the token, or throws on anything but 200. */
   access(project: string, code: string): Promise<string>;
@@ -121,18 +122,19 @@ function projectSlugs(): string[] {
     .map(e => e.name);
 }
 
-function listInitial(): Set<string> {
+function listInitial(transcriptsDir: string): string[] {
   try {
-    return new Set(fs.readdirSync(TRANSCRIPTS_DIR).filter(f => f.startsWith('initial_')));
+    return fs.readdirSync(transcriptsDir).filter(f => f.startsWith('initial_')).sort();
   } catch {
-    return new Set();
+    return [];
   }
 }
 
 export async function startServer(o: StartOptions = {}): Promise<Harness> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-med-harness-'));
   const dbPath = path.join(tmp, 'test.db');
-  const initialBefore = listInitial();
+  const root = buildTrackedView(REPO_ROOT, path.join(tmp, 'checkout'));
+  const transcriptsDir = path.join(root, 'transcripts');
   const fake = new FakeOpenAI();
   await fake.start();
   const port = await freePort();
@@ -154,6 +156,7 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     NODE_ENV: 'test',
     TZ: 'UTC',
     AI_MED_TEST_NOW: o.now ?? DEFAULT_TEST_NOW,
+    AI_MED_REPO_ROOT: root,
     PORT: String(port),
     DATABASE_URL: `sqlite://${dbPath}`,
     TABLE_PREFIX: '',
@@ -201,6 +204,7 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     base,
     fake,
     dbPath,
+    root,
 
     async chat(project, body, token) {
       const wait = lastChat + CHAT_SPACING_MS - Date.now();
@@ -273,12 +277,7 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     },
 
     initialSnapshots() {
-      const out: string[] = [];
-      for (const f of listInitial()) {
-        if (initialBefore.has(f)) continue;
-        try { out.push(fs.readFileSync(path.join(TRANSCRIPTS_DIR, f), 'utf8')); } catch { /* removed meanwhile */ }
-      }
-      return out;
+      return listInitial(transcriptsDir).map(f => fs.readFileSync(path.join(transcriptsDir, f), 'utf8'));
     },
 
     log() {
@@ -293,9 +292,6 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
         setTimeout(r, 3000);
       });
       await fake.stop();
-      for (const f of listInitial()) {
-        if (!initialBefore.has(f)) fs.rmSync(path.join(TRANSCRIPTS_DIR, f), { force: true });
-      }
       fs.rmSync(tmp, { recursive: true, force: true });
     },
   };

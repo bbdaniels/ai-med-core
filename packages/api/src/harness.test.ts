@@ -4,14 +4,17 @@
 // shifts Date but keeps it ticking, a fixture readings index opens and searches
 // through the real readings.ts, and the real server boots on throwaway SQLite
 // with its gateway pointed at the fake, whose recorded prompt carries the fixed
-// date.
+// date. The server reads a view of the checkout that holds what a clean clone
+// holds and no gitignored file, so a working copy with private content and CI
+// see the same answers.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startServer, FIXED_CLOCK_URL, DEFAULT_TEST_NOW, type Harness } from '../test-support/server-harness.js';
+import { startServer, FIXED_CLOCK_URL, DEFAULT_TEST_NOW, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
+import { buildTrackedView } from '../test-support/tracked-view.js';
 import { buildFixtureIndex } from '../test-support/fixture-index.js';
 import { openReadingsIndex, searchReadings } from './readings.js';
 
@@ -85,4 +88,50 @@ test('the server boots and the fake gateway receives the fixed date', async () =
   const usage = h.tokenUsage('demo');
   assert.equal(usage.length, 1);
   assert.equal(usage[0].endpoint, '/api/chat');
+});
+
+test('the checkout view holds tracked and new files, never ignored ones', () => {
+  const repo = path.join(tmp, 'repo');
+  fs.mkdirSync(path.join(repo, 'projects/p/cases'), { recursive: true });
+  const git = (...a: string[]) => execFileSync('git', ['-C', repo, ...a], { stdio: 'ignore' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'projects/p/cases/*.md\n!projects/p/cases/README.md\n');
+  fs.writeFileSync(path.join(repo, 'projects/p/project.json'), '{}');
+  fs.writeFileSync(path.join(repo, 'projects/p/cases/README.md'), 'tracked');
+  fs.writeFileSync(path.join(repo, 'projects/p/cases/private.md'), 'PRIVATE');
+  git('add', '.');
+  fs.writeFileSync(path.join(repo, 'projects/p/new.json'), 'not added yet');
+  fs.writeFileSync(path.join(repo, 'outside.txt'), 'not under projects/');
+
+  const view = buildTrackedView(repo, path.join(tmp, 'view'));
+  const has = (rel: string) => fs.existsSync(path.join(view, rel));
+  assert.ok(has('projects/p/project.json'));
+  assert.ok(has('projects/p/cases/README.md'));
+  assert.ok(has('projects/p/new.json'));
+  assert.ok(!has('projects/p/cases/private.md'), 'an ignored file is not in the view');
+  assert.ok(!has('outside.txt'));
+  assert.deepEqual(fs.readdirSync(path.join(view, 'transcripts')), []);
+  // A link, not a copy: an edit in the working copy shows at once.
+  fs.writeFileSync(path.join(repo, 'projects/p/project.json'), '{"edited":true}');
+  assert.equal(fs.readFileSync(path.join(view, 'projects/p/project.json'), 'utf8'), '{"edited":true}');
+});
+
+test('the server reads the view, with a transcripts directory of its own', () => {
+  assert.notEqual(path.resolve(h.root), path.resolve(REPO_ROOT));
+  assert.ok(fs.existsSync(path.join(h.root, 'projects/demo/project.json')));
+  assert.ok(fs.existsSync(path.join(h.root, 'transcripts')));
+});
+
+test('a project whose private vignettes are absent is still seeded with its languages', async () => {
+  // papers names its paper texts in project.json, and they are gitignored, so
+  // the view never has them. The seed skips them and still loads languages.json.
+  const cfg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'projects/papers/project.json'), 'utf8'));
+  const absent = (cfg.cases?.vignettes ?? []).filter((v: any) => !fs.existsSync(path.join(h.root, v.file)));
+  const langs = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'projects/papers/languages.json'), 'utf8'));
+  const res = await fetch(`${h.base}/api/config`, { headers: { 'X-Project': 'papers' } });
+  assert.equal(res.status, 200);
+  const body = await res.json() as any;
+  assert.deepEqual(body.languages, langs.languages);
+  if (absent.length > 0) assert.match(h.log(), /skipped: .* is not in this checkout/);
+  assert.doesNotMatch(h.log(), /Could not seed project "papers"/);
 });

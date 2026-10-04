@@ -100,20 +100,26 @@ ADMIN_PASSPHRASE="..." npx tsx tools/push-content.ts \
 The platform supports two ways of paying for model calls, selectable per project
 through the `payment_source` admin setting:
 
-- **`direct`** -- calls go straight to the OpenAI API and bill the key in
-  `OPENAI_API_KEY`. This is the default and the only path most deployments need.
-- **`harvard`** -- chat and grading calls are routed through a Harvard HUIT API
-  gateway that redeems institutional credits, by setting `OPENAI_BASE_URL` to the
-  gateway. Token counts and estimated cost are recorded for these calls exactly as
-  for direct ones; the remaining institutional credit is tracked at the gateway,
-  not in this app.
+- **`direct`** -- calls go straight to the OpenAI API and bill the direct key,
+  `OPENAI_TTS_KEY` (or `OPENAI_API_KEY` when no gateway is configured).
+- **`harvard`** (the default) -- chat and grading calls go to the gateway set in
+  `HARVARD_GATEWAY_URL`, a Harvard HUIT API gateway that redeems institutional
+  credits. With no gateway set, they go to the OpenAI API on `OPENAI_API_KEY`, which
+  is the only path most deployments need. Token counts and estimated cost are
+  recorded for these calls exactly as for direct ones; the remaining institutional
+  credit is tracked at the gateway, not in this app.
 
 The gateway is optional and institution-specific. It proxies standard
 chat-completions models only: text-to-speech and the Realtime API always use a
 direct key (`OPENAI_TTS_KEY` / `OPENAI_REALTIME_KEY`), because the gateway's
-credit-redemption proxy rejects those models. Leave `OPENAI_BASE_URL` unset and the
-whole gateway path stays dormant. Any OpenAI-compatible gateway can be substituted
-by pointing `OPENAI_BASE_URL` at it.
+credit-redemption proxy rejects those models. With a gateway set and no direct key,
+those features return a clear error rather than being sent to the gateway. Leave
+`HARVARD_GATEWAY_URL` unset and the whole gateway path stays dormant. Any
+OpenAI-compatible gateway can be substituted by pointing `HARVARD_GATEWAY_URL` at it.
+The variable is deliberately not `OPENAI_BASE_URL`: the OpenAI SDK reads that name
+from the environment on its own, so it could redirect clients the code never meant
+to send there. Every client is built in `packages/api/src/openai-clients.ts` with an
+explicit base URL.
 
 ## Cite this
 

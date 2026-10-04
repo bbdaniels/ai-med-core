@@ -1,10 +1,10 @@
 import express from 'express';
 import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
-import { OpenAI } from 'openai';
+import { openaiClients, clientForPaymentSource, DirectKeyMissingError, OPENAI_DIRECT_URL } from './openai-clients.js';
 import path from 'path';
 import fs from 'fs/promises';
-import { readdirSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
@@ -101,35 +101,31 @@ try {
   console.warn('⚠️ Could not read projects/ directory for slug validation');
 }
 
-// Initialize OpenAI — supports a Harvard API gateway or direct OpenAI
-const useGateway = !!process.env.OPENAI_BASE_URL;
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || undefined,
-  defaultHeaders: useGateway ? { 'api-key': process.env.OPENAI_API_KEY || '' } : undefined,
-});
+// OpenAI clients: built once, in openai-clients.ts, now that .env is loaded.
+// A missing OPENAI_API_KEY throws here, at startup.
+const { gateway: openai, direct: openaiDirect, realtimeKey: OPENAI_REALTIME_KEY } = openaiClients();
 
-// Separate client for TTS (gateway doesn't support /audio/speech).
-// Must pin baseURL explicitly — the SDK falls back to OPENAI_BASE_URL from
-// process.env otherwise, which would route this through the Harvard gateway.
-const OPENAI_DIRECT_URL = 'https://api.openai.com/v1';
-const openaiTTS = process.env.OPENAI_TTS_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_TTS_KEY, baseURL: OPENAI_DIRECT_URL })
-  : openai;
-
-// Direct OpenAI client for projects that bill directly (not via Harvard gateway)
-const openaiDirect = process.env.OPENAI_TTS_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_TTS_KEY, baseURL: OPENAI_DIRECT_URL })
-  : null;
-
-// OpenAI Realtime API (speech-to-speech voice) — DIRECT connection only.
-// The Harvard API gateway CANNOT carry realtime: its Apigee credit-redemption
-// proxy rejects realtime models (HTTP 400), and the billable audio media flows
-// browser↔OpenAI directly via WebRTC, bypassing the gateway entirely — so credits
-// could never meter it even if the model were allowlisted. Realtime therefore
-// always uses a direct key: OPENAI_REALTIME_KEY if set, else the same direct key
-// TTS uses (OPENAI_TTS_KEY). Never OPENAI_API_KEY + OPENAI_BASE_URL.
-const OPENAI_REALTIME_KEY = process.env.OPENAI_REALTIME_KEY || process.env.OPENAI_TTS_KEY || '';
+// Startup check for the features that must reach api.openai.com directly. TTS
+// and direct billing use the direct client; realtime uses OPENAI_REALTIME_KEY or
+// the direct key. The Harvard gateway cannot serve any of them (its credit-
+// redemption proxy rejects TTS and realtime models, and realtime audio flows
+// browser to OpenAI over WebRTC), so a missing direct key is reported here and
+// those routes answer 503 rather than falling back to the gateway.
+{
+  const lacking: string[] = [];
+  for (const slug of validProjectSlugs) {
+    try {
+      const cfg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'projects', slug, 'project.json'), 'utf-8'));
+      if (cfg.enableVoice === true && !openaiDirect) lacking.push(`${slug} (enableVoice: TTS)`);
+      if (cfg.enableRealtime === true && !OPENAI_REALTIME_KEY) lacking.push(`${slug} (enableRealtime)`);
+    } catch { /* no project.json: nothing configured */ }
+  }
+  if (lacking.length > 0) {
+    console.error(`❌ No direct OpenAI key (OPENAI_TTS_KEY) for features these projects enable; they will return 503: ${lacking.join(', ')}`);
+  } else if (!openaiDirect) {
+    console.warn('⚠️ No direct OpenAI key (OPENAI_TTS_KEY): TTS and payment_source "direct" are unavailable.');
+  }
+}
 const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
 const OPENAI_REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE || 'alloy';
 // Client-enforced session cap (cost guardrail). The frontend auto-disconnects at
@@ -811,10 +807,6 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requireP
       sessionToken?: string | null;
     };
 
-    if (!openai.apiKey) {
-      return res.status(500).json({ error: 'OpenAI API key not configured' });
-    }
-
     if (!vignetteKey) {
       return res.status(400).json({ error: 'vignetteKey is required' });
     }
@@ -962,7 +954,13 @@ app.post('/api/chat', chatBurstLimiter, chatLimiter, requireAccessCode, requireP
     // Select OpenAI client based on per-project payment source setting
     const projectSlug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
     const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
-    const chatClient = (paymentSource === 'direct' && openaiDirect) ? openaiDirect : openai;
+    let chatClient: ReturnType<typeof clientForPaymentSource>;
+    try {
+      chatClient = clientForPaymentSource(paymentSource);
+    } catch (e) {
+      if (e instanceof DirectKeyMissingError) return res.status(503).json({ error: e.message });
+      throw e;
+    }
 
     const chatModel = projectChatModel || 'gpt-4o-mini';
 
@@ -1312,8 +1310,8 @@ app.post('/api/tts', ttsLimiter, requirePublicChatIfDeclared, async (req, res) =
       return res.status(400).json({ error: 'text is required' });
     }
 
-    if (!openaiTTS.apiKey) {
-      return res.status(500).json({ error: 'OpenAI TTS API key not configured' });
+    if (!openaiDirect) {
+      return res.status(503).json({ error: new DirectKeyMissingError('Text-to-speech').message });
     }
 
     const selectedVoice: TTSVoice = TTS_VOICES.includes(voice as TTSVoice)
@@ -1321,7 +1319,7 @@ app.post('/api/tts', ttsLimiter, requirePublicChatIfDeclared, async (req, res) =
       : 'nova';
 
     const ttsModel = 'gpt-4o-mini-tts';
-    const mp3 = await openaiTTS.audio.speech.create({
+    const mp3 = await openaiDirect.audio.speech.create({
       model: ttsModel,
       voice: selectedVoice,
       input: text,
@@ -1377,7 +1375,7 @@ app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, 
     }
 
     if (!OPENAI_REALTIME_KEY) {
-      return res.status(500).json({ error: 'Realtime API key not configured' });
+      return res.status(503).json({ error: 'Realtime voice needs a direct OpenAI key (OPENAI_REALTIME_KEY or OPENAI_TTS_KEY): the Harvard gateway cannot serve it, and none is configured.' });
     }
 
     if (language && !/^[\p{L}\p{M}\s\-()]{1,50}$/u.test(language)) {
@@ -1421,7 +1419,7 @@ app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, 
     // `audio.input` / `audio.output`. Instructions are baked into the ephemeral
     // token here — the frontend must NOT resend `instructions` (it would replace,
     // not append, wiping the vignette + language pin).
-    const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+    const resp = await fetch(`${OPENAI_DIRECT_URL}/realtime/client_secrets`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENAI_REALTIME_KEY}`,
@@ -1937,6 +1935,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
     });
   } catch (error) {
     console.error('Error grading session:', error);
+    if (error instanceof DirectKeyMissingError) return res.status(503).json({ error: error.message });
     return res.status(500).json({ error: 'Failed to grade session' });
   }
 });
@@ -2992,6 +2991,9 @@ app.put('/api/admin/payment-source', authenticateAdmin, requireContentWrite, asy
     if (!source || !['harvard', 'direct'].includes(source)) {
       return res.status(400).json({ error: 'Invalid source. Must be "harvard" or "direct".' });
     }
+    if (source === 'direct' && !openaiDirect) {
+      return res.status(409).json({ error: new DirectKeyMissingError('Direct billing').message });
+    }
     const slug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'default';
     await setProjectSetting(slug, 'payment_source', source);
     console.log(`Payment source for project "${slug}" set to "${source}"`);
@@ -3244,6 +3246,9 @@ app.get('/api/health', (_req, res) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     hasOpenAIKey: !!openai.apiKey,
+    // Booleans only: the gateway host is never exposed.
+    usesHarvardGateway: openaiClients().usesGateway,
+    hasDirectOpenAIKey: !!openaiDirect,
     tableName: getTableName(),
     assignmentsTableName: getAssignmentsTableName(),
     tablePrefix: activeProjectPrefix() || 'not set',
@@ -3262,10 +3267,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 API available at http://localhost:${PORT}/api`);
   
-  if (openai.apiKey) {
-    console.log('✅ OpenAI API key configured');
-  } else {
-    console.log('❌ WARNING: OpenAI API key not found');
-    console.log('   Set OPENAI_API_KEY environment variable');
-  }
+  // OPENAI_API_KEY is guaranteed here: openaiClients() throws at startup without it.
+  console.log(`✅ OpenAI: chat/grading via ${openaiClients().usesGateway ? 'Harvard gateway (HARVARD_GATEWAY_URL)' : 'api.openai.com'}; direct key ${openaiDirect ? 'configured' : 'absent'}`);
 });

@@ -50,7 +50,9 @@ def load_env() -> dict[str, str]:
 
 def api_post(env: dict[str, str], path: str, payload: dict,
              retries: int = 4) -> dict:
-    base = env.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    # HARVARD_GATEWAY_URL, not OPENAI_BASE_URL: the server reads the same name
+    # (packages/api/src/openai-clients.ts), and the OpenAI SDKs never read it.
+    base = (env.get("HARVARD_GATEWAY_URL") or "https://api.openai.com/v1").rstrip("/")
     key = env.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("OPENAI_API_KEY is not set (environment or repo-root .env)")

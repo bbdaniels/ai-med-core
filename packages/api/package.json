@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
-    "start": "NODE_ENV=production node dist/server.js"
+    "start": "NODE_ENV=production node dist/server.js",
+    "test": "tsx --test src/*.test.ts",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

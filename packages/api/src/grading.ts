@@ -3,33 +3,20 @@
  * Ports logic from eval/scripts/grade.py for TypeScript runtime.
  */
 
-import { OpenAI } from 'openai';
+import type { OpenAI } from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import { logTokenUsage, activeProjectPrefix, getProjectSetting } from './database.js';
+import { clientForPaymentSource } from './openai-clients.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
-const useGateway = !!process.env.OPENAI_BASE_URL;
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || undefined,
-  defaultHeaders: useGateway ? { 'api-key': process.env.OPENAI_API_KEY || '' } : undefined,
-});
-
-// Direct OpenAI client for projects that bill directly (not via Harvard gateway).
-// Mirrors server.ts: reuses OPENAI_TTS_KEY against the public OpenAI endpoint.
-const OPENAI_DIRECT_URL = 'https://api.openai.com/v1';
-const openaiDirect = process.env.OPENAI_TTS_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_TTS_KEY, baseURL: OPENAI_DIRECT_URL })
-  : null;
-
 async function resolveGradingClient(projectSlug: string): Promise<OpenAI> {
   const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
-  return (paymentSource === 'direct' && openaiDirect) ? openaiDirect : openai;
+  return clientForPaymentSource(paymentSource);
 }
 
 const MODEL = 'gpt-4o-mini'; // Fast, lightweight model for real-time student feedback

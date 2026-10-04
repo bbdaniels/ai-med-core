@@ -13,10 +13,11 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
 import {
   openReadingsIndex, readingsIndexInfo, searchReadings, formatSearchResults,
 } from '../packages/api/src/readings.js';
+import { openaiClients } from '../packages/api/src/openai-clients.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SLUG = 'haivn_eip';
@@ -57,13 +58,11 @@ async function main(): Promise<number> {
   if (!index) { console.error('FAIL: openReadingsIndex returned null'); return 1; }
   console.log('index info:', readingsIndexInfo(index));
 
-  let client: OpenAI | null = null;
-  if (!bm25Only && process.env.OPENAI_API_KEY) {
-    client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      ...(process.env.OPENAI_BASE_URL ? { baseURL: process.env.OPENAI_BASE_URL } : {}),
-    });
-  }
+  // The server's own gateway client (openai-clients.ts), so this embeds through
+  // the same endpoint and headers a live search does.
+  const client: OpenAI | null = !bm25Only && process.env.OPENAI_API_KEY
+    ? openaiClients().gateway
+    : null;
 
   for (const query of QUERIES) {
     let vector: Float32Array | null = null;

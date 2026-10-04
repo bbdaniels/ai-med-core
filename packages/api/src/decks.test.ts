@@ -205,9 +205,11 @@ test('the project is gated, logged, and on the small model', () => {
 
 test('with no vignettes yet, every slide link is refused and nothing else breaks', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'projects/decks/project.json'), 'utf8'));
-  assert.deepEqual(cfg.cases.vignettes, []);          // the project lands empty; packs arrive by sync
+  // Whatever decks are synced, every key is <deck>--<slide-id>.
+  for (const v of cfg.cases.vignettes) assert.match(v.key, /^[a-z0-9]+(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*$/);
   assert.equal(empty.vignettes.status, 200);
-  assert.deepEqual(empty.vignettes.json.vignetteKeys, []);   // no seeded default case
+  // Before the fixtures go in, none of their keys is listed (the checkout's own decks may be).
+  assert.deepEqual(empty.vignettes.json.vignetteKeys.filter((k: string) => k.startsWith(`${DECK}--`)), []);
   assert.equal(empty.named.status, 404);
   assert.equal(empty.named.json.code, 'unknown_vignette');
   assert.equal(empty.config.status, 200);
@@ -234,7 +236,8 @@ test('the vignette endpoint refuses without the access code', async () => {
 
   const ok = await fetch(`${base}/api/vignettes`, { headers: { ...P, 'X-Access-Token': await accessToken() } });
   assert.equal(ok.status, 200);
-  assert.deepEqual(((await ok.json()) as any).vignetteKeys.sort(), [KEY_MAIN, KEY_WHO].sort());
+  const fixtureKeys = ((await ok.json()) as any).vignetteKeys.filter((k: string) => k.startsWith(`${DECK}--`));
+  assert.deepEqual(fixtureKeys.sort(), [KEY_MAIN, KEY_WHO].sort());
 });
 
 test('slide titles are not served without the access code', async () => {

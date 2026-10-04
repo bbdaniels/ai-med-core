@@ -115,6 +115,8 @@ interface LanguageUISection {
     beyondScopeNotice?: string
     // talkManifest projects: heading of the paper picker, and the link back to it.
     pickerHeading?: string
+    /** Shown instead of the chat when a requireKnownVignette link names no known vignette. */
+    unknownVignette?: string
     pickerBack?: string
     pickerClose?: string
   }
@@ -317,9 +319,18 @@ const DEFAULT_CONSENT_PARAGRAPHS: string[] = [
 ];
 
 // API functions
-const fetchVignettes = async (uid?: string | null): Promise<string[]> => {
-  const url = uid ? api(`/api/vignettes?uid=${encodeURIComponent(uid)}`) : api('/api/vignettes');
-  const response = await apiFetch(url);
+/** Thrown by fetchVignettes when a requireKnownVignette project does not hold the requested key. */
+class UnknownVignetteError extends Error {}
+
+// `requested` is sent only by requireKnownVignette projects: the server then
+// answers 404 when it does not hold that key (see /api/vignettes).
+const fetchVignettes = async (uid?: string | null, requested?: string | null): Promise<string[]> => {
+  const params = new URLSearchParams();
+  if (uid) params.set('uid', uid);
+  if (requested) params.set('vignette', requested);
+  const query = params.toString();
+  const response = await apiFetch(api(`/api/vignettes${query ? `?${query}` : ''}`));
+  if (response.status === 404 && requested) throw new UnknownVignetteError(requested);
   if (!response.ok) throw new Error('Failed to fetch vignettes');
   const data = await response.json();
   return data.vignetteKeys;
@@ -430,6 +441,12 @@ function ChatInterface() {
   // ppol5013 is chat-only because its corpus is copyrighted: there is no
   // reading text to put in a side panel, and an empty pane is worse than none.
   const [chatOnly, setChatOnly] = useState(false);
+  // requireKnownVignette (project.json): each deep link is for one vignette (a
+  // slide, in the decks project). A link naming none, or one the deployment
+  // does not hold, is refused with a message; the first vignette is never
+  // opened in its place. `vignetteRefused` is that refusal.
+  const [requireKnownVignette, setRequireKnownVignette] = useState(false);
+  const [vignetteRefused, setVignetteRefused] = useState(false);
   // "Talk to this paper" projects (project.json talkManifest). The manifest maps
   // each paper's DOI to its vignette, so ?paper=<DOI> can open that paper; with no
   // (or an unknown) ?paper= the reader picks from the manifest's list instead of
@@ -733,12 +750,16 @@ function ChatInterface() {
   // static copy would be a second source that silently goes stale. (A fallback to
   // `${BASE_URL}languages.json` used to sit here; no build ever published that
   // file, so it 404'd on every project and only delayed setLangs(null).)
+  //
+  // A gated project's per-vignette titles (vignetteInfo) are withheld until the
+  // access token is held, so the file is fetched again once the gate opens.
+  const languagesUnlocked = requireAccessCode && unlocked;
   useEffect(() => {
     apiFetch(api('/api/languages'))
       .then(res => res.json())
       .then((data: LanguagesJson) => setLangs(data))
       .catch(() => setLangs(null));
-  }, []);
+  }, [languagesUnlocked]);
 
   // Load case template on mount
   // NOTE: caseTemplate is loaded from /api/chat response when conversation starts
@@ -793,6 +814,7 @@ function ChatInterface() {
         if (data.dragDropAllocation) setDragDropAllocation(true);
         if (data.requireAccessCode) setRequireAccessCode(true);
         if (data.chatOnly) setChatOnly(true);
+        if (data.requireKnownVignette) setRequireKnownVignette(true);
         if (data.talkManifest) {
           const slug = (typeof data.tablePrefix === 'string' ? data.tablePrefix : '').replace(/_+$/, '');
           setTalkManifestSlug(slug || PROJECT || null);
@@ -1075,10 +1097,20 @@ function ChatInterface() {
   // Load vignettes only after the user starts (filtered by uid if present)
   useEffect(() => {
     if (!hasStarted || !accessReady || urlVignette === undefined) return;
-    fetchVignettes(userUid)
+    if (requireKnownVignette && !urlVignette) {
+      setVignetteRefused(true);
+      return;
+    }
+    fetchVignettes(userUid, requireKnownVignette ? urlVignette : null)
       .then(keys => {
         setVignetteKeys(keys);
-        if (keys.length > 0) {
+        if (requireKnownVignette) {
+          // The server has confirmed it holds the key (else it answered 404).
+          const index = urlVignette ? keys.indexOf(urlVignette) : -1;
+          if (index < 0) { setVignetteRefused(true); return; }
+          setCurrentVignetteIndex(index);
+          setSelectedVignetteKey(keys[index]);
+        } else if (keys.length > 0) {
           // Selection precedence: the vignette the URL names (?vignette=, or a
           // ?paper= DOI found in the talk manifest); else, on a talkManifest
           // project with papers to offer, nothing yet (the paper picker shows);
@@ -1096,9 +1128,10 @@ function ChatInterface() {
         console.log('Vignette keys loaded successfully', userUid ? `for uid: ${userUid}` : '(all vignettes)');
       })
       .catch(error => {
+        if (error instanceof UnknownVignetteError) { setVignetteRefused(true); return; }
         console.error('Error loading vignette keys:', error);
       });
-  }, [hasStarted, userUid, accessReady, urlVignette, talkManifestSlug, talkPapers]);
+  }, [hasStarted, userUid, accessReady, urlVignette, talkManifestSlug, talkPapers, requireKnownVignette]);
 
   // The talk-manifest paper currently open, and the papers the picker offers
   // (only those whose vignette the deployment actually serves).
@@ -1636,7 +1669,18 @@ function ChatInterface() {
       />
     );
   }
-  
+
+  // A requireKnownVignette link that names no vignette this deployment holds.
+  if (vignetteRefused) {
+    return (
+      <div className="welcome-screen">
+        <div className="welcome-content access-gate" role="alert">
+          <h1>{t('welcome', 'title') || t('chat', 'headerTitle')}</h1>
+          <p className="access-gate-hint">{t('chat', 'unknownVignette') || 'Nothing is available at this link.'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

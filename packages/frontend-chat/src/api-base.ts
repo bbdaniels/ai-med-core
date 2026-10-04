@@ -1,3 +1,5 @@
+import { accessCodeFromHash, hashWithoutAccessCode } from './access-code';
+
 /**
  * API base URL for when the frontend is deployed separately from the backend.
  *
@@ -67,10 +69,7 @@ export function getAccessToken(): string | null {
  */
 export function readAccessCodeFromUrl(): string | null {
   try {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (!hash) return null;
-    const value = new URLSearchParams(hash).get('code');
-    return value && value.trim() ? value.trim() : null;
+    return accessCodeFromHash(window.location.hash);
   } catch {
     return null;
   }
@@ -83,14 +82,9 @@ export function readAccessCodeFromUrl(): string | null {
  */
 export function scrubAccessCodeFromUrl(): void {
   try {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (!hash) return;
-    const params = new URLSearchParams(hash);
-    if (!params.has('code')) return;
-    params.delete('code');
-    const rest = params.toString();
-    const url = window.location.pathname + window.location.search + (rest ? `#${rest}` : '');
-    window.history.replaceState(null, '', url);
+    const rest = hashWithoutAccessCode(window.location.hash);
+    if (rest === null) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + rest);
   } catch {
     /* history blocked (sandboxed frame); the code stays visible but still works */
   }

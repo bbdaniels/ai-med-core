@@ -30,7 +30,6 @@
         },
         "vignettes": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -38,8 +37,8 @@
             "properties": {
               "key": {
                 "type": "string",
-                "pattern": "^[a-zA-Z0-9_]+$",
-                "description": "Vignette identifier (alphanumeric + underscores, or hyphen-stripped UUID)"
+                "pattern": "^[a-zA-Z0-9_-]{1,100}$",
+                "description": "Vignette identifier: the same characters and length the frontend accepts in ?vignette= (readVignetteParam in talk-paper.ts). Readable names, hyphen-stripped UUIDs, or <deck>--<slide-id> for the decks project"
               },
               "template": {
                 "type": "string",
@@ -152,9 +151,13 @@
     "skipWelcome": { "type": "boolean", "description": "Open straight into the chat, skipping the welcome/consent screen" },
     "chatOnly": { "type": "boolean", "description": "Hide the right panel entirely" },
     "dragDropAllocation": { "type": "boolean", "description": "Management project: drag-and-drop worker allocation panel" },
+    "requireKnownVignette": {
+      "type": "boolean",
+      "description": "Refuse a deep link (?vignette=) naming no vignette or an unknown one, instead of opening the first vignette: /api/vignettes?vignette=<key> answers 404 and the page says so"
+    },
     "requireAccessCode": {
       "type": "boolean",
-      "description": "Gate the project behind an access code from the access_code project setting or ACCESS_CODE_<SLUG>; fails closed when none is configured"
+      "description": "Gate the project behind an access code from the access_code project setting or ACCESS_CODE_<SLUG>; fails closed when none is configured. Also withholds vignetteInfo from /api/languages until the code is given"
     },
     "logConversations": {
       "type": "boolean",
@@ -198,5 +201,12 @@
   },
   "if": { "properties": { "formless": { "const": true } }, "required": ["formless"] },
   "then": {},
-  "else": { "required": ["kobo"] }
+  "else": { "required": ["kobo"] },
+  "allOf": [
+    {
+      "$comment": "A project needs at least one vignette, unless it sets requireKnownVignette: such a project opens only the vignette a deep link names and refuses any other, so it may exist before its content is synced. Every other project would open its first vignette, and must have one.",
+      "if": { "not": { "properties": { "requireKnownVignette": { "const": true } }, "required": ["requireKnownVignette"] } },
+      "then": { "properties": { "cases": { "properties": { "vignettes": { "minItems": 1 } } } } }
+    }
+  ]
 }

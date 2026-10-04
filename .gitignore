@@ -128,6 +128,12 @@ projects/papers/cases/paper/*.md
 projects/papers/content/readings/readings.db*
 projects/papers/content/readings/ocr-cache/
 
+# The decks advisor's vignettes are a research deck's knowledge packs: results
+# of unpublished papers, so never committed. tools/sync-deck-packs.ts builds
+# them from the deck's packs/ folder and tools/push-content.ts pushes them from
+# a checkout that has them (see projects/decks/README.md, which IS tracked).
+projects/decks/cases/slide/*.md
+
 # haivn_eip legal index: the database itself IS tracked (public government
 # instruments, already shipped here as text and PDF), but SQLite's sidecars and
 # the temp file tools/build-legal-corpus.py builds into are not. A reader that

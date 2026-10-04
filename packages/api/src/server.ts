@@ -502,11 +502,24 @@ async function getAccessCode(slug: string): Promise<string | null> {
   return fromEnv && fromEnv.trim() ? fromEnv.trim() : null;
 }
 
-const requireAccessCode = async (req: express.Request, res: express.Response,
-                                 next: express.NextFunction) => {
+/**
+ * Where a request stands against its project's access gate. The one place the
+ * token is checked: the middleware below and every route that serves less to a
+ * visitor without the code (see /api/languages) ask this.
+ *   open          the project is not gated
+ *   ok            gated, and the request holds a valid token for this project
+ *   unconfigured  gated, but no code is configured (fail closed)
+ *   missing       gated, no token or a token for something else
+ *   expired       gated, a token that no longer verifies
+ */
+type AccessState = 'open' | 'ok' | 'unconfigured' | 'missing' | 'expired';
+
+// An arrow, not a hoisted declaration: JWT_SECRET is narrowed to string by the
+// boot check above only for closures created after it.
+const accessState = async (req: express.Request): Promise<AccessState> => {
   const slug = requestProjectSlug(req);
   const config = await readProjectConfig(slug);
-  if (config.requireAccessCode !== true) return next();
+  if (config.requireAccessCode !== true) return 'open';
 
   // A project that asks to be gated but has no code configured must FAIL CLOSED.
   // Falling through to "no code, so allow everyone" would silently publish it.
@@ -515,21 +528,31 @@ const requireAccessCode = async (req: express.Request, res: express.Response,
     console.error(`[access] ${slug} sets requireAccessCode but no code is configured; ` +
                   'denying every request. Set a project setting "access_code" or the ' +
                   `ACCESS_CODE_${slug.toUpperCase()} environment variable.`);
-    return res.status(503).json({ error: 'Access is not configured for this course site' });
+    return 'unconfigured';
   }
 
   const raw = req.headers['x-access-token'];
   const token = typeof raw === 'string' ? raw : '';
-  if (!token) return res.status(401).json({ error: 'Access code required', needsAccessCode: true });
+  if (!token) return 'missing';
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { role?: string; project?: string };
-    if (payload.role !== 'course-access' || payload.project !== slug) {
-      return res.status(401).json({ error: 'Access code required', needsAccessCode: true });
-    }
-    return next();
+    return payload.role === 'course-access' && payload.project === slug ? 'ok' : 'missing';
   } catch {
-    return res.status(401).json({ error: 'Access code expired', needsAccessCode: true });
+    return 'expired';
   }
+};
+
+const requireAccessCode = async (req: express.Request, res: express.Response,
+                                 next: express.NextFunction) => {
+  const state = await accessState(req);
+  if (state === 'open' || state === 'ok') return next();
+  if (state === 'unconfigured') {
+    return res.status(503).json({ error: 'Access is not configured for this course site' });
+  }
+  return res.status(401).json({
+    error: state === 'expired' ? 'Access code expired' : 'Access code required',
+    needsAccessCode: true,
+  });
 };
 
 // ── Public-chat kill switch ──────────────────────────────────────────
@@ -2506,7 +2529,19 @@ app.get('/api/vignettes', requireAccessCode, async (req, res) => {
   try {
     const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : null;
     const vignettes = await getVignettesForUid(uid);
-    
+
+    // A project that sets requireKnownVignette serves one vignette per deep
+    // link (a slide, in the decks project). A link naming a key the deployment
+    // does not hold is refused here, so the page can say so; it must never
+    // open some other vignette under the requested one's name.
+    const wanted = typeof req.query.vignette === 'string' ? req.query.vignette : null;
+    if (wanted !== null) {
+      const config = await readProjectConfig(requestProjectSlug(req));
+      if (config.requireKnownVignette === true && !vignettes.some(v => v.key === wanted)) {
+        return res.status(404).json({ error: 'No pack for this vignette', code: 'unknown_vignette' });
+      }
+    }
+
     // Return only keys, not content
     res.json({
       vignetteKeys: vignettes.map(v => v.key),
@@ -3032,13 +3067,23 @@ app.put('/api/admin/public-chat', authenticateAdmin, requireContentWrite, async 
 });
 
 // Public languages endpoint (decouples frontend from filesystem sync)
-app.get('/api/languages', async (_req, res) => {
+//
+// On a project that sets requireAccessCode, `vignetteInfo` (each vignette's
+// title and description) is content, not interface text, and is withheld until
+// the request holds the access token. The UI strings are always served: the
+// gate itself is drawn from them. The frontend re-fetches once unlocked.
+// Ungated projects get the file whole, as before.
+app.get('/api/languages', async (req, res) => {
   try {
     const content = await getLanguages();
     if (!content) {
       return res.status(404).json({ error: 'Languages configuration not found' });
     }
     const json = JSON.parse(content);
+    const state = await accessState(req);
+    if (state !== 'open' && state !== 'ok' && json && typeof json === 'object') {
+      delete json.vignetteInfo;
+    }
     return res.json(json);
   } catch (error) {
     console.error('Error reading languages:', error);
@@ -3076,6 +3121,9 @@ app.get('/api/config', async (_req, res) => {
     let dragDropAllocation = false;
     let requireAccessCode = false;
     let chatOnly = false;
+    // The frontend must refuse a deep link whose vignette is unknown (or absent)
+    // instead of opening the first vignette. See /api/vignettes.
+    let requireKnownVignette = false;
     // Whether the project publishes a talk manifest (the frontend then resolves
     // ?paper=<DOI> against /api/talk-manifest/<slug>). Only the flag: the path
     // is a server-side detail.
@@ -3098,6 +3146,7 @@ app.get('/api/config', async (_req, res) => {
       dragDropAllocation = projectConfig.dragDropAllocation || false;
       requireAccessCode = projectConfig.requireAccessCode || false;
       chatOnly = projectConfig.chatOnly || false;
+      requireKnownVignette = projectConfig.requireKnownVignette === true;
       talkManifest = typeof projectConfig.talkManifest === 'string' && projectConfig.talkManifest !== '';
       talkPublicUrl = typeof projectConfig.talkPublicUrl === 'string' ? projectConfig.talkPublicUrl : '';
       if (projectConfig.docRefs && typeof projectConfig.docRefs === 'object') {
@@ -3121,6 +3170,7 @@ app.get('/api/config', async (_req, res) => {
       dragDropAllocation,
       requireAccessCode,
       chatOnly,
+      requireKnownVignette,
       talkManifest,
       talkPublicUrl,
       docRefs,

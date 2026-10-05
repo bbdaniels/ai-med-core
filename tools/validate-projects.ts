@@ -25,10 +25,10 @@ import addFormats from 'ajv-formats';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
+import { isPrivateFile } from './lib/private-files.js';
 import {
   followHostContradictions, GROUNDING_SET_DIR, groundingSetFiles, groundingSetsContradictions, projectUrlSlug,
-  rememberConversationContradictions, talkContradictions,
+  rememberConversationContradictions, tabContentFiles, talkContradictions,
   urlAliasContradictions, urlAliases,
 } from '../packages/chat-core/src/project-config.js';
 

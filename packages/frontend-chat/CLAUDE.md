@@ -38,7 +38,7 @@ A talk project that sets `"followHost": true` in `project.json` is driven by the
 
 - **Ready.** Once the page is mounted and access is settled (the access code entered once, as on any gated project, and the document list loaded), it posts `{type: 'talk:ready'}` to its parent with target origin `'*'`, which is acceptable only because it carries nothing. The host answers with the current document and sends it again on every change.
 - **Documents.** The host posts `{type: 'host:document', key: '<key>' | null, title: '<string>'}`. The page obeys it only when the project sets `followHost`, the page is framed, `event.source === window.parent`, and `event.origin` is exactly one of the project's `embedOrigins` (`/api/config`). Anything else is dropped silently. The close message `orcid-display:talk-close` and Escape (`src/frame-escape.ts`) are unchanged.
-- **The current document.** The host's latest word, else the document the link names (`?vignette=`), checked against the deployment's document list on every switch (`requireKnownVignette`, applied per switch rather than per link; a link naming none, or one the deployment lacks, waits for the host instead of being refused). The header shows the host's title, else the document's own. A `null` key, or one the deployment does not hold, leaves the conversation in place, shows `chat.noCurrentDocument` above the input (a generic default when the project has none), and disables the send button and the chips until a document is current again; what was typed stays in the box.
+- **The current document.** The host's latest word, else the document the link names (`?vignette=`), checked against the deployment's document list on every switch (`requireKnownVignette`, applied per switch rather than per link; a link naming none, or one the deployment lacks, waits for the host instead of being refused). The header shows the host's title, else the document's own. A `null` key, or one the deployment does not hold, leaves the conversation in place, shows `chat.noCurrentDocument` above the input (a generic default when the project has none), and disables the send button, the chips and Enter until a document is current again. The box itself stays enabled, on purpose: a reader mid-question when the deck moves to a title slide keeps drafting and sends once back on a slide with a document, and the notice (the box's `aria-describedby`) says why Enter does nothing. The rule is `enterSends` in `src/host-document.ts`, checked in `host-document.check.ts`.
 - **One thread.** Switching never clears the conversation and never draws a new session token. Each question carries the key and title of the document current when it was asked (`questionOn`); the key goes to `/api/chat` with the history, where the server builds the prompt around it (`packages/chat-core/CLAUDE.md`, "Following a host page"), and the title stays on the page. The thread shows a divider, `chat.nowOn` (default "Now on:") and the title, only before a question asked on a different document from the question before it (`threadWithDividers`), so paging through twenty slides without asking adds nothing, and consecutive switches collapse into one.
 
 To try it, frame the page in `tools/embed-harness.html` served on an origin the project lists; each panel can send `host:document` (see `tools/CLAUDE.md`).
@@ -172,9 +172,16 @@ Structural change to remember: to convert a multi-select checklist into forced-c
 
 **The API is the only source of translations at runtime.** `useLanguages` (`src/chat/useLanguages.ts`) fetches
 `GET /api/languages`, which reads the copy stored in the database -- the same copy
-the admin Translations tab uploads and edits. If that fetch fails, `langs` is set
-to `null` and every `t()` call degrades to the component's hardcoded default; there
-is deliberately no static-file fallback. One used to sit in the catch, fetching
+the admin Translations tab uploads and edits. `src/chat/languages-load.ts` reads the
+response into one of three states (checked by `src/languages-load.check.ts`): a 200
+languages object is the file; a 404 means the project has no languages file, and the
+page runs on `FALLBACK_LANGUAGES` (English, with a fixed opening message, so no model
+call writes a greeting; every other `t()` falls to the component's hardcoded
+default); anything else (another status, a body that is not a languages object, a
+network failure) is an error, and both pages show `LoadErrorScreen` instead of
+loading for good. An error body is never read as a languages file. A failed re-fetch
+after unlocking keeps the strings already loaded. There is deliberately no static-file
+fallback. One used to sit in the catch, fetching
 `${BASE_URL}languages.json`, but no build ever published that file (verified
 2026-09-08: `ai-med.live/demo/languages.json` and `ai-med.live/haivn-eip/languages.json`
 both return 404), so it only delayed the null. Publishing it was rejected rather

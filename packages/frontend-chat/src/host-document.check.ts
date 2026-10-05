@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   HOST_DOCUMENT_MESSAGE, TALK_READY_MESSAGE, acceptHostDocument, currentDocument, listenForHostDocument,
-  postTalkReady, questionOn, questionsBlocked, threadWithDividers,
+  enterSends, postTalkReady, questionOn, questionsBlocked, threadWithDividers,
 } from './host-document.js';
 
 let n = 0;
@@ -165,6 +165,14 @@ check('nothing in the page clears the conversation when the document changes', (
   assert.equal(talk.match(/session\.reset\(\)/g)?.length, 2);
   assert.match(talk, /const openPaper = \(key: string \| null\) => \{\n\s+if \(!deepLink\.openPaper\(key\)\) return;\n\s+session\.reset\(\);/);
   assert.match(talk, /const newConversation = \(\) => \{[^}]*\}\n\s+setConfirmingNew\(false\);\n\s+session\.forgetSaved\(\);\n\s+session\.reset\(\);/);
+});
+
+check('blocked: the box keeps drafting, Enter does not send (and adds no newline), Shift+Enter is a newline', () => {
+  assert.deepEqual(enterSends({ key: 'Enter', shiftKey: false }, false), { send: true, preventDefault: true });
+  assert.deepEqual(enterSends({ key: 'Enter', shiftKey: false }, true), { send: false, preventDefault: true });
+  assert.deepEqual(enterSends({ key: 'Enter', shiftKey: true }, true), { send: false, preventDefault: false });
+  assert.deepEqual(enterSends({ key: 'Enter', shiftKey: true }, false), { send: false, preventDefault: false });
+  assert.deepEqual(enterSends({ key: 'a', shiftKey: false }, true), { send: false, preventDefault: false });
 });
 
 console.log(`host-document checks: ${n}/${n} passed`);

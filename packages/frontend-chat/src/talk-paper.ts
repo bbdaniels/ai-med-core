@@ -2,7 +2,7 @@
  * "Talk to this paper" deep links.
  *
  * The author's publication list opens each paper's popout on an iframe of
- *   chat.benjaminbdaniels.com/papers/?paper=<url-encoded DOI>
+ *   <chat host>/<slug>/?paper=<url-encoded DOI>
  * and the project's public talk manifest (/api/talk-manifest/<slug>) maps each
  * DOI to a vignette key. A direct ?vignette=<key> also works and wins over
  * ?paper=, the same precedence the LTI launch branch (lti-1.3-mvp) gives its

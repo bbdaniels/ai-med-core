@@ -65,6 +65,16 @@ npx tsx tools/build-frontends.ts --app sim --out _site --api-base https://api.ai
 
 `--app talk` builds every project whose flags resolve to app "talk" (`VITE_APP=talk`), `--app sim` every other one, each into `<out>/<url-slug>/` with `VITE_BASE_PATH=/<url-slug>/` (`projectUrlSlug`, chat-core). `--api-base` sets `VITE_API_BASE_URL`; without it the variable is cleared and the page calls `/api` on its own origin. A project's `static/*` and `images/*.png` are copied into its build. `--only a,b` limits the run. The talk pages the API server serves (`packages/api/src/talk/pages.ts`) are read from `packages/frontend-chat/dist-talk/` (gitignored).
 
+## build-talk-redirects.ts
+
+For a static site that used to carry copies of the talk pages: a stub at `<out>/<url-slug>/index.html` for every talk project that sends the reader to the same path, query and fragment on `--to` (with a noscript link), and `<out>/404.html` written from the `--page-404` template with the map of talk slugs and `urlAliases` (alias to its project's slug) at its `/*TALK_REDIRECTS*/` marker, so deeper paths and aliases go the same way. `--keep a,b` names talk projects the site still builds itself (no stub, not in the map; each must already be built in `<out>`). `--to` is required: the tool names no host.
+
+```bash
+npx tsx tools/build-talk-redirects.ts --out _site --to https://chat.example.com --page-404 landing/404.html --keep decks
+```
+
+Tests: `packages/api/src/talk-redirects.test.ts` (fixture projects; runs the stub's and the 404 page's scripts against a fake location).
+
 ## smoke-chat.ts
 
 The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a merge is a production deploy):
@@ -1560,8 +1570,8 @@ say?" from the law rather than from the legal *index* alone.
 python3 tools/build-legal-corpus.py                    # hybrid (BM25 + vectors)
 python3 tools/build-legal-corpus.py --no-embeddings    # FTS5-only, no network
 python3 tools/build-legal-corpus.py --query "phạm vi hành nghề" -k 5
-npx tsx tools/legal-corpus-smoke.ts                    # verify through readings.ts
-npx tsx tools/legal-corpus-smoke.ts --bm25             # same, no embedding call
+npx tsx projects/haivn_eip/tools/legal-corpus-smoke.ts   # verify through readings.ts
+npx tsx projects/haivn_eip/tools/legal-corpus-smoke.ts --bm25  # same, no embedding call
 ```
 
 Rebuild it whenever `content/legal/text/*.md`, `content/legal/maps/*.json`,
@@ -1592,7 +1602,7 @@ adjacent-article citation" as the tradeoff. **The advisor therefore runs on
 needs the stronger model.
 
 What that tradeoff costs was measured on 2026-09-07 against the working tree,
-with `tools/probe-facility-levels.mjs` and single-probe replays of its probes 7
+with `projects/haivn_eip/tools/probe-facility-levels.mjs` (described in `projects/haivn_eip/README.md`) and single-probe replays of its probes 7
 and 8 (the same question about 4531/QĐ-BYT in English and in Vietnamese), full
 request traces kept for every turn. Fifteen traces, all on the pre-fix prompt:
 
@@ -1719,7 +1729,7 @@ once *per distinct annotation* is the notice itself: two documents both
 returning a rank-3 chunk print two blocks, because the restriction tier ends in
 each document's own closing sentence.
 
-Measured after the change, 2026-09-07, `node tools/probe-facility-levels.mjs
+Measured after the change, 2026-09-07, `node projects/haivn_eip/tools/probe-facility-levels.mjs
 --runs 3` against local dev with the working-tree prompt pushed: 26 of 27 runs
 pass; probes 7 and 8 -- the English and Vietnamese question about 4531/QĐ-BYT
 that this tier was built for -- pass 3 of 3 each, as do probes 1 through 6; the
@@ -2018,40 +2028,3 @@ with a class schedule keeps the sentence about the week, because that is the
 only claim in that text genuinely about a course rather than about a corpus, and
 an unscheduled one says "the indexed sources". One flag, already computed, no
 second notion of what kind of corpus this is.
-
-## probe-facility-levels.mjs
-
-Asks the `haivn_eip` advisor nine questions about facility classification --
-old-scheme framed, new-scheme framed and legal-text framed, in English and in
-Vietnamese -- and checks each answer against three regexes: an answer stating
-the pre-2025 hospital-grade or administrative-line scheme must also say it was
-replaced, and every answer must name the current framework. Exit code 1 on any
-failure, so it can gate a change.
-
-```bash
-node tools/probe-facility-levels.mjs                  # local dev API, one sample each
-node tools/probe-facility-levels.mjs --runs 5         # five samples each, pass count per probe
-node tools/probe-facility-levels.mjs https://api.ai-med.live --runs 3
-```
-
-A local run is the only one that tests an uncommitted `system-prompt.md`, and it
-tests the prompt in the DEV DATABASE, not the file: run
-`ADMIN_PASSPHRASE=test123 npx tsx tools/push-content.ts haivn_eip --local`
-first or you are re-measuring the prompt from last time.
-
-**`--runs` exists because one sample is not a measurement**, and reading this
-probe as if it were is how the same question came to be written down as "8 of 9"
-one round, "9 of 9" the next, and a deterministic four-of-four failure the round
-after. Probe 8 -- the Vietnamese half of the 4531/QĐ-BYT pair -- was passing
-4 times in 8 on `gpt-4o-mini` when all three of those were recorded (3 of 5
-counting only unmodified-code runs), so every one of those three records was a
-draw reported as a rate. It came back 3 of 3 on 2026-09-07 with the document
-notice tier in place ("The staleness notice, in three tiers", above); that is
-three draws, not a rate either. Report a pass COUNT from this flag, and **keep the run's output** -- it prints
-every answer verbatim, so a saved transcript is the only thing that makes a
-count checkable afterwards, and a count with no transcript behind it is not a
-measurement either. Do not report a single run as a rate, and do not loosen a
-regex because one draw missed. The checks assert the
-substantive rule (the answer names the law or the three cấp), and an answer that
-says only "the classification changed on 01/01/2025" genuinely has not stated
-the current framework.

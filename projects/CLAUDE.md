@@ -138,7 +138,7 @@ The API server serves every talk project's page itself, at `https://chat.benjami
 - A talk path asked of any other host the server answers on (`api.ai-med.live`, the Railway domain) redirects (301) to the same path on the chat host; `/` on the chat host redirects to the author's site. `/api` answers on every host.
 - `urlAliases` keeps an old link working: `/stitch/...` answers 301 to `/haivn-eip/...`. `tools/validate-projects.ts` refuses an alias on a project that is not talk, and an alias another project claims as its slug or alias.
 - A project that lists `embedOrigins` (decks) may be framed only by those origins and its own: the page is sent with `Content-Security-Policy: frame-ancestors 'self' <origins>`. A project without them (ppol5013 inside Canvas, the papers popout) sends no frame-ancestors.
-- For now the Pages workflow still builds the talk projects for `ai-med.live` too; those copies become redirects to the chat host in a later step.
+- On `ai-med.live` a talk project's path is a redirect stub to the same path, query and fragment on the chat host, and `404.html` sends deeper paths and aliases there too, from a map generated from `project.json` (`tools/build-talk-redirects.ts`, run by `deploy-pages.yml`). A new talk project or alias needs no edit there. decks is the one exception for now: Pages still builds it, because the published deck frames `ai-med.live/decks/`.
 
 ### talkManifest — externally embedded advisors and the public-chat kill switch
 

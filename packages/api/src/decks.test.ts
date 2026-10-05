@@ -377,3 +377,15 @@ test('beyond scope: the flag reaches the reader and the request reaches the log'
   const open = await fetch(`${h.base}/api/admin/qa-log`, { headers: P });
   assert.equal(open.status, 401);
 });
+
+test('sync-deck-packs names no project of its own: the CLI refuses to run without --project', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const tool = path.join(HERE, '../../../tools/sync-deck-packs.ts');
+  const tsx = path.join(HERE, '../../../node_modules/.bin/tsx');
+  const r = spawnSync(tsx, [tool, FIXTURES, '--deck', DECK, '--check'], { encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /--project <project>/);
+  const ok = spawnSync(tsx, [tool, FIXTURES, '--deck', DECK, '--project', PROJECT, '--check'], { encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /--check: nothing written/);
+});

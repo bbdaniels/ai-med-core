@@ -35,26 +35,32 @@ import path from 'path';
 import { projectUrlSlug, resolveProjectFlags, urlAliases } from '@ai-med/chat-core';
 import { DEFAULT_TALK_DIST_DIR } from '../repo-root.js';
 
-/** The host the deployment serves talk pages on, when NODE_ENV is production and TALK_CANONICAL_HOST is unset. */
-export const DEFAULT_CANONICAL_HOST = 'chat.benjaminbdaniels.com';
-/** Where `/` on the canonical host goes when TALK_HOME_URL is unset. */
-export const DEFAULT_HOME_URL = 'https://www.benjaminbdaniels.com/';
-
 /**
  * The serving settings, from the environment:
  * - TALK_DIST_DIR: the builds (default packages/frontend-chat/dist-talk);
- * - TALK_CANONICAL_HOST: the one host talk pages answer on; '' turns the
- *   redirect off. Unset, it is DEFAULT_CANONICAL_HOST in production and off
- *   otherwise, so a local server serves its pages on localhost;
- * - TALK_HOME_URL: where `/` on that host goes; '' leaves `/` alone.
+ * - TALK_CANONICAL_HOST: the one host talk pages answer on. Unset or empty,
+ *   there is none: pages answer on every host the server answers on, in any
+ *   NODE_ENV. The engine names no deployment's host; a deployment sets its own;
+ * - TALK_HOME_URL: where `/` on the canonical host goes. Unset or empty, `/` is
+ *   left alone.
  */
 export function talkPagesSettings(env: NodeJS.ProcessEnv): Pick<TalkPagesOptions, 'distDir' | 'canonicalHost' | 'homeUrl'> {
-  const canonical = env.TALK_CANONICAL_HOST ?? (env.NODE_ENV === 'production' ? DEFAULT_CANONICAL_HOST : '');
   return {
     distDir: env.TALK_DIST_DIR?.trim() ? path.resolve(env.TALK_DIST_DIR.trim()) : DEFAULT_TALK_DIST_DIR,
-    canonicalHost: canonical.trim().toLowerCase(),
-    homeUrl: (env.TALK_HOME_URL ?? DEFAULT_HOME_URL).trim(),
+    canonicalHost: (env.TALK_CANONICAL_HOST ?? '').trim().toLowerCase(),
+    homeUrl: (env.TALK_HOME_URL ?? '').trim(),
   };
+}
+
+/** The boot log line that says which host settings are in force. */
+export function talkHostSummary(o: Pick<TalkPagesOptions, 'canonicalHost' | 'homeUrl'>): string {
+  const canonical = o.canonicalHost.trim().toLowerCase();
+  const homeUrl = o.homeUrl.trim();
+  if (!canonical) {
+    return `💬 Talk pages: no canonical host (TALK_CANONICAL_HOST unset), served on every host${homeUrl ? '; TALK_HOME_URL ignored without it' : ''}`;
+  }
+  return `💬 Talk pages: canonical host ${canonical} (TALK_CANONICAL_HOST); `
+    + (homeUrl ? `/ there redirects to ${homeUrl} (TALK_HOME_URL)` : '/ there is left alone (TALK_HOME_URL unset)');
 }
 
 export interface TalkPagesOptions {
@@ -126,6 +132,7 @@ export function talkPagesRouter(o: TalkPagesOptions): express.Router {
   const homeUrl = o.homeUrl.trim();
   const router = express.Router();
 
+  console.log(talkHostSummary(o));
   if (pages.size > 0) {
     const listed = [...pages.values()].map(p => p.built ? p.slug : `${p.slug} (not built)`);
     console.log(`💬 Talk pages${canonical ? ` on ${canonical}` : ''}: ${listed.join(', ')}`);

@@ -6,10 +6,15 @@
 // second source that silently goes stale. (A fallback to
 // `${BASE_URL}languages.json` used to sit here; no build ever published that
 // file, so it 404'd on every project and only delayed setLangs(null).)
+//
+// How a response is read (file, no file, error) is languages-load.ts. A page
+// shows `languagesError` when there are no strings to show, rather than
+// "Loading..." for good.
 
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiFetch } from '../api-base';
 import { resolveInitialLanguage } from '../lang-boot';
+import { loadLanguages } from './languages-load';
 import type { LanguageDef, LanguageUISection, LanguagesJson } from './types';
 
 export type UiSection = 'welcome' | 'chat' | 'feedback';
@@ -22,6 +27,7 @@ export type Translate = <S extends UiSection, K extends keyof NonNullable<Langua
  */
 export function useLanguages(titlesUnlocked: boolean) {
   const [langs, setLangs] = useState<LanguagesJson | null>(null);
+  const [languagesError, setLanguagesError] = useState<string | null>(null);
   const [selectedLanguageCode, setSelectedLanguageCode] = useState<string>(() => {
     try {
       return resolveInitialLanguage(
@@ -32,11 +38,22 @@ export function useLanguages(titlesUnlocked: boolean) {
     } catch { return 'en' }
   });
 
+  // A failed re-fetch (the one after unlocking) keeps the strings already
+  // loaded: the page goes on without the vignette titles rather than failing.
   useEffect(() => {
-    apiFetch(api('/api/languages'))
-      .then(res => res.json())
-      .then((data: LanguagesJson) => setLangs(data))
-      .catch(() => setLangs(null));
+    let current = true;
+    loadLanguages(() => apiFetch(api('/api/languages'))).then(load => {
+      if (!current) return;
+      if (load.status === 'ready') {
+        if (load.source === 'fallback') console.warn('This project has no languages file; using the fallback strings.');
+        setLangs(load.langs);
+        setLanguagesError(null);
+      } else if (load.status === 'error') {
+        console.error(`Languages: ${load.message}`);
+        setLanguagesError(load.message);
+      }
+    });
+    return () => { current = false; };
   }, [titlesUnlocked]);
 
   // Once the project's languages load, validate the boot candidate against them.
@@ -87,7 +104,7 @@ export function useLanguages(titlesUnlocked: boolean) {
     return typeof value === 'string' ? (value as string) : '';
   };
 
-  return { langs, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t };
+  return { langs, languagesError: langs ? null : languagesError, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t };
 }
 
 /** The tab title: the project's welcome title, after the open paper's title when there is one. */

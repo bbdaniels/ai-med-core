@@ -131,6 +131,18 @@ export function questionsBlocked(o: { hostDriven: boolean; listLoaded: boolean; 
   return o.hostDriven && o.listLoaded && o.key === null;
 }
 
+/**
+ * Whether a key press in the question box sends. While questions are blocked
+ * the box stays usable, so a reader mid-question when the host moves to a page
+ * with no document keeps drafting and sends once back on one; Enter then does
+ * nothing (no newline either), like the disabled send button beside it, and the
+ * notice above the box says why. Shift+Enter is always a newline.
+ */
+export function enterSends(e: { key: string; shiftKey: boolean }, blocked: boolean): { send: boolean; preventDefault: boolean } {
+  if (e.key !== 'Enter' || e.shiftKey) return { send: false, preventDefault: false };
+  return { send: !blocked, preventDefault: true };
+}
+
 /** A question, tagged with the document current when it was asked. */
 export function questionOn(content: string, current: { key: string; title?: string }) {
   return { role: 'user' as const, content, documentKey: current.key, documentTitle: current.title || current.key };

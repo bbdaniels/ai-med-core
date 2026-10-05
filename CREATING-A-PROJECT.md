@@ -73,6 +73,29 @@ Create `projects/<name>/project.json` following the schema at `projects/project-
 
 Each vignette entry includes its own `template` field identifying which base case template it belongs to. A project can use multiple templates -- the landing page and eval pipeline group vignettes by template automatically.
 
+**Pick the application with `app`.** `"app": "simulation"` (the default, so the example above leaves it out) is the clinical simulator this guide walks through: cases, a Kobo form, grading. `"app": "talk"` is document chat (papers, decks, course readings, document advisors): it implies `formless: true`, `enableFeedback: false`, `skipWelcome: true` and `enableFollowups: true`, needs no `kobo` block, and skips steps 5 to 9 (each vignette is one document, still with a `template` name, and step 4's `languages.json` still applies). Leave the implied flags out; `tools/validate-projects.ts` rejects `"app": "talk"` with `formless: false` or `enableFeedback: true`. A talk project's page is served by the API server, not GitHub Pages (step 10). A minimal talk project:
+
+```json
+{
+  "name": "<slug>",
+  "displayName": "Human Readable Name",
+  "frontend": "chat",
+  "app": "talk",
+  "cases": {
+    "systemPrompt": "projects/<name>/system-prompt.md",
+    "vignettes": [
+      { "key": "<doc-key>", "template": "doc", "title": "Document title", "file": "projects/<name>/cases/doc/<doc-key>.md" }
+    ]
+  },
+  "languages": ["en"],
+  "deployment": {
+    "tablePrefix": "<name>"
+  }
+}
+```
+
+The talk-only options (`urlAliases`, `embedOrigins`, `followHost`, `talkManifest`, `talkPublicUrl`, `readingsIndex`, `groundingSets`) are described in `projects/CLAUDE.md` under Talk Projects, and every field in `projects/project-schema.json`. The resolution of `app` and the flags it implies is `resolveProjectFlags` in `packages/chat-core/src/project-config.ts`.
+
 ### 3. Write the system prompt
 
 Start from the demo prompt and revise to match the case materials:
@@ -319,7 +342,7 @@ Also update `kobo/registry.json` to keep the cross-project registry current.
 
 ### 10. No build step to add
 
-The deploy builds every project from its `project.json` with `tools/build-frontends.ts`: a simulator onto GitHub Pages at `ai-med.live/<url-slug>/`, a talk project (`"app": "talk"`) into the API server's deploy at `chat.benjaminbdaniels.com/<url-slug>/` (the URL slug is the directory name with `_` written `-`). `static/*` and `images/*.png` are copied when the project has them. The content push step and eval dashboard copy step already loop over all projects automatically.
+The deploy builds every project from its `project.json` with `tools/build-frontends.ts`: a simulator onto GitHub Pages at `ai-med.live/<url-slug>/`, a talk project (`"app": "talk"`) into the API server's deploy, served at `/<url-slug>/` on the deployment's talk host (`TALK_CANONICAL_HOST`) (the URL slug is the directory name with `_` written `-`). `static/*` and `images/*.png` are copied when the project has them. The content push step and eval dashboard copy step already loop over all projects automatically.
 
 ### 11. Push to main and verify
 
@@ -330,7 +353,7 @@ git push
 ```
 
 On push to main:
-- **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://ai-med.live/<url-slug>/` (a talk project's page is built and served by Railway instead, at `https://chat.benjaminbdaniels.com/<url-slug>/`)
+- **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://ai-med.live/<url-slug>/` (a talk project's page is built and served by the API server instead, at `/<url-slug>/` on the talk host)
 - **GitHub Actions** runs `push-content.ts` for each project, pushing vignettes, system prompt, Kobo config, and languages to the Railway backend
 - **Railway** auto-deploys the API (if backend code changed)
 

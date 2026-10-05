@@ -1,5 +1,6 @@
 // The whole-page screens both pages show before the chat: the course access
-// gate, the refusal of a link to an unknown document, and the loading screen.
+// gate, the refusal of a link to an unknown document, the loading screen, and
+// the screen for a page whose settings could not be loaded.
 
 import AccessGate from '../components/AccessGate';
 import type { Translate } from './useLanguages';
@@ -32,6 +33,21 @@ export function LoadingScreen() {
     <div className="welcome-screen">
       <div className="welcome-content" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
         <p>Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+/** /api/languages failed (languages-load.ts): there are no strings, so this one is fixed English. */
+export function LoadErrorScreen({ message }: { message: string }) {
+  return (
+    <div className="welcome-screen">
+      <div className="welcome-content access-gate" role="alert">
+        <h1>This page could not load</h1>
+        <p className="access-gate-hint">{message}</p>
+        <div className="access-gate-form">
+          <button type="button" onClick={() => window.location.reload()}>Try again</button>
+        </div>
       </div>
     </div>
   );

@@ -4,19 +4,19 @@
  * A project opts in by declaring `readingsIndex` in its project.json; the value
  * is a repo-relative path to a SQLite file. Two builders write that schema --
  * tools/build-readings-corpus.py for a course reading list, tools/build-legal-corpus.py
- * for haivn_eip's library of Vietnamese legal instruments -- and this module
+ * for a library of legal instruments -- and this module
  * reads either without knowing which. The index holds one row per ~500-token
  * chunk with an FTS5 (BM25) index over it and, when the build could reach an
  * embeddings endpoint, a dense vector per chunk. Retrieval fuses the two
  * rankings; with no vectors it degrades to BM25 alone, which is why a failed
  * embedding pass never fails a build.
  *
- * Whether the index file is committed is the project's call, and the two
- * projects answer it differently. ppol5013's is a derived copy of copyrighted
- * course PDFs and is gitignored. haivn_eip's is built from published Vietnamese
- * legal instruments and IS committed deliberately, because Railway deploys from
- * git and the API needs the file present at runtime. Neither reaches the public
- * mirror, which publishes only projects/demo. Nothing here serves chunk text to
+ * Whether the index file is committed is the project's call, and projects
+ * answer it differently. A course reading index is a derived copy of copyrighted
+ * course PDFs and is gitignored. A legal library built from published government
+ * instruments can be committed deliberately, because Railway deploys from git
+ * and the API needs the file present at runtime. No project's index reaches the
+ * public mirror, which publishes only projects/demo. Nothing here serves chunk text to
  * a browser -- text goes to the model, inside the chat request, and reaches the
  * reader only as whatever the model quotes back under the system prompt's
  * excerpt limits.
@@ -30,7 +30,7 @@ import path from 'path';
  * One chunk's staleness note: its text per language, and its strength.
  *
  * `rank` is the whole ordering contract with the builders. A corpus may write
- * several tiers of note -- haivn_eip's legal index writes three, from one that
+ * several tiers of note -- a legal index can write three, from one that
  * is true of any chunk of an instrument up to one that corrects a restriction
  * the chunk itself states -- and this file must never render a weaker note's
  * claims over a stronger note's passages. It compares ranks and knows none of
@@ -61,8 +61,8 @@ export interface ReadingChunk {
    * date even though the document carrying it is in force. `text` is keyed by
    * language code; `rank` says how strong the note is, and a higher rank is a
    * stronger claim about the passage. Null on an unannotated chunk, and on
-   * every chunk of an index built before the column existed. See
-   * `supersededPassages` in haivn_eip's legal registry.
+   * every chunk of an index built before the column existed. A legal corpus
+   * writes it from its registry's `supersededPassages`.
    */
   notice: ChunkNotice | null;
   /** Bare DOI of the source document; null when it has none or the index predates the column. */
@@ -86,15 +86,15 @@ export interface OpenIndex {
   hasVectors: boolean;
   /**
    * Whether any document in this index is assigned to a week. `weeks` is a
-   * course-schedule concept: a corpus with no schedule (the haivn_eip legal
+   * course-schedule concept: a corpus with no schedule (a legal
    * library) carries "[]" on every row, so a week filter can only ever return
    * nothing. See searchReadingsTool.
    */
   hasWeeks: boolean;
   /**
    * Whether this index carries the `chunks.notice` column. Both builders write
-   * it now, but an index built before it existed is still a valid index -- the
-   * PPOL one is not committed and is uploaded rather than rebuilt on deploy --
+   * it now, but an index built before it existed is still a valid index -- a
+   * course index is not committed and is uploaded rather than rebuilt on deploy --
    * so the column is read only where it is present rather than made a hard
    * requirement that would take retrieval down entirely.
    */
@@ -130,8 +130,8 @@ export function openReadingsIndex(repoRoot: string, projectSlug: string,
   // A deployment keeps the index outside the repo: it is 20+ MB of copyrighted
   // derived text, it is never committed, and the container filesystem is wiped on
   // every redeploy — so on Railway it lives on a mounted volume and this env var
-  // points at it. The name is the project slug upper-cased, e.g.
-  // READINGS_INDEX_PPOL5013=/data/ppol5013-readings.db.
+  // points at it. The name is the project slug upper-cased, with any other
+  // character written `_`, e.g. READINGS_INDEX_MY_COURSE=/data/my-course-readings.db.
   const envKey = `READINGS_INDEX_${projectSlug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   const override = process.env[envKey];
 
@@ -475,9 +475,9 @@ function noticeText(notice: ChunkNotice, code: string): string | null {
  * which reading a passage came from -- the single most common way a grounded
  * answer ends up attributed to the wrong author.
  *
- * THE WORDING IS PROJECT-NEUTRAL, and it was not. This file serves two corpora
- * -- ppol5013's course reading list and haivn_eip's index of Vietnamese
- * government instruments -- and every string here said "course readings" to
+ * THE WORDING IS PROJECT-NEUTRAL, and it was not. This file serves two kinds
+ * of corpus -- a course reading list and an index of government legal
+ * instruments -- and every string here said "course readings" to
  * both of them. A legal advisor telling a clinician that "no passage in the
  * indexed course readings" answers their question is describing a corpus that
  * does not exist, in the one sentence it says when it has nothing. `scheduled`
@@ -509,7 +509,7 @@ export function formatSearchResults(
   //
   // ONLY THE STRONGEST RANK IN THE RESULT SET IS RENDERED, and the weaker ones
   // are dropped rather than stacked. A corpus may annotate at several strengths
-  // -- haivn_eip's legal index stamps a note on every chunk of a pre-2025
+  // -- a legal index stamps a note on every chunk of a pre-2025
   // instrument, a stronger one where the passage itself uses the superseded
   // vocabulary, and a stronger one still where it states a restriction in it --
   // and the strong text says things ("each passage this notice names describes
@@ -636,20 +636,20 @@ export const SEARCH_READINGS_TOOL = {
  * at all.
  *
  * Measured, so the next reader does not over-credit this: swapping the wording
- * did NOT change gpt-4o-mini's tool-calling on haivn_eip. That model calls
+ * did NOT change gpt-4o-mini's tool-calling on the legal advisor. That model calls
  * search_readings when the user's question names an instrument ("which article
  * of Decree 96/2023/NĐ-CP...") and skips it on a follow-up that names none
  * ("What section of the law says that?") -- zero calls in 22 trials before the
  * change and zero in the trials after it. The fix here removes a false promise
  * from the model's context; it is not a fix for that behavior. That one is a
  * model-capability question: gpt-4o called the tool on such follow-ups, the
- * default gpt-4o-mini does not, and haivn_eip's system prompt is what keeps the
+ * default gpt-4o-mini does not, and that project's system prompt is what keeps the
  * ungrounded answer honest ("no article in the Legal Library states it") rather
  * than letting it reach for the nearest article. Do not re-pin a bigger chatModel
  * to paper over this without pricing it first: it raises every turn on the
  * project, not only the statute turns.
  *
- * A scheduled index (ppol5013) gets the same object it always got, by identity.
+ * A scheduled index (a course reading list) gets the same object it always got, by identity.
  */
 const UNSCHEDULED_DESCRIPTION =
   'Search the full text of this project\'s reference corpus and return the passages ' +

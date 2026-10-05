@@ -34,18 +34,18 @@ assert.equal(requestedVignette('?doc=fixture-deck--main-effect', []), 'fixture-d
 
 
 // talkPublicUrl: slugs match orcid-display's slugForWork, the redirect fills the template
-const tpl = 'https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}';
+const tpl = 'https://www.example.org/publications/#talk-doi-{slug}';
 assert.equal(doiSlug('10.1093/wbro/lkag002'), '10-1093-wbro-lkag002');
 assert.equal(doiSlug('https://doi.org/10.1016/S2214-109X(19)30031-2'), '10-1016-s2214-109x-19-30031-2');
 assert.equal(fillTalkPublicUrl('https://x.org/p?d={doi}#t-{slug}', '10.1016/S2214-109X(19)30031-2'),
   'https://x.org/p?d=10.1016%2Fs2214-109x(19)30031-2#t-10-1016-s2214-109x-19-30031-2');
 assert.equal(publicRedirectUrl(tpl, '?paper=10.1016%2Fs2214-109x(19)30031-2', papers),
-  'https://www.benjaminbdaniels.com/publications/#talk-doi-10-1016-s2214-109x-19-30031-2');
+  'https://www.example.org/publications/#talk-doi-10-1016-s2214-109x-19-30031-2');
 assert.equal(publicRedirectUrl(tpl, '?vignette=kwan2018variations', papers),
-  'https://www.benjaminbdaniels.com/publications/#talk-doi-10-1371-journal-pmed-1002653');
+  'https://www.example.org/publications/#talk-doi-10-1371-journal-pmed-1002653');
 // no paper, an unknown paper, or a paper with no DOI: the page with no popout
-assert.equal(publicRedirectUrl(tpl, '', papers), 'https://www.benjaminbdaniels.com/publications/');
-assert.equal(publicRedirectUrl(tpl, '?paper=10.9999/nope', papers), 'https://www.benjaminbdaniels.com/publications/');
-assert.equal(publicRedirectUrl(tpl, '?vignette=legovini2019science', papers), 'https://www.benjaminbdaniels.com/publications/');
+assert.equal(publicRedirectUrl(tpl, '', papers), 'https://www.example.org/publications/');
+assert.equal(publicRedirectUrl(tpl, '?paper=10.9999/nope', papers), 'https://www.example.org/publications/');
+assert.equal(publicRedirectUrl(tpl, '?vignette=legovini2019science', papers), 'https://www.example.org/publications/');
 
 console.log('talk-paper checks: 26/26 passed');

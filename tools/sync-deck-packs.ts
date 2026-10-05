@@ -1,13 +1,13 @@
 /**
- * Sync one research deck's knowledge packs into the `decks` project.
+ * Sync one research deck's knowledge packs into a follow-host talk project.
  *
- *   npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id>            # write
- *   npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id> --check    # report only
+ *   npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id> --project <project>            # write
+ *   npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id> --project <project> --check    # report only
  *
- *   npx tsx tools/sync-deck-packs.ts path/to/deck/packs --deck trial-2026-01
+ *   npx tsx tools/sync-deck-packs.ts path/to/deck/packs --deck trial-2026-01 --project my-decks
  *
- * Both are arguments: the tool names no deck and no path of its own. A project
- * records the ones it uses in its own (unpublished) README.
+ * All three are arguments: the tool names no deck, no project and no path of
+ * its own. A project records the ones it uses in its own (unpublished) README.
  *
  * The deck build writes, in <packs-dir>:
  *   _deck.md         what is true for the whole deck
@@ -23,7 +23,7 @@
  * be sent twice. Grounding is chosen by the key's prefix before `--`, so
  * several decks can live in the project and none gets another's notes.
  *
- * What a sync writes, all under projects/decks/:
+ * What a sync writes, all under projects/<project>/:
  *   cases/slide/<key>.md     the vignette files (gitignored: unpublished results)
  *   grounding/<deck>.md      the deck notes (gitignored for the same reason)
  *   project.json             cases.vignettes, this deck's entries replaced; groundingSets
@@ -35,7 +35,7 @@
  * The model is gpt-4o-mini, which quotes well and reads table layouts badly, so
  * a pack must state each number in a sentence with its table, row and column.
  * This script refuses a pack that carries a markdown table, and one too long
- * for the budget below. See projects/decks/README.md for the pack contract.
+ * for the budget below. The project's own README holds its pack contract.
  */
 import fs from 'fs';
 import path from 'path';
@@ -185,7 +185,7 @@ export function buildDeckVignettes(packsDir: string, deck: string): DeckBuild {
 const TEMPLATE = 'slide';
 
 /** Write a deck's vignettes into projects/<project>/ and register them. */
-export function writeDeck(build: DeckBuild, project = 'decks', repoRoot = REPO_ROOT): string[] {
+export function writeDeck(build: DeckBuild, project: string, repoRoot = REPO_ROOT): string[] {
   if (build.fixture) {
     throw new Error(`${build.deck}: _deck.md says "fixture: true". A fixture deck is for tests and is never written into a project.`);
   }
@@ -247,9 +247,9 @@ function main(argv: string[]): number {
   };
   const packsArg = args[0];
   const deck = flag('--deck');
-  const project = flag('--project') || 'decks';
-  if (!packsArg || !deck || packsArg === deck) {
-    console.error('usage: npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id> [--project decks] [--check]');
+  const project = flag('--project');
+  if (!packsArg || !deck || !project || packsArg === deck || packsArg === project) {
+    console.error('usage: npx tsx tools/sync-deck-packs.ts <packs-dir> --deck <deck-id> --project <project> [--check]');
     return 2;
   }
   const packsDir = path.resolve(packsArg.replace(/^~(?=\/)/, process.env.HOME || '~'));

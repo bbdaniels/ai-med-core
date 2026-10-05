@@ -10,7 +10,7 @@ import type React from 'react';
 import ChatNoticeBar from '../ChatNoticeBar';
 import LanguageSwitcher from '../LanguageSwitcher';
 import type { TalkPaper } from '../talk-paper';
-import { type ThreadItem, threadWithDividers } from '../host-document';
+import { enterSends, type ThreadItem, threadWithDividers } from '../host-document';
 import type { LanguagesJson, Message, VignetteInfo } from './types';
 import type { ChatSession } from './useChatSession';
 import type { Translate } from './useLanguages';
@@ -45,7 +45,11 @@ export interface ChatColumnProps {
   headerAction?: React.ReactNode;
   /** followHost: a "Now on" divider before each question asked on another document. */
   documentDividers?: boolean;
-  /** followHost: nothing here can be asked about. Shown above the input, and sending is off. */
+  /**
+   * followHost: nothing here can be asked about. Shown above the input; the
+   * send button, the question chips and Enter are off, and the box stays
+   * usable for drafting (enterSends in host-document.ts says why).
+   */
   sendBlockedNotice?: string;
 }
 
@@ -57,10 +61,9 @@ export default function ChatColumn({
 }: ChatColumnProps) {
   const { messages, input, setInput, isLoading, followups, inputRef, messagesEndRef, sendMessage } = session;
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    const { send, preventDefault } = enterSends(e, !!sendBlockedNotice);
+    if (preventDefault) e.preventDefault();
+    if (send) sendMessage();
   };
   return (
     <div className={`left-panel ${mobileHidden ? 'mobile-hidden' : ''}`}>
@@ -254,7 +257,7 @@ export default function ChatColumn({
             {/* Input Area */}
             <div className="input-container input-container-inner">
               {sendBlockedNotice && (
-                <p className="no-current-document" role="status">{sendBlockedNotice}</p>
+                <p id="send-blocked-notice" className="no-current-document" role="status">{sendBlockedNotice}</p>
               )}
               <div className="input-wrapper">
                 <textarea
@@ -266,6 +269,7 @@ export default function ChatColumn({
                   placeholder={t('chat','inputPlaceholder')}
                   rows={1}
                   disabled={isLoading}
+                  aria-describedby={sendBlockedNotice ? 'send-blocked-notice' : undefined}
                 />
                 <button
                   onClick={() => sendMessage()}

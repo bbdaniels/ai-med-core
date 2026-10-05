@@ -28,9 +28,9 @@ export interface ResponseUsage { prompt_tokens: number; completion_tokens: numbe
 
 /** What a turn needs to know about its project, read from project.json. */
 export interface ChatProjectConfig {
-  /** The project slug, e.g. 'ppol5013'. */
+  /** The project slug, e.g. 'my_course'. */
   slug: string;
-  /** The value token_usage.project has always held: the table prefix, e.g. 'ppol5013_'. */
+  /** The value token_usage.project has always held: the table prefix, e.g. 'my_course_'. */
   usageProject: string;
   app: AppType;
   /** Structured answers: {answer, followups, beyondScope}. */

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import './App.css';
 import { api, apiFetch } from './api-base';
-import { CourseAccessGate, LoadingScreen, UnknownDocumentScreen } from './chat/Screens';
+import { CourseAccessGate, LoadErrorScreen, LoadingScreen, UnknownDocumentScreen } from './chat/Screens';
 import { ADMIN_PATH, AdminRoute, useAppPath } from './admin-route';
 import WelcomeScreen from './WelcomeVariants';
 import { splitRoleSegments, resolveSegmentVoice } from './tts-speech';
@@ -110,7 +110,7 @@ function ChatInterface() {
   } = config;
   const gate = useAccessGate(configLoaded, requireAccessCode);
   const { accessReady } = gate;
-  const { langs, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t } =
+  const { langs, languagesError, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t } =
     useLanguages(requireAccessCode && gate.unlocked);
   const userPrefillParams = useMemo<string | null>(() => {
     try {
@@ -583,7 +583,8 @@ function ChatInterface() {
         <p>{t('chat','endThankYouMessage') || 'You have completed all scenarios. Thank you for your participation. You may now close this page.'}</p>
       </div>
     </div>
-    {!hasStarted && (!langs || !configLoaded) && <LoadingScreen />}
+    {!hasStarted && languagesError && <LoadErrorScreen message={languagesError} />}
+    {!hasStarted && !languagesError && (!langs || !configLoaded) && <LoadingScreen />}
     {!hasStarted && langs && configLoaded && !skipWelcome && (() => {
       const code = selectedLanguageCode || 'en';
       const consentParagraphs: string[] = (langs?.ui?.[code]?.welcome?.consentParagraphs || langs?.ui?.['en']?.welcome?.consentParagraphs || DEFAULT_CONSENT_PARAGRAPHS) as string[];

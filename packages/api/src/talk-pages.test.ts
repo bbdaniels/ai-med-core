@@ -14,7 +14,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer, type Harness } from '../test-support/server-harness.js';
-import { DEFAULT_CANONICAL_HOST, DEFAULT_HOME_URL, talkPagesSettings } from './talk/pages.js';
+import { talkHostSummary, talkPagesSettings } from './talk/pages.js';
 import { DEFAULT_TALK_DIST_DIR } from './repo-root.js';
 
 const CANONICAL = 'chat.example.test';
@@ -184,15 +184,26 @@ test('frame-ancestors is sent for a project that lists embedOrigins, and only fo
   assert.equal(talk.headers['x-frame-options'], undefined);
 });
 
-test('settings: the canonical host is on by default only in production; an empty value turns it off', () => {
+test('settings: no canonical host and no home URL unless the variables set them, in any NODE_ENV', () => {
   assert.deepEqual(talkPagesSettings({ NODE_ENV: 'production' }),
-    { distDir: DEFAULT_TALK_DIST_DIR, canonicalHost: DEFAULT_CANONICAL_HOST, homeUrl: DEFAULT_HOME_URL });
+    { distDir: DEFAULT_TALK_DIST_DIR, canonicalHost: '', homeUrl: '' });
   assert.equal(talkPagesSettings({ NODE_ENV: 'development' }).canonicalHost, '');
   assert.equal(talkPagesSettings({}).canonicalHost, '');
   assert.equal(talkPagesSettings({ NODE_ENV: 'production', TALK_CANONICAL_HOST: '' }).canonicalHost, '');
   assert.equal(talkPagesSettings({ TALK_CANONICAL_HOST: ' Chat.Example.TEST ' }).canonicalHost, 'chat.example.test');
+  assert.equal(talkPagesSettings({ NODE_ENV: 'production', TALK_HOME_URL: ' https://www.example.test/ ' }).homeUrl, 'https://www.example.test/');
   assert.equal(talkPagesSettings({ TALK_HOME_URL: '' }).homeUrl, '');
   assert.equal(talkPagesSettings({ TALK_DIST_DIR: '/x/y' }).distDir, path.resolve('/x/y'));
   assert.equal(path.basename(DEFAULT_TALK_DIST_DIR), 'dist-talk');
   assert.equal(path.basename(path.dirname(DEFAULT_TALK_DIST_DIR)), 'frontend-chat');
+});
+
+test('the boot log says which host settings are in force', () => {
+  const off = talkHostSummary({ canonicalHost: '', homeUrl: '' });
+  assert.match(off, /no canonical host \(TALK_CANONICAL_HOST unset\)/);
+  assert.match(talkHostSummary({ canonicalHost: '', homeUrl: HOME }), /TALK_HOME_URL ignored/);
+  const on = talkHostSummary({ canonicalHost: CANONICAL, homeUrl: HOME });
+  assert.ok(on.includes(`canonical host ${CANONICAL} (TALK_CANONICAL_HOST)`), on);
+  assert.ok(on.includes(`redirects to ${HOME} (TALK_HOME_URL)`), on);
+  assert.match(talkHostSummary({ canonicalHost: CANONICAL, homeUrl: '' }), /left alone \(TALK_HOME_URL unset\)/);
 });

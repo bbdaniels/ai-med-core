@@ -32,7 +32,7 @@ import { useDocRefs } from '../chat/useDocRefs';
 import ChatColumn from '../chat/ChatColumn';
 import { renderAssistantContent } from '../chat/AssistantContent';
 import { type MobilePanel, MobileTabStrip, TabbedPanel, type TabViewContext, renderTabView } from '../chat/TabViews';
-import { CourseAccessGate, LoadingScreen, UnknownDocumentScreen } from '../chat/Screens';
+import { CourseAccessGate, LoadErrorScreen, LoadingScreen, UnknownDocumentScreen } from '../chat/Screens';
 import { hasQuestion, sweepExpiredThreads, threadSetFor, threadStorageKey } from '../remember-conversation';
 
 /** Questions in a thread at which New conversation asks once more before clearing it. */
@@ -43,7 +43,7 @@ export default function TalkApp() {
   const { configLoaded, config } = useProjectConfig();
   const gate = useAccessGate(configLoaded, config.requireAccessCode);
   const { accessReady } = gate;
-  const { langs, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t } =
+  const { langs, languagesError, selectedLanguageCode, setSelectedLanguageCode, selectedLanguageName, starterQuestions, t } =
     useLanguages(config.requireAccessCode && gate.unlocked);
 
   // No welcome page: the conversation starts once the config and the languages
@@ -210,6 +210,7 @@ export default function TalkApp() {
   // the same whether or not it shows.
   if (gate.gateShown) return <CourseAccessGate t={t} onUnlocked={gate.unlock} />;
   if (deepLink.vignetteRefused) return <UnknownDocumentScreen t={t} />;
+  if (!started && languagesError) return <LoadErrorScreen message={languagesError} />;
   if (!started) return <LoadingScreen />;
 
   return (

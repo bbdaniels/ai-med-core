@@ -135,3 +135,28 @@ test('a project whose private vignettes are absent is still seeded with its lang
   if (absent.length > 0) assert.match(h.log(), /skipped: .* is not in this checkout/);
   assert.doesNotMatch(h.log(), /Could not seed project "papers"/);
 });
+
+test('the server admits exactly the projects of the checkout it reads', async () => {
+  // A fixture tree with one project that no real checkout has. The X-Project
+  // allowlist comes from the checkout the server reads (AI_MED_REPO_ROOT), so
+  // the fixture slug is admitted and a slug of the real checkout is not.
+  const root = fs.mkdtempSync(path.join(tmp, 'fixture-root-'));
+  const dir = path.join(root, 'projects', 'fixture_only');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify({
+    name: 'fixture_only', displayName: 'Fixture', frontend: 'chat',
+    cases: { systemPrompt: '', vignettes: [] }, languages: ['en'],
+    deployment: { tablePrefix: 'fixture_only' },
+  }));
+  const own = await startServer({ root });
+  try {
+    const prefix = async (project: string) =>
+      ((await (await fetch(`${own.base}/api/health`, { headers: { 'X-Project': project } })).json()) as any).tablePrefix;
+    assert.equal(await prefix('fixture_only'), 'fixture_only_');
+    assert.equal(await prefix('demo'), 'not set');      // in the real checkout, not in this one
+    assert.match(own.log(), /Valid project slugs: fixture_only\b/);
+    assert.equal(own.root, root);
+  } finally {
+    await own.stop();
+  }
+});

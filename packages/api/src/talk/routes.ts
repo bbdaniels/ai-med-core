@@ -11,6 +11,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveProjectFlags, talkManifestPath } from '@ai-med/chat-core';
 import { fillTalkPublicUrl } from '@ai-med/chat-core/talk-url';
 import { isPublicChatEnabled } from '../database.js';
 import { REPO_ROOT } from '../repo-root.js';
@@ -41,7 +42,8 @@ export function talkRoutes(deps: TalkRouteDeps): {
     const slug = req.params.slug;
     if (!deps.isValidProject(slug)) return res.status(404).json({ error: 'Unknown project' });
     const config = await deps.readProjectConfig(slug);
-    if (typeof config.talkManifest !== 'string' || !config.talkManifest) {
+    const manifestPath = talkManifestPath(config);
+    if (manifestPath === null) {
       return res.status(404).json({ error: 'Project has no talk manifest' });
     }
     let enabled = false;
@@ -54,10 +56,10 @@ export function talkRoutes(deps: TalkRouteDeps): {
       res.set('Cache-Control', 'no-store');
       return res.json({ papers: [] });
     }
-    const manifest = await readTalkManifest(slug, config.talkManifest);
+    const manifest = await readTalkManifest(slug, manifestPath);
     // talkPublicUrl projects: each paper also carries its canonical public link
     // (the author's page with that paper's popout open), filled server side.
-    const template = typeof config.talkPublicUrl === 'string' ? config.talkPublicUrl : '';
+    const template = resolveProjectFlags(config).talkPublicUrl;
     const papers = template
       ? manifest.papers.map(p => (p && typeof p === 'object'
         ? { ...p, publicUrl: fillTalkPublicUrl(template, (p as { doi?: string | null }).doi) }
@@ -78,8 +80,7 @@ export function talkRoutes(deps: TalkRouteDeps): {
 
   const requirePublicChatIfDeclared: express.RequestHandler = async (req, res, next) => {
     const slug = deps.requestProjectSlug(req);
-    const config = await deps.readProjectConfig(slug);
-    if (!config.talkManifest) return next();
+    if (!resolveProjectFlags(await deps.readProjectConfig(slug)).talkManifest) return next();
     let enabled = false;
     try {
       enabled = await isPublicChatEnabled(slug);

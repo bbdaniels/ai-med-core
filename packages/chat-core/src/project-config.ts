@@ -10,8 +10,12 @@
  * talk when it sets `formless: true`, and every flag is what the file says,
  * with nothing implied.
  *
- * This is the one place project.json flags are read; `/api/config`, the chat
- * pipeline and the validator all go through it.
+ * This is the one place project.json flags are read. `/api/config`, the access
+ * gate, the unknown-vignette refusal, the voice and realtime checks, the talk
+ * routes, the chat pipeline and the validator all go through it, and an API
+ * test (packages/api/src/project-flags.test.ts) fails on a flag read straight
+ * off a parsed project.json. The talk manifest's path, which the talk routes
+ * need, is read here too (talkManifestPath); only its presence is a flag.
  */
 import type { AppType } from './chat/types.js';
 
@@ -78,6 +82,11 @@ export function resolveProjectFlags(cfg: Record<string, any>): ResolvedFlags {
     talkPublicUrl: typeof cfg.talkPublicUrl === 'string' ? cfg.talkPublicUrl : '',
     docRefs: cfg.docRefs && typeof cfg.docRefs === 'object' ? cfg.docRefs : null,
   };
+}
+
+/** The repo-relative path of the project's talk manifest, or null when it declares none. */
+export function talkManifestPath(cfg: Record<string, any>): string | null {
+  return resolveProjectFlags(cfg).talkManifest ? cfg.talkManifest : null;
 }
 
 /**

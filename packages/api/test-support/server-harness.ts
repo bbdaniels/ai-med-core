@@ -13,6 +13,10 @@
  * - The clock is fixed (AI_MED_TEST_NOW, see fixed-clock.mjs) and TZ is UTC, so
  *   the date block in a prompt is reproducible.
  *
+ * - A test with its own fixture projects passes `root`, a tree it built, and
+ *   the server reads that instead (AI_MED_REPO_ROOT), seeing no project of the
+ *   real checkout.
+ *
  * - The server reads a view of the checkout (AI_MED_REPO_ROOT), not the
  *   working copy itself: the tracked files under projects/ only, so gitignored
  *   private content never changes what a test sees, and an empty transcripts/
@@ -54,6 +58,13 @@ export interface StartOptions {
   accessCodes?: Record<string, string>;
   /** Extra environment, applied last. */
   env?: Record<string, string>;
+  /**
+   * A checkout to serve in place of the tracked view of this repository: a
+   * test's own fixture tree, holding projects/<slug>/project.json and the
+   * files it names. The server then sees those projects and no other. Its
+   * transcripts/ is created; the tree itself is the caller's to remove.
+   */
+  root?: string;
 }
 
 export interface ChatResult {
@@ -115,8 +126,8 @@ const freePort = () => new Promise<number>((resolve, reject) => {
 const envSlug = (slug: string) => slug.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const bareSlug = (s: string) => s.replace(/_+$/, '');
 
-function projectSlugs(): string[] {
-  const dir = path.join(REPO_ROOT, 'projects');
+function projectSlugs(root: string): string[] {
+  const dir = path.join(root, 'projects');
   return fs.readdirSync(dir, { withFileTypes: true })
     .filter(e => e.isDirectory() && fs.existsSync(path.join(dir, e.name, 'project.json')))
     .map(e => e.name);
@@ -133,7 +144,8 @@ function listInitial(transcriptsDir: string): string[] {
 export async function startServer(o: StartOptions = {}): Promise<Harness> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-med-harness-'));
   const dbPath = path.join(tmp, 'test.db');
-  const root = buildTrackedView(REPO_ROOT, path.join(tmp, 'checkout'));
+  const root = o.root ?? buildTrackedView(REPO_ROOT, path.join(tmp, 'checkout'));
+  fs.mkdirSync(path.join(root, 'transcripts'), { recursive: true });
   const transcriptsDir = path.join(root, 'transcripts');
   const fake = new FakeOpenAI();
   await fake.start();
@@ -144,7 +156,7 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
   // a fixture index is pointed at a file that does not exist, so it has no
   // search tool, exactly as a deployment without its uploaded index.
   const pinned: Record<string, string> = {};
-  for (const slug of projectSlugs()) {
+  for (const slug of projectSlugs(root)) {
     pinned[`ACCESS_CODE_${envSlug(slug)}`] = '';
     pinned[`READINGS_INDEX_${envSlug(slug)}`] = path.join(tmp, `no-index-${slug}.db`);
   }

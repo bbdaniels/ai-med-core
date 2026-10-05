@@ -23,6 +23,7 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@ai-med/chat-core": "*",
     "dompurify": "^3.3.3",
     "enketo-core": "^9.0.1",
     "enketo-transformer": "^4.2.0",

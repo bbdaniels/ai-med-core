@@ -30,7 +30,7 @@ export function parseLanguageList(json: string | null | undefined): LanguageEntr
 
 /** Case, diacritics and spacing folded away: "Tiếng  Việt" and "tieng viet" compare equal. */
 function fold(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/gi, 'd').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 

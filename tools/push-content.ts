@@ -20,6 +20,11 @@
  *   npx tsx tools/push-content.ts <project-name> --url <base-url>  # override DEPLOY_URL
  *   npx tsx tools/push-content.ts <project-name> --prune   # allow a guarded removal
  *
+ * The push fails before writing anything when project.json registers a
+ * vignette whose file is neither in this checkout nor already deployed
+ * (tools/lib/registry-guard.ts): a registry that arrives before its content
+ * would publish titles whose links all answer as unknown.
+ *
  * Deployed vignettes that project.json no longer names are removed, except
  * that tools/lib/stale-removal.ts refuses every removal without --prune when
  * the local list is empty, the project sets requireKnownVignette, or more than
@@ -32,6 +37,7 @@ import path from 'path';
 import { AdminApiClient } from './lib/api-client.js';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
 import { planStaleRemoval, refusalReason } from './lib/stale-removal.js';
+import { vignettesWithoutContent, withoutContentMessage } from './lib/registry-guard.js';
 
 interface ProjectJson {
   name: string;
@@ -157,6 +163,19 @@ async function main() {
   }
   console.log(`  Status: ${health.status}, Table prefix: ${health.tablePrefix}`);
 
+  // What the deployment already holds. Read before any write: the registry
+  // guard below and the stale removal further down both compare against it.
+  const remote = await client.getContent();
+  const remoteKeys: string[] = remote.vignettes.map((v: { key: string }) => v.key);
+
+  // Registry guard: every registered vignette must have content here or there.
+  const registered = await Promise.all(project.cases.vignettes.map(async v => ({ key: v.key, inCheckout: await exists(v.file) })));
+  const withoutContent = vignettesWithoutContent(registered, remoteKeys);
+  if (withoutContent.length > 0) {
+    console.error(withoutContentMessage(withoutContent.length, projectName));
+    process.exit(1);
+  }
+
   // Push system prompt
   if (project.cases.systemPrompt) {
     const content = await readFile(project.cases.systemPrompt);
@@ -188,8 +207,8 @@ async function main() {
 
   // Remove remote vignettes not in project.json, behind the prune guard
   // (tools/lib/stale-removal.ts): never a mass deletion without --prune.
-  const remote = await client.getContent();
-  const remoteKeys: string[] = remote.vignettes.map((v: { key: string }) => v.key);
+  // remoteKeys was read before this push wrote anything; the keys it just
+  // pushed are all in localKeys, so the stale set is the same.
   const requireKnownVignette = project.requireKnownVignette === true;
   const plan = planStaleRemoval([...localKeys], remoteKeys, { prune, requireKnownVignette });
   if (plan.refused.length > 0) {

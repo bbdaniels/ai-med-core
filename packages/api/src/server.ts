@@ -1,7 +1,7 @@
 import express from 'express';
 import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
-import { openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost } from '@ai-med/chat-core';
+import { openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost, type ResolvedFlags } from '@ai-med/chat-core';
 import path from 'path';
 import fs from 'fs/promises';
 import { readdirSync, readFileSync } from 'fs';
@@ -80,10 +80,12 @@ app.set('trust proxy', 1); // Trust first proxy (Railway) so rate limiters see r
 const PORT = process.env.PORT || 3001;
 
 // Load valid project slugs from projects/ directory at startup
-// Used to reject unknown X-Project headers (prevents unbounded table creation)
+// Used to reject unknown X-Project headers (prevents unbounded table creation).
+// The checkout is REPO_ROOT (repo-root.ts), the same one every project file is
+// read from, so the allowlist and the projects it admits always agree.
 let validProjectSlugs: Set<string> = new Set();
 try {
-  const projectsDir = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..'), 'projects');
+  const projectsDir = path.join(REPO_ROOT, 'projects');
   const entries = readdirSync(projectsDir, { withFileTypes: true });
   validProjectSlugs = new Set(
     entries.filter(e => e.isDirectory()).map(e => e.name)
@@ -107,9 +109,9 @@ const { gateway: openai, direct: openaiDirect, realtimeKey: OPENAI_REALTIME_KEY 
   const lacking: string[] = [];
   for (const slug of validProjectSlugs) {
     try {
-      const cfg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'projects', slug, 'project.json'), 'utf-8'));
-      if (cfg.enableVoice === true && !openaiDirect) lacking.push(`${slug} (enableVoice: TTS)`);
-      if (cfg.enableRealtime === true && !OPENAI_REALTIME_KEY) lacking.push(`${slug} (enableRealtime)`);
+      const flags = resolveProjectFlags(JSON.parse(readFileSync(path.join(REPO_ROOT, 'projects', slug, 'project.json'), 'utf-8')));
+      if (flags.enableVoice && !openaiDirect) lacking.push(`${slug} (enableVoice: TTS)`);
+      if (flags.enableRealtime && !OPENAI_REALTIME_KEY) lacking.push(`${slug} (enableRealtime)`);
     } catch { /* no project.json: nothing configured */ }
   }
   if (lacking.length > 0) {
@@ -429,6 +431,11 @@ async function readProjectConfig(slug: string): Promise<Record<string, any>> {
   }
 }
 
+/** The project's flags, resolved by chat-core's resolveProjectFlags from its project.json. */
+async function readProjectFlags(slug: string): Promise<ResolvedFlags> {
+  return resolveProjectFlags(await readProjectConfig(slug));
+}
+
 function requestProjectSlug(req: express.Request): string {
   const header = req.headers['x-project'];
   const slug = typeof header === 'string' ? header.trim().replace(/_+$/, '') : '';
@@ -466,8 +473,7 @@ type AccessState = 'open' | 'ok' | 'unconfigured' | 'missing' | 'expired';
 // boot check above only for closures created after it.
 const accessState = async (req: express.Request): Promise<AccessState> => {
   const slug = requestProjectSlug(req);
-  const config = await readProjectConfig(slug);
-  if (config.requireAccessCode !== true) return 'open';
+  if (!(await readProjectFlags(slug)).requireAccessCode) return 'open';
 
   // A project that asks to be gated but has no code configured must FAIL CLOSED.
   // Falling through to "no code, so allow everyone" would silently publish it.
@@ -576,8 +582,7 @@ async function writeFileAtomic(dest: string, body: Buffer): Promise<void> {
 
 app.post('/api/access', accessLimiter, async (req, res) => {
   const slug = requestProjectSlug(req);
-  const config = await readProjectConfig(slug);
-  if (config.requireAccessCode !== true) {
+  if (!(await readProjectFlags(slug)).requireAccessCode) {
     return res.json({ success: true, token: null, required: false });
   }
   const configured = await getAccessCode(slug);
@@ -787,14 +792,8 @@ app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, 
 
     // Per-project opt-in: realtime is inert unless the project enables it.
     const slug = (activeProjectPrefix() || '').replace(/_+$/, '') || 'demo';
-    let enableRealtime = false;
-    try {
-      const cfg = JSON.parse(
-        await fs.readFile(path.join(REPO_ROOT, 'projects', slug, 'project.json'), 'utf-8')
-      );
-      enableRealtime = cfg.enableRealtime === true;
-    } catch { /* default off */ }
-    if (!enableRealtime) {
+    // No project.json resolves to every default: off.
+    if (!(await readProjectFlags(slug)).enableRealtime) {
       return res.status(403).json({ error: 'Realtime voice is not enabled for this project' });
     }
 
@@ -1939,8 +1938,8 @@ app.get('/api/vignettes', requireAccessCode, async (req, res) => {
     const wanted = typeof req.query.vignette === 'string' ? req.query.vignette
       : typeof req.query.doc === 'string' ? req.query.doc : null;
     if (wanted !== null) {
-      const config = await readProjectConfig(requestProjectSlug(req));
-      if (config.requireKnownVignette === true && !vignettes.some(v => v.key === wanted)) {
+      const { requireKnownVignette } = await readProjectFlags(requestProjectSlug(req));
+      if (requireKnownVignette && !vignettes.some(v => v.key === wanted)) {
         return res.status(404).json({ error: 'No pack for this vignette', code: 'unknown_vignette' });
       }
     }

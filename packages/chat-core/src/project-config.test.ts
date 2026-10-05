@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveProjectFlags, talkContradictions, TALK_IMPLIED } from './project-config.js';
+import { resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -73,6 +73,14 @@ test('talkManifest is only a flag; talkPublicUrl and docRefs pass through', () =
   assert.equal(f.talkPublicUrl, 'https://example.org/{slug}');
   assert.deepEqual(f.docRefs, { a: 1 });
   assert.equal(resolveProjectFlags({ talkManifest: '' }).talkManifest, false);
+});
+
+test('the talk manifest path is there exactly when the flag is', () => {
+  assert.equal(talkManifestPath({ talkManifest: 'projects/x/manifest.json' }), 'projects/x/manifest.json');
+  for (const cfg of [{}, { talkManifest: '' }, { talkManifest: true }, { talkManifest: { path: 'x' } }]) {
+    assert.equal(talkManifestPath(cfg), null, JSON.stringify(cfg));
+    assert.equal(resolveProjectFlags(cfg).talkManifest, false, JSON.stringify(cfg));
+  }
 });
 
 test('contradictions: talk with formless:false or enableFeedback:true', () => {

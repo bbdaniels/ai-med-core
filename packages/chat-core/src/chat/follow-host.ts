@@ -31,7 +31,7 @@
 import { STRUCTURED_INSTRUCTION, type PromptInput } from './prompt.js';
 import type { ChatMessage, FollowHostConfig, HistoryMessage } from './types.js';
 
-/** The history cap when a project sets none: room for a long session on gpt-4o-mini's 128k context. */
+/** The history cap when a project sets none: room for a long session well inside a 128k context (gpt-4.1-mini has 1M). */
 export const DEFAULT_HISTORY_TOKENS = 24_000;
 
 /** A rough token count (four characters a token), the estimate the deck tooling uses too. */

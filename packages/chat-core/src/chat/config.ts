@@ -4,14 +4,14 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { ChatProjectConfig, FollowHostConfig, KnownChatModel, RetrievalScope } from './types.js';
+import type { ChatProjectConfig, FollowHostConfig, RetrievalScope } from './types.js';
 import { DEFAULT_HISTORY_TOKENS } from './follow-host.js';
-import { KNOWN_CHAT_MODELS } from './usage.js';
+import { DEFAULT_CHAT_MODEL, KNOWN_CHAT_MODELS, type KnownChatModel } from './usage.js';
 import { groundingSets as declaredGroundingSets, resolveProjectFlags } from '../project-config.js';
 
 /**
  * Read the project's chat settings. A project.json that is missing or does not
- * parse yields the defaults (no followups, no logging, no index, gpt-4o-mini).
+ * parse yields the defaults (no followups, no logging, no index, DEFAULT_CHAT_MODEL).
  * `usageProject` is recorded as is, for token_usage.
  */
 export async function loadChatProjectConfig(repoRoot: string, slug: string, usageProject: string): Promise<ChatProjectConfig> {
@@ -24,7 +24,7 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   let logConversations = false;
   let readingsIndexPath: string | null = null;
   let readingsQueryLanguage: string | null = null;
-  let chatModel: KnownChatModel = 'gpt-4o-mini';
+  let chatModel: KnownChatModel = DEFAULT_CHAT_MODEL;
   let groundingFile: string | null = null;
   let groundingSets: string[] = [];
   let retrievalScope: RetrievalScope = 'corpus';
@@ -63,10 +63,9 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     } else if (typeof cfg.readingsQueryLanguage === 'string') {
       console.warn(`[readings] ${slug}: unusable readingsQueryLanguage, ignoring`);
     }
-    // Per-project chat model. gpt-4o-mini is the platform default and is right
-    // for the roleplay projects; a grounded advisor that must attribute a year
-    // to the correct paper needs the stronger model. Restricted to models the
-    // cost table knows, so a typo cannot silently log every call as free.
+    // Per-project chat model, overriding DEFAULT_CHAT_MODEL. Restricted to
+    // models the price table knows, so a typo cannot silently log every call
+    // as free.
     if (typeof cfg.chatModel === 'string' && KNOWN_CHAT_MODELS.has(cfg.chatModel as KnownChatModel)) {
       chatModel = cfg.chatModel as KnownChatModel;
     } else if (typeof cfg.chatModel === 'string') {

@@ -2,6 +2,7 @@
  * Types shared by the chat pipeline (`POST /api/chat`): one grounded turn over a
  * document, for either application on the engine.
  */
+import type { KnownChatModel } from './usage.js';
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 export interface ChatMessage { role: ChatRole; content: string }
@@ -16,9 +17,6 @@ export interface HistoryMessage extends ChatMessage { documentKey?: string }
 
 /** The two applications: the clinical simulator, and document chat. */
 export type AppType = 'simulation' | 'talk';
-
-/** Chat models a project may select; each has a price in estimateCost. */
-export type KnownChatModel = 'gpt-4o-mini' | 'gpt-4o';
 
 /** One completion's usage as the API returns it. */
 export interface TokenUsage { prompt_tokens?: number; completion_tokens?: number; [k: string]: unknown }
@@ -40,7 +38,7 @@ export interface ChatProjectConfig {
   readingsIndexPath: string | null;
   /** The language the corpus is written in, when queries must be restated into it. */
   readingsQueryLanguage: string | null;
-  /** Resolved; the default is 'gpt-4o-mini'. */
+  /** Resolved; the default is DEFAULT_CHAT_MODEL (usage.ts). */
   chatModel: KnownChatModel;
   /** The declared grounding file, repo-relative; null looks in the legacy locations. */
   groundingFile: string | null;

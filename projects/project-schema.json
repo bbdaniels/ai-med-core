@@ -213,8 +213,8 @@
     },
     "chatModel": {
       "type": "string",
-      "enum": ["gpt-4o-mini", "gpt-4o"],
-      "description": "Chat model override; must be in KNOWN_CHAT_MODELS in packages/api/src/server.ts"
+      "enum": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+      "description": "Chat model override; the keys of CHAT_MODEL_PRICES in packages/chat-core/src/chat/usage.ts (usage.test.ts checks this enum against them)"
     },
     "readingsIndex": {
       "type": "string",

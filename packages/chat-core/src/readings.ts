@@ -643,7 +643,8 @@ export const SEARCH_READINGS_TOOL = {
  * change and zero in the trials after it. The fix here removes a false promise
  * from the model's context; it is not a fix for that behavior. That one is a
  * model-capability question: gpt-4o called the tool on such follow-ups, the
- * default gpt-4o-mini does not, and that project's system prompt is what keeps the
+ * then-default gpt-4o-mini did not (measured before the default became
+ * gpt-4.1-mini on 2026-10-05, which has not been re-measured), and that project's system prompt is what keeps the
  * ungrounded answer honest ("no article in the Legal Library states it") rather
  * than letting it reach for the nearest article. Do not re-pin a bigger chatModel
  * to paper over this without pricing it first: it raises every turn on the

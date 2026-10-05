@@ -9,14 +9,15 @@ import fs from 'fs/promises';
 import { logTokenUsage, activeProjectPrefix, getProjectSetting } from './database.js';
 import { clientForPaymentSource } from '@ai-med/chat-core';
 import { REPO_ROOT } from './repo-root.js';
-import { estimateCost } from '@ai-med/chat-core';
+import { cachedTokens, DEFAULT_CHAT_MODEL, estimateCost } from '@ai-med/chat-core';
 
 async function resolveGradingClient(projectSlug: string): Promise<OpenAI> {
   const paymentSource = await getProjectSetting(projectSlug, 'payment_source');
   return clientForPaymentSource(paymentSource);
 }
 
-const MODEL = 'gpt-4o-mini'; // Fast, lightweight model for real-time student feedback
+// Real-time student feedback runs on the platform model (DEFAULT_CHAT_MODEL).
+const MODEL = DEFAULT_CHAT_MODEL;
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -294,7 +295,7 @@ CRITICAL: ALL text in your response MUST be written in the language with ISO 639
           model: MODEL,
           prompt_tokens: u.prompt_tokens || 0,
           completion_tokens: u.completion_tokens || 0,
-          estimated_cost: estimateCost(MODEL, u.prompt_tokens || 0, u.completion_tokens || 0),
+          estimated_cost: estimateCost(MODEL, u.prompt_tokens || 0, u.completion_tokens || 0, cachedTokens(u)),
         });
       }
 

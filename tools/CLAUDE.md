@@ -1596,10 +1596,11 @@ answered from the legal index and flagged in scope; the tool description was
 ruled out as the cause. Ben unpinned it on 2026-08-28 (`30468ce`) because the
 $10/month L3 ceiling is a hard capacity limit and heavy classroom usage could
 exhaust it mid-month, accepting "the Vietnamese edge case's occasional
-adjacent-article citation" as the tradeoff. **The advisor therefore runs on
-`gpt-4o-mini` today.** ppol5013 still sets the key, under a comment in
-`server.ts` that a grounded advisor attributing a claim to the right source
-needs the stronger model.
+adjacent-article citation" as the tradeoff. It ran on `gpt-4o-mini` until
+2026-10-05, when the platform default (`DEFAULT_CHAT_MODEL`,
+`packages/chat-core/src/chat/usage.ts`) became `gpt-4.1-mini` and ppol5013 and
+papers dropped their `chatModel` keys with it. The measurements below are of
+the two `gpt-4o` models and have not been repeated on `gpt-4.1-mini`.
 
 What that tradeoff costs was measured on 2026-09-07 against the working tree,
 with `projects/haivn_eip/tools/probe-facility-levels.mjs` (described in `projects/haivn_eip/README.md`) and single-probe replays of its probes 7

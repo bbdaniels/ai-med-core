@@ -108,7 +108,7 @@ See [packages/api/CLAUDE.md](packages/api/CLAUDE.md#transcript-storage-architect
 
 **Two-Tier Architecture:**
 1. **Real-time student feedback** (`POST /api/grade-session`):
-   - Powered by `gpt-4o-mini` for fast, focused feedback (2-4 strengths, 3-5 growth areas)
+   - Powered by the platform model (`DEFAULT_CHAT_MODEL`, `gpt-4.1-mini`) for fast, focused feedback (2-4 strengths, 3-5 growth areas)
    - Enabled per-project via `project.json` `enableFeedback: true`
    - Frontend calls after all forms submitted, displays carousel of feedback cards
    - Grades against scoring rubric (4Ms) + assessment checklist (clinical competencies)

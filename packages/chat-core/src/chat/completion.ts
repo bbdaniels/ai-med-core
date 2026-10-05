@@ -4,7 +4,7 @@
  * The pipeline is handed its client (chosen per request by payment source) and
  * never builds or fetches one itself.
  */
-import type { KnownChatModel } from './types.js';
+import type { KnownChatModel } from './usage.js';
 
 /** The strict json_schema a structured project asks for. */
 export const CHAT_RESPONSE_SCHEMA = {

@@ -131,7 +131,7 @@ Useful for eyeballing a transcript during local development; worthless as a reco
 ## Grading & Feedback Architecture
 
 **Two-Tier System:**
-1. **Real-time feedback** (student-facing): `gpt-4o-mini` via `POST /api/grade-session`
+1. **Real-time feedback** (student-facing): the platform model (`DEFAULT_CHAT_MODEL` in chat-core's `chat/usage.ts`, `gpt-4.1-mini`) via `POST /api/grade-session`
 2. **Batch evaluation** (instructor-facing): `claude-opus-4` via GitHub Actions cron
 
 ### Real-Time Grading Flow (`/api/grade-session`)

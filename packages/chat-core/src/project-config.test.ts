@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  followHostContradictions, groundingSetFile, groundingSetFiles, groundingSets, groundingSetsContradictions, projectUrlSlug, rememberConversationContradictions, resolveProjectFlags, talkContradictions,
+  documentSetGroundingFiles, followHostContradictions, groundingSetFile, groundingSetFiles, groundingSets, groundingSetsContradictions, projectUrlSlug, rememberConversationContradictions, resolveProjectFlags, talkContradictions,
   talkManifestPath, TALK_IMPLIED, urlAliasContradictions, urlAliases,
 } from './project-config.js';
 
@@ -274,6 +274,12 @@ test('groundingSets: the well-formed names, without repeats; each set\'s file is
   assert.equal(groundingSetFile('proj', 'deck-a'), 'projects/proj/grounding/deck-a.md');
   assert.deepEqual(groundingSetFiles('proj', { groundingSets: ['deck-a', 'deck-b'] }),
     ['projects/proj/grounding/deck-a.md', 'projects/proj/grounding/deck-b.md']);
+});
+
+test('documentSetGroundingFiles: one file per well-formed document set the keys form, by the groundingSets rule', () => {
+  assert.deepEqual(documentSetGroundingFiles('proj', []), []);
+  assert.deepEqual(documentSetGroundingFiles('proj', ['deck-a--one', 'deck-a--two', 'paper', 'deck-b--x--y', 'x.y', '../z--1']),
+    ['projects/proj/grounding/deck-a.md', 'projects/proj/grounding/paper.md', 'projects/proj/grounding/deck-b.md']);
 });
 
 test('groundingSetsContradictions: each set is some vignette\'s set, and grounding/ holds only declared files', () => {

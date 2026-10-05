@@ -13,6 +13,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import { documentSetGroundingFiles, groundingSetFiles, tabContentFiles } from './project-config.js';
 
 /** A repo-relative path under projects/, normalized; null for anything else. */
 export function projectContentRelPath(rel: string): string | null {
@@ -50,4 +51,27 @@ export async function resolveProjectContentFile(rel: string, roots: ContentRoots
     } catch { /* try the next */ }
   }
   return null;
+}
+
+/**
+ * Every path a project's private store may hold, repo-relative and normalized:
+ * the files its tabs name, the files of the grounding sets it lists
+ * (`groundingSets`), and the grounding set file of each document set its
+ * documents form (`documentKeys`; documentSetGroundingFiles). The last lets a
+ * set's file be uploaded before the project.json that lists the set is
+ * deployed, the same order as the documents themselves: first opt-in is one
+ * content push, then the merge.
+ *
+ * The one definition. The API's upload route accepts exactly these paths (with
+ * the deployed project.json and the deployed documents' keys), and
+ * tools/push-content.ts removes from the store only what is not among them, so
+ * the push never deletes a file the store would take back.
+ */
+export function privateStoreFiles(slug: string, cfg: Record<string, any>, documentKeys: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const f of [...tabContentFiles(cfg), ...groundingSetFiles(slug, cfg), ...documentSetGroundingFiles(slug, documentKeys)]) {
+    const clean = projectContentRelPath(f);
+    if (clean) out.add(clean);
+  }
+  return out;
 }

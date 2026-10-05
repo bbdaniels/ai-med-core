@@ -208,6 +208,22 @@ export function rememberConversationContradictions(cfg: Record<string, any>): st
 }
 
 /**
+ * Every file a project.json's tabs point at (`tabs[].contentFile`, a path or a
+ * path per language), as written, without repeats, in order. The validator
+ * checks each exists, the content push uploads the private ones, and the API's
+ * private store accepts them (content-files.ts, privateStoreFiles).
+ */
+export function tabContentFiles(cfg: Record<string, any>): string[] {
+  const out = new Set<string>();
+  for (const tab of Array.isArray(cfg.tabs) ? cfg.tabs : []) {
+    const files = typeof tab?.contentFile === 'string' ? [tab.contentFile]
+      : tab?.contentFile && typeof tab.contentFile === 'object' ? Object.values(tab.contentFile) : [];
+    for (const f of files) if (typeof f === 'string' && f) out.add(f);
+  }
+  return [...out];
+}
+
+/**
  * A grounding set's name: a document-set prefix that can be a file name. No
  * dots or slashes (it becomes a path), and no "--" (a set is what comes before
  * the first one).
@@ -237,6 +253,20 @@ export function groundingSetFile(slug: string, set: string): string {
 /** Every grounding set file a project.json names, repo-relative, in declaration order. */
 export function groundingSetFiles(slug: string, cfg: Record<string, any>): string[] {
   return groundingSets(cfg).map(set => groundingSetFile(slug, set));
+}
+
+/**
+ * The grounding set files a project could list, given its documents' keys: one
+ * `projects/<slug>/grounding/<set>.md` per document set they form whose name
+ * is a well-formed set name (the same rule as `groundingSets`), in first-seen
+ * order. The API's private store accepts these as well as the listed sets'
+ * files, so a set's file can be uploaded before the project.json that lists
+ * it is deployed (first opt-in is one content push, then the merge, the same
+ * order as the documents themselves), while a path that names no existing
+ * document set is still refused. See content-files.ts, privateStoreFiles.
+ */
+export function documentSetGroundingFiles(slug: string, documentKeys: string[]): string[] {
+  return groundingSetFiles(slug, { groundingSets: documentKeys.map(documentSet) });
 }
 
 /**

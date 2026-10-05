@@ -76,9 +76,9 @@ function registryTree(extra: Record<string, unknown> = {}): string {
 
 // Asynchronous on purpose: a synchronous spawn would block the test server's
 // fake gateway, which answers from this process.
-function runPush(root: string): Promise<{ code: number | null; out: string }> {
+function runPush(root: string, project = 'demo', base = h.base): Promise<{ code: number | null; out: string }> {
   return new Promise(resolve => {
-    const child = spawn(process.execPath, ['--import', TSX, PUSH_TOOL, 'demo', '--url', h.base], {
+    const child = spawn(process.execPath, ['--import', TSX, PUSH_TOOL, project, '--url', base], {
       cwd: root,
       env: { PATH: process.env.PATH, HOME: process.env.HOME, ADMIN_PASSPHRASE: TEST_PASSPHRASE },
     });
@@ -97,6 +97,7 @@ before(async () => {
 
 after(async () => {
   await h?.stop();
+  await opt?.stop();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -153,4 +154,100 @@ test('with the set file in the checkout, the same registry pushes', async () => 
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'grounding', `${SET}.md`), 'FIXTURE set notes');
   const r = await runPush(root);
   assert.equal(r.code, 0, r.out);
+});
+
+// First opt-in: the set's file goes up in the same push as the documents,
+// before the project.json that lists the set is deployed (the same order as
+// the documents). The deployment below is a fixture tree whose project.json
+// does not list the set yet, as main's does until the merge. The slug is
+// "decks" only because a set file is uploaded when it is private, which means
+// gitignored by this repository's .gitignore, and projects/decks/grounding/*.md
+// is the gitignored set path; every key, note and prompt here is invented.
+const OPT_PROJECT = 'decks';
+const OPT_SET = 'fixture-optin';
+const OPT_KEYS = [`${OPT_SET}--one`, `${OPT_SET}--two`];
+const OPT_SET_FILE = `projects/${OPT_PROJECT}/grounding/${OPT_SET}.md`;
+
+/** A project.json for the fixture deck project; `groundingSets` only when given. */
+function optProjectJson(groundingSets?: string[]): string {
+  return JSON.stringify({
+    name: OPT_PROJECT,
+    displayName: 'Fixture opt-in',
+    frontend: 'chat',
+    cases: {
+      systemPrompt: `projects/${OPT_PROJECT}/system-prompt.md`,
+      vignettes: OPT_KEYS.map(key => ({ key, template: 'slide', file: `projects/${OPT_PROJECT}/cases/slide/${key}.md` })),
+    },
+    languages: ['en'],
+    ...(groundingSets ? { groundingSets } : {}),
+    deployment: { tablePrefix: OPT_PROJECT },
+  }, null, 2);
+}
+
+/** A checkout of the fixture project: its registry, and the private files when `withFiles`. */
+function optTree(base: string, groundingSets: string[] | undefined, withFiles: { slides: boolean; notes: boolean }): string {
+  const root = fs.mkdtempSync(path.join(tmp, base));
+  const dir = path.join(root, 'projects', OPT_PROJECT);
+  fs.mkdirSync(path.join(dir, 'cases', 'slide'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'project.json'), optProjectJson(groundingSets));
+  fs.writeFileSync(path.join(dir, 'system-prompt.md'), 'FIXTURE opt-in prompt.');
+  if (withFiles.slides) for (const k of OPT_KEYS) fs.writeFileSync(path.join(dir, 'cases', 'slide', `${k}.md`), `FIXTURE slide ${k}`);
+  if (withFiles.notes) {
+    fs.mkdirSync(path.join(dir, 'grounding'), { recursive: true });
+    fs.writeFileSync(path.join(root, OPT_SET_FILE), 'FIXTURE opt-in deck notes');
+  }
+  return root;
+}
+
+let opt: Harness;
+
+test('first opt-in to a grounding set is one push, before the merge that lists the set', async () => {
+  // The deployment: its project.json lists no set, and it holds no documents yet.
+  const deployed = optTree('opt-deployed-', undefined, { slides: false, notes: false });
+  opt = await startServer({ root: deployed, env: { PRIVATE_CONTENT_ROOT: path.join(tmp, 'opt-store') } });
+  const store = async () => (await opt.admin(OPT_PROJECT).listPrivateContent()).files.map(f => f.path);
+  const refused = /400[^]*neither a tab contentFile nor a grounding set file/;
+
+  // A set file for a document set the deployment does not hold is refused.
+  await assert.rejects(opt.admin(OPT_PROJECT).putPrivateContent(OPT_SET_FILE, Buffer.from('X')), refused);
+
+  // The author's push from the branch: the documents, then the set's file, in one run.
+  const branch = optTree('opt-branch-', [OPT_SET], { slides: true, notes: true });
+  const r = await runPush(branch, OPT_PROJECT, opt.base);
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(await store(), [OPT_SET_FILE]);
+
+  // Before the merge, CI's push from main (another merge) does not list the set:
+  // it keeps the file, as it keeps the deck's documents.
+  const main = optTree('opt-main-', undefined, { slides: false, notes: false });
+  const between = await runPush(main, OPT_PROJECT, opt.base);
+  assert.equal(between.code, 0, between.out);
+  assert.deepEqual(await store(), [OPT_SET_FILE]);
+
+  // After the merge, CI's checkout lists the set and has neither private file: it passes.
+  const ci = optTree('opt-ci-', [OPT_SET], { slides: false, notes: false });
+  const after = await runPush(ci, OPT_PROJECT, opt.base);
+  assert.equal(after.code, 0, after.out);
+  assert.deepEqual(await store(), [OPT_SET_FILE]);
+
+  // Still refused: a well-formed set no deployed document forms, a name that is
+  // not a set name, a file beside the sets, and anything below grounding/.
+  for (const rel of [
+    `projects/${OPT_PROJECT}/grounding/fixture-unknown.md`,
+    `projects/${OPT_PROJECT}/grounding/${OPT_KEYS[0]}.md`,
+    `projects/${OPT_PROJECT}/grounding/${OPT_SET}.txt`,
+    `projects/${OPT_PROJECT}/grounding/notes.txt`,
+    `projects/${OPT_PROJECT}/grounding/sub/${OPT_SET}.md`,
+    `projects/${OPT_PROJECT}/${OPT_SET}.md`,
+  ]) {
+    await assert.rejects(opt.admin(OPT_PROJECT).putPrivateContent(rel, Buffer.from('X')), refused, rel);
+  }
+});
+
+test('after the merge, a listed set whose file is in neither the checkout nor the store still stops the push', async () => {
+  // The same deployment, now with a second set listed whose file was never pushed.
+  const ci = optTree('opt-ci-missing-', [OPT_SET, 'fixture-never'], { slides: false, notes: false });
+  const r = await runPush(ci, OPT_PROJECT, opt.base);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /ABORT: 1 grounding set\(s\)/);
 });

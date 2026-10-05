@@ -39,10 +39,11 @@ import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { AdminApiClient } from './lib/api-client.js';
-import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
+import { isPrivateFile } from './lib/private-files.js';
 import { planStaleRemoval, refusalReason } from './lib/stale-removal.js';
 import { groundingSetsWithoutContentMessage, vignettesWithoutContent, withoutContentMessage } from './lib/registry-guard.js';
-import { groundingSetFiles } from '../packages/chat-core/src/project-config.js';
+import { groundingSetFiles, tabContentFiles } from '../packages/chat-core/src/project-config.js';
+import { privateStoreFiles } from '../packages/chat-core/src/content-files.js';
 
 interface ProjectJson {
   name: string;
@@ -363,10 +364,16 @@ async function main() {
         if (!dryRun) await client.putPrivateContent(rel, buf);
         uploaded++;
       }
-      const named = new Set(privateFiles);
+      // A stored file stays while the store would accept it (chat-core's
+      // privateStoreFiles, the upload route's own rule) for the documents that
+      // stay deployed: so a set's file pushed before the merge that lists the
+      // set survives a push from a checkout that does not list it yet.
+      const removedNow = new Set(plan.remove);
+      const keptKeys = [...localKeys, ...remoteKeys.filter(k => !removedNow.has(k))];
+      const named = privateStoreFiles(projectName, project, keptKeys);
       const stale = store.files.map(f => f.path).filter(p => !named.has(p));
       for (const rel of stale) {
-        console.log(`  Remove ${rel} (no longer named in project.json)`);
+        console.log(`  Remove ${rel} (no longer named in project.json, nor the file of a deployed document set)`);
         if (!dryRun) await client.deletePrivateContent(rel);
       }
       const missingEverywhere = privateFiles.filter(rel => !present.includes(rel) && !remote.has(rel));

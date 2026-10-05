@@ -44,8 +44,9 @@ const PROJECT_JSON = {
   displayName: 'Fixture deck',
   frontend: 'chat',
   cases: { systemPrompt: `projects/${PROJECT}/system-prompt.md`, vignettes: [] },
-  // The deck notes are the project's grounding file, as a sync writes it.
-  groundingFile: `projects/${PROJECT}/deck-notes.md`,
+  // The deck is a grounding set, as a sync lists it: its notes are
+  // grounding/<deck>.md, which reach a deployment in the private store.
+  groundingSets: [DECK],
   languages: ['en'],
   chatModel: 'gpt-4o-mini',
   app: 'talk',
@@ -78,7 +79,6 @@ function writeFixtureCheckout(dir: string): void {
   fs.writeFileSync(path.join(deck, 'project.json'), JSON.stringify(PROJECT_JSON, null, 2));
   fs.writeFileSync(path.join(deck, 'system-prompt.md'), SYSTEM_PROMPT);
   fs.writeFileSync(path.join(deck, 'languages.json'), JSON.stringify(LANGUAGES, null, 2));
-  fs.writeFileSync(path.join(deck, 'deck-notes.md'), buildDeckVignettes(FIXTURES, DECK).notes);
   const open = path.join(dir, 'projects', OPEN);
   fs.mkdirSync(open, { recursive: true });
   fs.writeFileSync(path.join(open, 'project.json'), JSON.stringify({
@@ -96,7 +96,7 @@ before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'decks-test-'));
   root = path.join(tmp, 'checkout');
   writeFixtureCheckout(root);
-  h = await startServer({ root, accessCodes: { [PROJECT]: CODE } });
+  h = await startServer({ root, accessCodes: { [PROJECT]: CODE }, env: { PRIVATE_CONTENT_ROOT: path.join(tmp, 'store') } });
 
   // The project lands before any deck is synced. Record what it serves with no
   // vignettes at all, before the fixtures go in (asserted in a test below).
@@ -114,10 +114,14 @@ before(async () => {
     };
   }
 
-  // Content goes in the way push-content.ts puts it: the admin API.
+  // Content goes in the way push-content.ts puts it: the admin API, the slides
+  // to the database and the deck notes (gitignored, like the slides) to the
+  // private store.
   const admin = h.admin(PROJECT);
+  const build = buildDeckVignettes(FIXTURES, DECK);
   await admin.saveSystemPrompt(SYSTEM_PROMPT);
-  for (const v of buildDeckVignettes(FIXTURES, DECK).vignettes) await admin.saveVignette(v.key, v.content);
+  for (const v of build.vignettes) await admin.saveVignette(v.key, v.content);
+  await admin.putPrivateContent(`projects/${PROJECT}/${deckNotesFile(DECK)}`, Buffer.from(build.notes));
 });
 
 after(async () => {
@@ -133,7 +137,7 @@ test('the loader turns a packs folder into <deck>--<slide-id> vignettes', () => 
   assert.ok(main.content.startsWith('SLIDE PACK\nSlide id: main-effect'));
   assert.doesNotMatch(main.content, /200 invented clinics/);                // the deck notes are not in a vignette
   assert.ok(build.notes.startsWith('DECK NOTES (true for every slide of this deck)\nDeck: '));
-  assert.match(build.notes, /200 invented clinics/);                        // they are the grounding file, sent once
+  assert.match(build.notes, /200 invented clinics/);                        // they are the deck's grounding set, sent once
   assert.match(main.content, /the coefficient is 0\.111/);                  // its own slide
   assert.doesNotMatch(main.content, /0\.777/);                              // not the other slide
   for (const v of build.vignettes) assert.match(v.key, /^[A-Za-z0-9_-]{1,100}$/);
@@ -161,7 +165,7 @@ test('a sync writes each deck\'s notes as its grounding set, and a second deck k
   const checkout = fs.mkdtempSync(path.join(tmp, 'two-deck-checkout-'));
   const dir = path.join(checkout, 'projects', PROJECT);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify({ ...PROJECT_JSON, groundingFile: undefined }, null, 2));
+  fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify({ ...PROJECT_JSON, groundingSets: undefined }, null, 2));
   fs.writeFileSync(path.join(dir, 'languages.json'), JSON.stringify(LANGUAGES, null, 2));
   const config = () => JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
 
@@ -293,7 +297,7 @@ test('chat needs the access code, and no model call is made without it', async (
   assert.equal(completions().length, before);
 });
 
-test('prompt assembly: system prompt, then the deck pack, then this slide only', async () => {
+test('prompt assembly: system prompt, then the deck notes, then this slide only', async () => {
   const token = await accessToken();
   h.fake.enqueue({ content: {
     answer: 'The coefficient is 0.111 (Table F1, row Training, column 1). The design is randomized.',

@@ -12,8 +12,10 @@
 // its own temp root, so it reads no real project and runs the same in the
 // public mirror.
 //
-// Also: the private store accepts a declared set's file and refuses any other
-// path under grounding/ (the admin upload push-content uses).
+// Also: the private store accepts a declared set's file and refuses a set no
+// document forms and any other path under grounding/ (the admin upload
+// push-content uses; a set's file before its set is listed is
+// registry-guard.test.ts, "first opt-in").
 //
 // The snapshot is test-fixtures/grounding-sets/snapshots.json; every document,
 // note and prompt in it is invented here.
@@ -129,12 +131,12 @@ function pin(name: string, turns: unknown[]): void {
 const system = (t: { sent: any[][] }) => t.sent[0][0].content as string;
 const notes = (s: string) => [NOTES_A, NOTES_B, NOTES_PROJECT].filter(n => s.includes(n));
 
-test('the private store takes a declared set\'s file and refuses any other path under grounding/', async () => {
+test('the private store takes a declared set\'s file and refuses an unknown set and any other path under grounding/', async () => {
   // Through the client push-content uses: a declared set's file is accepted.
   await h.admin(SETS).putPrivateContent(`projects/${SETS}/grounding/set-b.md`, Buffer.from(NOTES_B));
   const listed = await h.admin(SETS).listPrivateContent();
   assert.deepEqual(listed.files.map(f => f.path), [`projects/${SETS}/grounding/set-b.md`]);
-  // A set the project does not list, and a file beside the sets, are refused.
+  // A set no document of the project forms, and a file beside the sets, are refused.
   for (const rel of [`projects/${SETS}/grounding/set-z.md`, `projects/${SETS}/grounding/notes.txt`]) {
     await assert.rejects(h.admin(SETS).putPrivateContent(rel, Buffer.from('X')), /400[^]*neither a tab contentFile nor a grounding set file/);
   }

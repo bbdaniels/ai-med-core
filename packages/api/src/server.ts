@@ -3,7 +3,7 @@ import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
 import {
   openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost, type ResolvedFlags,
-  groundingSetFiles, projectContentRelPath, privateContentPath as privateContentPathIn,
+  privateStoreFiles, projectContentRelPath, privateContentPath as privateContentPathIn,
   resolveProjectContentFile as resolveContentFile,
 } from '@ai-med/chat-core';
 import path from 'path';
@@ -530,28 +530,15 @@ const privateContentPath = (rel: string): string | null => privateContentPathIn(
 const resolveProjectContentFile = (rel: string): Promise<string | null> =>
   resolveContentFile(rel, { repoRoot: REPO_ROOT, privateRoot: PRIVATE_CONTENT_ROOT });
 
-/** Every file a project's tabs point at, all languages, as repo-relative paths. */
-function projectTabContentFiles(config: Record<string, any>): Set<string> {
-  const out = new Set<string>();
-  for (const tab of Array.isArray(config.tabs) ? config.tabs : []) {
-    const files = typeof tab?.contentFile === 'string' ? [tab.contentFile]
-      : Object.values(tab?.contentFile ?? {});
-    for (const f of files) {
-      const clean = typeof f === 'string' ? projectContentRelPath(f) : null;
-      if (clean) out.add(clean);
-    }
-  }
-  return out;
-}
-
 /**
- * Every path the private store may hold for a project: its tab files and its
- * grounding set files (project.json groundingSets). Nothing else is accepted.
+ * Every path the private store may hold for a project (chat-core's
+ * privateStoreFiles): its tab files, its listed grounding sets' files, and the
+ * grounding set file of each document set its deployed documents form, so a
+ * set's file can go up before the project.json that lists it is deployed, as
+ * the documents themselves can. Nothing else is accepted.
  */
-function projectStoreFiles(slug: string, config: Record<string, any>): Set<string> {
-  const out = projectTabContentFiles(config);
-  for (const f of groundingSetFiles(slug, config)) out.add(f);
-  return out;
+async function projectStoreFiles(slug: string, config: Record<string, any>): Promise<Set<string>> {
+  return privateStoreFiles(slug, config, (await getAllVignettes()).map(v => v.key));
 }
 
 /**
@@ -1629,9 +1616,12 @@ app.post('/api/admin/readings-index',
 //
 // Global admin only. A file may be stored only at a path the requesting
 // project's own project.json names as a tab contentFile or as a grounding set
-// file (groundingSets), so the store cannot be used for anything a project does
-// not actually serve. tools/push-content.ts
-// lists, uploads changed files, and removes ones project.json no longer names.
+// file (groundingSets), or at the grounding set file of a document set the
+// project's deployed documents form (projectStoreFiles), so the store cannot be
+// used for anything a project does not actually serve or is about to. The last
+// is what lets a first opt-in upload a set's file before the merge that lists
+// it, the same order as the documents. tools/push-content.ts lists, uploads
+// changed files, and removes ones project.json no longer names.
 
 /** A request path for this project's store, or an error to send. */
 async function privateContentTarget(req: express.Request):
@@ -1646,7 +1636,7 @@ async function privateContentTarget(req: express.Request):
   if (!rel || !dest || !rel.startsWith(`projects/${slug}/`)) {
     return { status: 403, error: `Path must lie under projects/${slug}/` };
   }
-  const referenced = projectStoreFiles(slug, await readProjectConfig(slug)).has(rel);
+  const referenced = (await projectStoreFiles(slug, await readProjectConfig(slug))).has(rel);
   return { rel, dest, referenced };
 }
 
@@ -1689,7 +1679,7 @@ app.put('/api/admin/private-content/*',
       const target = await privateContentTarget(req);
       if ('error' in target) return res.status(target.status).json({ error: target.error });
       if (!target.referenced) {
-        return res.status(400).json({ error: `${target.rel} is neither a tab contentFile nor a grounding set file in this project's project.json` });
+        return res.status(400).json({ error: `${target.rel} is neither a tab contentFile nor a grounding set file of this project (a set listed in its project.json, or one its deployed documents form)` });
       }
       const body = req.body as Buffer;
       if (!Buffer.isBuffer(body) || body.length === 0) {

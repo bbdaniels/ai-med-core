@@ -31,13 +31,3 @@ export function isPrivateFile(rel: string): boolean {
     return false;
   }
 }
-
-/** Every file a project.json's tabs point at, all languages, repo-relative. */
-export function tabContentFiles(project: { tabs?: Array<{ contentFile?: string | Record<string, string> }> }): string[] {
-  const out = new Set<string>();
-  for (const t of project.tabs ?? []) {
-    if (typeof t.contentFile === 'string') out.add(t.contentFile);
-    else if (t.contentFile) for (const f of Object.values(t.contentFile)) out.add(f);
-  }
-  return [...out];
-}

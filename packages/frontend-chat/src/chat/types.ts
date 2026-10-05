@@ -65,6 +65,10 @@ export interface LanguageUISection {
     nowOn?: string
     /** followHost: shown, with sending disabled, while the host's current page has no document. */
     noCurrentDocument?: string
+    /** rememberConversation: the header control that clears the saved thread and starts afresh. */
+    newConversation?: string
+    /** rememberConversation: the same control asking once more, on a long thread. */
+    newConversationConfirm?: string
   }
   feedback?: {
     loading: string

@@ -7,11 +7,17 @@
 // `pendingAssistantMessage` instead of being shown, and the page's player calls
 // `beginSpeaking()` while it fetches audio and `revealPending(message)` when the
 // text should appear. Without `speak` replies are shown at once.
+//
+// A page that remembers the conversation (the talk page of a project with
+// rememberConversation) passes `remember`: the thread is then saved to this
+// browser after every turn and brought back, in place of the opening, when the
+// page is opened again within the window (../remember-conversation.ts).
 
 import { useEffect, useRef, useState } from 'react';
 import { scrollListToBottom } from '../scroll-list';
 import { ChatSwitchedOffError, postChat } from './api';
 import { questionOn } from '../host-document';
+import { type GetStorage, forgetThread, hasQuestion, loadThread, saveThread, tokenForEpoch } from '../remember-conversation';
 import type { LanguagesJson, Message } from './types';
 
 export interface ChatSessionOptions {
@@ -38,7 +44,15 @@ export interface ChatSessionOptions {
   tagQuestions?: boolean;
   /** The current document's title, for tagQuestions. */
   documentTitle?: string;
+  /**
+   * rememberConversation: the storage key of this thread (null while no
+   * document is known) and how many days after its last turn it comes back.
+   * Absent or null, nothing is saved or read, as before.
+   */
+  remember?: { storageKey: string | null; days: number } | null;
 }
+
+const localStorageOf: GetStorage = () => window.localStorage;
 
 function randomToken(): string {
   const bytes = new Uint8Array(16);
@@ -47,7 +61,9 @@ function randomToken(): string {
 }
 
 export function useChatSession(o: ChatSessionOptions) {
-  const { active, documentKey, languageName, languageCode, langs, epoch, speak, onOpened, tagQuestions, documentTitle } = o;
+  const { active, documentKey, languageName, languageCode, langs, epoch, speak, onOpened, tagQuestions, documentTitle, remember } = o;
+  const storageKey = remember?.storageKey ?? null;
+  const rememberDays = remember?.days ?? 0;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -67,9 +83,14 @@ export function useChatSession(o: ChatSessionOptions) {
   // Guard against double-submit: isLoading state lags by a render, so rapid Enter+click
   // can bypass the isLoading check. This ref updates synchronously.
   const sendInFlightRef = useRef(false);
+  // rememberConversation: when the last turn landed (null until one has), and
+  // the token a restored thread brought back, with the epoch it belongs to.
+  const lastTurnAtRef = useRef<number | null>(null);
+  const restoredTokenRef = useRef<{ token: string; epoch: number } | null>(null);
 
   // The player has the audio (or gave up on it): show the reply and free the input.
   const revealPending = (message: Message) => {
+    lastTurnAtRef.current = Date.now();
     setMessages(prev => [...prev, message]);
     setPendingAssistantMessage(null);
     setAwaitingTTS(false);
@@ -88,8 +109,37 @@ export function useChatSession(o: ChatSessionOptions) {
     setInitialized(false);
   };
 
+  // A saved thread on this document set, within its window: shown in place of
+  // the opening, with its session token when that was saved intact (else the
+  // token already drawn carries on, and the thread is kept either way).
+  const restoreSaved = (): boolean => {
+    if (!storageKey) return false;
+    const saved = loadThread(localStorageOf, storageKey, rememberDays, Date.now());
+    if (!saved) return false;
+    setMessages(saved.messages);
+    lastTurnAtRef.current = saved.lastTurnAt;
+    if (saved.sessionToken) {
+      restoredTokenRef.current = { token: saved.sessionToken, epoch };
+      setSessionToken(saved.sessionToken);
+    }
+    onOpened?.(null);
+    setInitialized(true);
+    return true;
+  };
+
+  /**
+   * Forget the saved thread (New conversation). The page then calls reset()
+   * and draws a new epoch, so the opening and a fresh token follow.
+   */
+  const forgetSaved = () => {
+    if (storageKey) forgetThread(localStorageOf, storageKey);
+    lastTurnAtRef.current = null;
+    restoredTokenRef.current = null;
+  };
+
   const initializeConversation = async () => {
     if (!documentKey) return;
+    if (restoreSaved()) return;
 
     // If a hardcoded opening message is defined for this project, use it directly
     // and skip the LLM greeting roundtrip. This gives a stable, predictable first turn.
@@ -148,11 +198,21 @@ export function useChatSession(o: ChatSessionOptions) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, documentKey, initialized]);
 
-  // A new session token on start and on every epoch (the simulator's form reload).
+  // A new session token on start and on every epoch (the simulator's form
+  // reload, the talk page's language switch or new conversation), except that a
+  // thread restored in this epoch keeps the token it was saved with.
   useEffect(() => {
     if (!active) return;
-    setSessionToken(randomToken());
+    setSessionToken(tokenForEpoch(restoredTokenRef.current, epoch, randomToken));
   }, [active, epoch]);
+
+  // rememberConversation: save the thread once a turn has landed. Only a thread
+  // with a question is kept: an untouched opening is not worth bringing back.
+  useEffect(() => {
+    if (!storageKey || !initialized || isLoading) return;
+    if (lastTurnAtRef.current === null || !hasQuestion(messages)) return;
+    saveThread(localStorageOf, storageKey, { messages, sessionToken, lastTurnAt: lastTurnAtRef.current });
+  }, [storageKey, initialized, isLoading, messages, sessionToken]);
 
   useEffect(() => {
     sessionTokenRef.current = sessionToken;
@@ -212,6 +272,7 @@ export function useChatSession(o: ChatSessionOptions) {
         setPendingAssistantMessage(assistantMessage);
         // isLoading stays true; the player's revealPending clears it + sendInFlightRef
       } else {
+        lastTurnAtRef.current = Date.now();
         setMessages(prev => [...prev, assistantMessage]);
         setIsLoading(false);
         sendInFlightRef.current = false;
@@ -221,6 +282,7 @@ export function useChatSession(o: ChatSessionOptions) {
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      lastTurnAtRef.current = Date.now();
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: error instanceof ChatSwitchedOffError
@@ -253,7 +315,7 @@ export function useChatSession(o: ChatSessionOptions) {
   return {
     messages, input, setInput, isLoading, initialized, followups,
     pendingAssistantMessage, awaitingTTS, beginSpeaking, revealPending,
-    sendMessage, reset, sessionToken, sessionTokenRef, inputRef, messagesEndRef,
+    sendMessage, reset, forgetSaved, sessionToken, sessionTokenRef, inputRef, messagesEndRef,
   };
 }
 

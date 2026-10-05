@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { followHostContradictions, resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
+import { followHostContradictions, rememberConversationContradictions, resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -24,7 +24,7 @@ test('no file: every default, and the simulator', () => {
   for (const [k, v] of Object.entries(f)) {
     if (k === 'app') continue;
     if (k === 'embedOrigins') { assert.deepEqual(v, [], k); continue; }
-    assert.equal(v, k === 'talkPublicUrl' ? '' : k === 'docRefs' ? null : false, k);
+    assert.equal(v, k === 'talkPublicUrl' ? '' : k === 'docRefs' || k === 'rememberConversation' ? null : false, k);
   }
 });
 
@@ -162,6 +162,41 @@ test('the validator: a talk project needs no kobo; contradictions fail', () => {
     assert.match(r3.stderr, /contradicts enableFeedback: true/);
   } finally {
     for (const d of [ok, bare, bad]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('rememberConversation: {days} only for an integer from 1 to 30, and only on talk', () => {
+  assert.equal(resolveProjectFlags({ app: 'talk' }).rememberConversation, null);
+  assert.deepEqual(resolveProjectFlags({ app: 'talk', rememberConversation: { days: 7 } }).rememberConversation, { days: 7 });
+  assert.deepEqual(resolveProjectFlags({ app: 'talk', rememberConversation: { days: 1 } }).rememberConversation, { days: 1 });
+  assert.deepEqual(resolveProjectFlags({ app: 'talk', rememberConversation: { days: 30 } }).rememberConversation, { days: 30 });
+  for (const bad of [{ days: 0 }, { days: 31 }, { days: 7.5 }, { days: '7' }, {}, true, 7, null]) {
+    assert.equal(resolveProjectFlags({ app: 'talk', rememberConversation: bad }).rememberConversation, null, JSON.stringify(bad));
+  }
+  assert.deepEqual(rememberConversationContradictions({ app: 'talk' }), []);
+  assert.deepEqual(rememberConversationContradictions({ app: 'talk', rememberConversation: { days: 7 } }), []);
+  assert.match(rememberConversationContradictions({ kobo: {}, rememberConversation: { days: 7 } }).join('\n'), /needs app "talk"/);
+});
+
+test('the validator: rememberConversation needs talk; days outside 1 to 30 fail the schema', () => {
+  const ok = tempProject({ app: 'talk', rememberConversation: { days: 7 } });
+  const sim = tempProject({ kobo: { formUrl: 'https://example.org/f', formUid: 'f' }, rememberConversation: { days: 7 } });
+  const long = tempProject({ app: 'talk', rememberConversation: { days: 31 } });
+  const stray = tempProject({ app: 'talk', rememberConversation: { days: 7, hours: 2 } });
+  try {
+    const r = runValidator(ok);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const r2 = runValidator(sim);
+    assert.equal(r2.status, 1);
+    assert.match(r2.stderr, /rememberConversation needs app "talk"/);
+    const r3 = runValidator(long);
+    assert.equal(r3.status, 1);
+    assert.match(r3.stderr, /rememberConversation\/days must be <= 30/);
+    const r4 = runValidator(stray);
+    assert.equal(r4.status, 1);
+    assert.match(r4.stderr, /additional properties/);
+  } finally {
+    for (const d of [ok, sim, long, stray]) fs.rmSync(d, { recursive: true, force: true });
   }
 });
 

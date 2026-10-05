@@ -2551,6 +2551,10 @@ app.get('/api/config', async (_req, res) => {
       // messages), obeying only these origins. See chat-core CLAUDE.md.
       followHost: flags.followHost,
       embedOrigins: flags.embedOrigins,
+      // The talk page keeps the thread in the browser for this many days
+      // (frontend remember-conversation.ts). Sent only by a project that sets
+      // it, so every other project's /api/config is unchanged.
+      ...(flags.rememberConversation ? { rememberConversation: flags.rememberConversation } : {}),
     });
   } catch (error) {
     console.error('Error reading config:', error);

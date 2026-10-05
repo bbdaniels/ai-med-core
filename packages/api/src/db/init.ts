@@ -11,20 +11,32 @@ import { connectDatabase, createProjectSchema, dbType, runWithProject, sanitizeT
 import { getSystemPrompt, saveSystemPrompt, getCustomVignettes, saveVignette, getLanguages, saveLanguages } from './engine-store.js';
 import { getKoboFormUrl, saveKoboFormUrl, saveKoboFormUid } from './sim-store.js';
 
-// Ensure database tables exist for a given project prefix (creates if needed)
-const initializedPrefixes = new Set<string>();
+// Ensure database tables exist for a given project prefix (creates if needed).
+//
+// One promise per prefix, held from the first request on, and every request for
+// that project awaits it: the tables AND the seed. A page's first load sends
+// several requests at once; when only a Set of finished prefixes was kept (and
+// the prefix went in before seeding), the second and third requests read empty
+// tables while the first was still seeding -- /api/languages answered 404, and
+// the talk page asked the model for an opening instead of using the languages
+// file's openingMessage (first-use-seed.test.ts). A failed attempt is forgotten,
+// so the next request tries again.
+const projectInit = new Map<string, Promise<void>>();
 
-export async function ensureProjectTables(prefix: string): Promise<void> {
+export function ensureProjectTables(prefix: string): Promise<void> {
   const sanitized = sanitizeTablePrefix(prefix);
-  if (initializedPrefixes.has(sanitized)) return; // already initialized
-
-  // Run schema creation within the project context so activeAdminTable/activeAssignmentsTable resolve correctly
-  await runWithProject(prefix, async () => {
-    await createProjectSchema();
-    initializedPrefixes.add(sanitized);
-    console.log(`✅ Ensured tables for project prefix: ${sanitized || '(default)'}`);
-    await seedProjectFromFilesIfEmpty(sanitized.replace(/_+$/, ''));
-  });
+  let pending = projectInit.get(sanitized);
+  if (!pending) {
+    // Run schema creation within the project context so activeAdminTable/activeAssignmentsTable resolve correctly
+    pending = runWithProject(prefix, async () => {
+      await createProjectSchema();
+      console.log(`✅ Ensured tables for project prefix: ${sanitized || '(default)'}`);
+      await seedProjectFromFilesIfEmpty(sanitized.replace(/_+$/, ''));
+    });
+    projectInit.set(sanitized, pending);
+    pending.catch(() => projectInit.delete(sanitized));
+  }
+  return pending;
 }
 
 /**
@@ -134,7 +146,7 @@ export async function initDatabase() {
 
   // Mark the startup prefix as initialized so ensureProjectTables skips it
   const startupPrefix = sanitizeTablePrefix(process.env.TABLE_PREFIX);
-  initializedPrefixes.add(startupPrefix);
+  projectInit.set(startupPrefix, Promise.resolve());
 }
 
 // Seed database with defaults from vignettes.json if empty

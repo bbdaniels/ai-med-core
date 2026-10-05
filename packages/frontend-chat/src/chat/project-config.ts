@@ -44,6 +44,10 @@ export interface ProjectConfig {
   // only messages from embedOrigins.
   followHost: boolean;
   embedOrigins: string[];
+  // rememberConversation (project.json): the talk page keeps the thread in this
+  // browser and brings it back for this many days after the last turn
+  // (remember-conversation.ts). Null: nothing is kept, as before.
+  rememberConversation: { days: number } | null;
 }
 
 /** What a page assumes before /api/config answers, and keeps if it never does. */
@@ -62,6 +66,7 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   docRefs: null,
   followHost: false,
   embedOrigins: [],
+  rememberConversation: null,
 };
 
 /**
@@ -94,5 +99,11 @@ export function parseProjectConfig(data: any, buildProject: string): ProjectConf
       ? d.docRefs as DocRefsConfig : null,
     followHost: d.followHost === true,
     embedOrigins: Array.isArray(d.embedOrigins) ? d.embedOrigins.filter((o: unknown): o is string => typeof o === 'string') : [],
+    rememberConversation: rememberDays(d.rememberConversation?.days),
   };
+}
+
+/** {days} for an integer from 1 to 30 (the schema's range); null for anything else. */
+function rememberDays(days: unknown): { days: number } | null {
+  return typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 30 ? { days } : null;
 }

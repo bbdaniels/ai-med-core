@@ -55,4 +55,12 @@ check('followHost is on only when the body says true; embedOrigins keeps strings
   assert.deepEqual(parseProjectConfig({ embedOrigins: 'https://host.example' }, 's').embedOrigins, []);
 });
 
+check('rememberConversation is {days} for an integer from 1 to 30, else null', () => {
+  assert.equal(parseProjectConfig({}, 's').rememberConversation, null);
+  assert.deepEqual(parseProjectConfig({ rememberConversation: { days: 7 } }, 's').rememberConversation, { days: 7 });
+  for (const bad of [{ days: 0 }, { days: 31 }, { days: 2.5 }, { days: '7' }, {}, 7, null]) {
+    assert.equal(parseProjectConfig({ rememberConversation: bad }, 's').rememberConversation, null, JSON.stringify(bad));
+  }
+});
+
 console.log(`project-config checks: ${n}/${n} passed`);

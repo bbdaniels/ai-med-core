@@ -180,6 +180,15 @@
       "maximum": 100000,
       "description": "followHost only: the most conversation history, in estimated tokens (characters / 4), one turn sends the model; the oldest turns are dropped first and the log keeps everything. Default 24000"
     },
+    "rememberConversation": {
+      "type": "object",
+      "properties": {
+        "days": { "type": "integer", "minimum": 1, "maximum": 30, "description": "How long after the last turn a saved conversation is brought back; older ones are discarded" }
+      },
+      "required": ["days"],
+      "additionalProperties": false,
+      "description": "Talk page only: the reader's browser keeps the conversation (the visible thread and its session token, in localStorage, nothing on the server), so reloading or reopening the page brings it back; a New conversation control in the header starts afresh. One saved thread per project and document set (the key before \"--\"). Requires app \"talk\" (tools/validate-projects.ts). See packages/frontend-chat/CLAUDE.md, \"Remembering the conversation\""
+    },
     "requireAccessCode": {
       "type": "boolean",
       "description": "Gate the project behind an access code from the access_code project setting or ACCESS_CODE_<SLUG>; fails closed when none is configured. Also withholds vignetteInfo from /api/languages until the code is given"

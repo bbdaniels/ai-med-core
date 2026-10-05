@@ -41,6 +41,8 @@ export interface ChatColumnProps {
   onQuestionClick: (question: string) => void;
   /** followHost: the current document's title, in place of the vignette's. */
   headerTitle?: string;
+  /** A quiet control under the title (the talk page's New conversation). */
+  headerAction?: React.ReactNode;
   /** followHost: a "Now on" divider before each question asked on another document. */
   documentDividers?: boolean;
   /** followHost: nothing here can be asked about. Shown above the input, and sending is off. */
@@ -51,7 +53,7 @@ export default function ChatColumn({
   session, t, langs, lang, onLanguageChange, showTopBar, mobileHidden, headerSlot, voiceSlot,
   documentKey, vignetteInfo, hasContentTab, selectedPaper, pickerPapers, openPaper,
   embeddedInFrame, closeEmbeddingFrame, starterQuestions, renderAssistant, onQuestionClick,
-  headerTitle, documentDividers, sendBlockedNotice,
+  headerTitle, headerAction, documentDividers, sendBlockedNotice,
 }: ChatColumnProps) {
   const { messages, input, setInput, isLoading, followups, inputRef, messagesEndRef, sendMessage } = session;
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -116,6 +118,7 @@ export default function ChatColumn({
                   return (
                     <div className="vignette-info">
                       <h1>{headerTitle || vi?.title || selectedPaper?.title || t('chat','headerTitle')}</h1>
+                      {headerAction && <p className="chat-header-action">{headerAction}</p>}
                       {selectedPaper && (
                         <p className="paper-meta">
                           {[selectedPaper.venue, selectedPaper.year].filter(Boolean).join(', ')}

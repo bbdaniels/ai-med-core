@@ -13,8 +13,13 @@
 // carries on across documents with a "Now on" divider where a question moves
 // to another one. Every other project, and a followHost project opened
 // top-level, is unchanged.
+//
+// A rememberConversation project keeps the thread in the reader's browser
+// (src/remember-conversation.ts): reopening the page within the window brings
+// it back, and New conversation in the header starts afresh.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { PROJECT } from '../api-base';
 import { useProjectConfig } from '../chat/useProjectConfig';
 import { useAccessGate } from '../chat/useAccessGate';
 import { useDocumentTitle, useLanguages } from '../chat/useLanguages';
@@ -28,6 +33,10 @@ import ChatColumn from '../chat/ChatColumn';
 import { renderAssistantContent } from '../chat/AssistantContent';
 import { type MobilePanel, MobileTabStrip, TabbedPanel, type TabViewContext, renderTabView } from '../chat/TabViews';
 import { CourseAccessGate, LoadingScreen, UnknownDocumentScreen } from '../chat/Screens';
+import { hasQuestion, sweepExpiredThreads, threadSetFor, threadStorageKey } from '../remember-conversation';
+
+/** Questions in a thread at which New conversation asks once more before clearing it. */
+const CONFIRM_NEW_AT_QUESTIONS = 4;
 
 export default function TalkApp() {
   const [mobileActivePanel, setMobileActivePanel] = useState<MobilePanel>('chat');
@@ -45,12 +54,19 @@ export default function TalkApp() {
     if (!started && configLoaded && langs) setStarted(true);
   }, [started, configLoaded, langs]);
 
-  // A fresh session token when the conversation starts, on every language
-  // switch, and for every paper opened from the picker, as on the simulator
-  // page.
+  // A fresh session token on every language switch and for every paper opened
+  // from the picker, as on the simulator page. The conversation's first token
+  // is drawn by useChatSession when it starts; bumping the epoch at the start
+  // as well drew a second one a render later, which would replace the token a
+  // remembered thread was restored with.
   const [epoch, setEpoch] = useState(0);
+  const languageAtStart = useRef<string | null>(null);
   useEffect(() => {
     if (!started) return;
+    if (languageAtStart.current === null) {
+      languageAtStart.current = selectedLanguageCode;
+      return;
+    }
     setEpoch(prev => prev + 1);
   }, [started, selectedLanguageCode]);
 
@@ -84,6 +100,18 @@ export default function TalkApp() {
   const selectedVignetteKey = hostDriven ? hosted?.key ?? null : deepLink.selectedVignetteKey;
   const vignetteInfo = selectedVignetteKey ? langs?.vignetteInfo?.[selectedVignetteKey] : undefined;
 
+  // rememberConversation: one saved thread per document set (threadSetFor).
+  // Bound during render, not in an effect: the conversation opens in the same
+  // commit the first document becomes known, and must find its key then.
+  const remember = config.rememberConversation;
+  const boundSet = useRef<string | null>(null);
+  const threadSet = threadSetFor({ hostDriven, boundSet: boundSet.current, documentKey: selectedVignetteKey });
+  if (hostDriven && boundSet.current === null) boundSet.current = threadSet;
+  const storageKey = remember && threadSet ? threadStorageKey(PROJECT, threadSet) : null;
+  useEffect(() => {
+    if (remember) sweepExpiredThreads(() => window.localStorage, PROJECT, remember.days, Date.now());
+  }, [remember]);
+
   const session = useChatSession({
     active: started,
     documentKey: selectedVignetteKey,
@@ -94,7 +122,41 @@ export default function TalkApp() {
     speak: false,
     tagQuestions: hostDriven,
     documentTitle: hosted?.title,
+    remember: remember ? { storageKey, days: remember.days } : null,
   });
+
+  // New conversation: forget the saved thread and start afresh on the current
+  // document, with a fresh token and the opening. A long thread asks once more:
+  // the first press turns the control into a confirmation for a few seconds.
+  const [confirmingNew, setConfirmingNew] = useState(false);
+  useEffect(() => {
+    if (!confirmingNew) return undefined;
+    const timer = setTimeout(() => setConfirmingNew(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmingNew]);
+  const questionCount = session.messages.filter(m => m.role === 'user').length;
+  const newConversation = () => {
+    if (questionCount >= CONFIRM_NEW_AT_QUESTIONS && !confirmingNew) {
+      setConfirmingNew(true);
+      return;
+    }
+    setConfirmingNew(false);
+    session.forgetSaved();
+    session.reset();
+    setEpoch(prev => prev + 1);
+  };
+  const newConversationControl = remember && hasQuestion(session.messages) ? (
+    <button
+      type="button"
+      className="new-conversation"
+      onClick={newConversation}
+      disabled={session.isLoading}
+    >
+      {confirmingNew
+        ? t('chat', 'newConversationConfirm') || 'Clear this conversation?'
+        : t('chat', 'newConversation') || 'New conversation'}
+    </button>
+  ) : null;
 
   const tabs = useTabs({
     accessReady,
@@ -184,6 +246,7 @@ export default function TalkApp() {
           renderAssistant={(text) => renderAssistantContent(text, refs, selectedLanguageCode)}
           onQuestionClick={handleQuestionClick}
           headerTitle={hostDriven ? hosted?.title : undefined}
+          headerAction={newConversationControl}
           documentDividers={hostDriven}
           sendBlockedNotice={questionsBlocked({ hostDriven, listLoaded: deepLink.vignetteKeysLoaded, key: selectedVignetteKey })
             ? t('chat', 'noCurrentDocument') || 'Nothing on this page can be asked about. Move to a page that can, and the conversation carries on.'

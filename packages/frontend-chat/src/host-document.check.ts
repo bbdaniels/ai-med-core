@@ -155,14 +155,16 @@ check('switching never clears the conversation; dividers only where a question c
 
 check('nothing in the page clears the conversation when the document changes', () => {
   // The thread is cleared only by reset(), and the talk page calls reset()
-  // only from the paper picker (openPaper), never on a host's switch.
+  // only from the paper picker (openPaper) and the reader's own New
+  // conversation (newConversation), never on a host's switch.
   const session = fs.readFileSync(path.join(HERE, 'chat/useChatSession.ts'), 'utf8');
   const clears = session.split('\n').filter(l => /setMessages\(\[\]\)/.test(l));
   assert.equal(clears.length, 1);
   assert.match(session, /const reset = \(\) => \{\n\s+setMessages\(\[\]\);/);
   const talk = fs.readFileSync(path.join(HERE, 'talk/TalkApp.tsx'), 'utf8');
-  assert.equal(talk.match(/session\.reset\(\)/g)?.length, 1);
+  assert.equal(talk.match(/session\.reset\(\)/g)?.length, 2);
   assert.match(talk, /const openPaper = \(key: string \| null\) => \{\n\s+if \(!deepLink\.openPaper\(key\)\) return;\n\s+session\.reset\(\);/);
+  assert.match(talk, /const newConversation = \(\) => \{[^}]*\}\n\s+setConfirmingNew\(false\);\n\s+session\.forgetSaved\(\);\n\s+session\.reset\(\);/);
 });
 
 console.log(`host-document checks: ${n}/${n} passed`);

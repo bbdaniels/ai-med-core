@@ -57,7 +57,18 @@ export interface ResolvedFlags {
   followHost: boolean;
   /** The origins allowed to drive a followHost page, each `scheme://host[:port]`; [] otherwise. */
   embedOrigins: string[];
+  /**
+   * The talk page keeps the conversation in the reader's browser and brings it
+   * back on the next visit, for up to `days` days after the last turn (1 to
+   * 30). Null when the project does not set it, or sets it to anything else.
+   * See rememberConversationContradictions for what it requires.
+   */
+  rememberConversation: { days: number } | null;
 }
+
+/** The bounds of rememberConversation.days, as the schema states them. */
+export const REMEMBER_DAYS_MIN = 1;
+export const REMEMBER_DAYS_MAX = 30;
 
 type ImpliedFlag = keyof typeof TALK_IMPLIED;
 
@@ -91,7 +102,14 @@ export function resolveProjectFlags(cfg: Record<string, any>): ResolvedFlags {
     docRefs: cfg.docRefs && typeof cfg.docRefs === 'object' ? cfg.docRefs : null,
     followHost: flag('followHost'),
     embedOrigins: embedOrigins(cfg),
+    rememberConversation: rememberConversation(cfg),
   };
+}
+
+/** `{days}` when rememberConversation.days is an integer in range; null otherwise. */
+function rememberConversation(cfg: Record<string, any>): { days: number } | null {
+  const days = cfg.rememberConversation?.days;
+  return Number.isInteger(days) && days >= REMEMBER_DAYS_MIN && days <= REMEMBER_DAYS_MAX ? { days } : null;
 }
 
 /** An origin as a browser reports it in MessageEvent.origin: scheme, host, optional port, nothing after. */
@@ -138,4 +156,17 @@ export function followHostContradictions(cfg: Record<string, any>): string[] {
     if (cfg.historyTokens !== undefined) out.push('historyTokens is read only with followHost: true');
   }
   return out;
+}
+
+/**
+ * rememberConversation belongs to the talk page, which is the only page that
+ * keeps a thread in the browser. The schema checks the shape and the range of
+ * days; this checks the application. One message per problem.
+ */
+export function rememberConversationContradictions(cfg: Record<string, any>): string[] {
+  if (cfg.rememberConversation === undefined) return [];
+  if (resolveProjectFlags(cfg).app !== 'talk') {
+    return ['rememberConversation needs app "talk" (only the talk page remembers a conversation)'];
+  }
+  return [];
 }

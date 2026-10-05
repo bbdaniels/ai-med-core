@@ -9,8 +9,9 @@
  * silently ignored by the API. Beyond the JSON Schema it checks the things a
  * schema cannot: the slug matches its directory, every repo-relative path the
  * file names exists (or is private, i.e. gitignored: see lib/private-files.ts),
- * a talk project sets no flag that contradicts `app: "talk"`, and a followHost
- * project has what following a host needs (followHostContradictions).
+ * a talk project sets no flag that contradicts `app: "talk"`, a followHost
+ * project has what following a host needs (followHostContradictions), and only
+ * a talk project remembers a conversation (rememberConversationContradictions).
  *
  * AI_MED_REPO_ROOT, when set, names the checkout whose projects/ are validated
  * (the schema is always this repository's); the tests use it on a temp tree.
@@ -21,7 +22,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
-import { followHostContradictions, talkContradictions } from '../packages/chat-core/src/project-config.js';
+import { followHostContradictions, rememberConversationContradictions, talkContradictions } from '../packages/chat-core/src/project-config.js';
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = process.env.AI_MED_REPO_ROOT?.trim() ? path.resolve(process.env.AI_MED_REPO_ROOT.trim()) : here;
@@ -71,6 +72,7 @@ for (const slug of dirs) {
     }
     errors.push(...talkContradictions(p));
     errors.push(...followHostContradictions(p));
+    errors.push(...rememberConversationContradictions(p));
     if (p.name !== slug) errors.push(`name "${p.name}" does not match directory "${slug}"`);
     if (!fs.existsSync(path.join(root, 'projects', slug, 'languages.json'))) errors.push('languages.json missing');
     let privateAbsent = 0;

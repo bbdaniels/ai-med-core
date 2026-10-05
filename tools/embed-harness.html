@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embed harness</title>
+<!--
+  Embed harness: loads chat pages in iframes on a second origin, the way a
+  host page embeds them (a publication list's popout, a slide deck's Ask
+  popover), and logs every postMessage the frames send.
+
+  Serve it on its own origin and pass the pages to frame:
+    python3 -m http.server 8080 -d tools
+    http://localhost:8080/embed-harness.html?src=<url>&src=<url>&expect=<message type>
+
+  src     a page to frame; repeat for several. URL-encode it if it carries
+          its own query string or a #fragment.
+  expect  a message type the frames must post (for example the popout's close
+          message); the banner turns green once one arrives.
+
+  Everything seen is also on window.harness ({frames, loads, messages}) for a
+  script driving the page. The harness names no project or deployment.
+-->
+<style>
+  :root { --bg: #f6f6f4; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --ok: #1f7a3a; --wait: #8a6d00; --panel: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ececea; --muted: #a3a39d; --line: #3a3a37; --ok: #5fcf83; --wait: #e0c25a; --panel: #20201f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  form { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  input[type=url] { flex: 1 1 320px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
+  button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+  #expect { padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--line); }
+  #expect.ok { color: var(--ok); border-color: var(--ok); }
+  #expect.wait { color: var(--wait); border-color: var(--wait); }
+  #frames { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .frame { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; width: min(440px, 100%); }
+  .frame header { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .frame header span { overflow-wrap: anywhere; }
+  .frame iframe { width: 100%; height: 640px; border: 0; border-radius: 6px; background: #fff; }
+  .frame.closed iframe { display: none; }
+  .frame.closed::after { content: "closed by its page"; display: block; padding: 24px; text-align: center; color: var(--muted); }
+  #log { margin-top: 16px; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>Embed harness</h1>
+<form id="add">
+  <input type="url" id="url" placeholder="Page to frame (full URL)" required>
+  <button type="submit">Frame it</button>
+</form>
+<div id="expect" hidden></div>
+<div id="frames"></div>
+<div id="log" aria-live="polite"></div>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const expectType = params.get('expect');
+  const harness = window.harness = { frames: [], loads: [], messages: [] };
+  const framesEl = document.getElementById('frames');
+  const logEl = document.getElementById('log');
+  const expectEl = document.getElementById('expect');
+
+  const log = (line) => {
+    logEl.textContent += `${new Date().toISOString().slice(11, 23)}  ${line}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  const showExpect = () => {
+    if (!expectType) return;
+    const got = harness.messages.some(m => m.data && m.data.type === expectType);
+    expectEl.hidden = false;
+    expectEl.className = got ? 'ok' : 'wait';
+    expectEl.textContent = got ? `Received "${expectType}".` : `Waiting for a "${expectType}" message.`;
+  };
+
+  const addFrame = (src) => {
+    const index = harness.frames.length;
+    const box = document.createElement('section');
+    box.className = 'frame';
+    const head = document.createElement('header');
+    const label = document.createElement('span');
+    label.textContent = `#${index} ${src}`;
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.textContent = 'Reload';
+    head.append(label, reload);
+    const iframe = document.createElement('iframe');
+    iframe.title = `Framed page ${index}`;
+    iframe.addEventListener('load', () => {
+      harness.loads.push({ frame: index, at: Date.now() });
+      log(`frame #${index} loaded`);
+    });
+    reload.addEventListener('click', () => { box.classList.remove('closed'); iframe.src = src; });
+    iframe.src = src;
+    box.append(head, iframe);
+    framesEl.append(box);
+    harness.frames.push({ index, src, iframe, box });
+    log(`frame #${index} -> ${src}`);
+  };
+
+  window.addEventListener('message', (event) => {
+    const frame = harness.frames.find(f => f.iframe.contentWindow === event.source);
+    const entry = { frame: frame ? frame.index : null, origin: event.origin, data: event.data, at: Date.now() };
+    harness.messages.push(entry);
+    let shown;
+    try { shown = JSON.stringify(event.data); } catch { shown = String(event.data); }
+    log(`message from ${frame ? `frame #${frame.index}` : 'an unknown window'} (${event.origin}): ${shown}`);
+    // A host page dismisses its popout when asked; so does the harness.
+    if (frame && expectType && event.data && event.data.type === expectType) frame.box.classList.add('closed');
+    showExpect();
+  });
+
+  document.getElementById('add').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('url');
+    if (input.value) addFrame(input.value);
+    input.value = '';
+  });
+
+  for (const src of params.getAll('src')) addFrame(src);
+  showExpect();
+})();
+</script>
+</body>
+</html>

@@ -2,9 +2,38 @@
 
 React SPA with split-panel layout: AI chat (left) + assessment form (right). Includes admin dashboard at `/admin`.
 
+## Two pages, one set of parts
+
+The package builds one of two pages, chosen at build time by `VITE_APP`:
+
+- **Simulator** (`VITE_APP` unset): `src/main.tsx` mounts `src/App.tsx` -- consent → chat + form → transition → next case → grading → end screen, plus the realtime voice page (`?mode=voice`).
+- **Talk** (`VITE_APP=talk`): `src/talk-main.tsx` mounts `src/talk/TalkApp.tsx` -- chat about documents (papers, slides, readings, a reference document and its legal library). No welcome page, form, grading or voice, and it imports nothing from Kobo, enketo or grading, so a talk build ships none of that code (CI checks: `test.yml`, "Talk build carries no form code").
+
+`vite.config.ts` (plugin `app-entry`) rewrites `index.html`'s entry script to `/src/talk-main.tsx` when `VITE_APP=talk`, in build and dev; `index.html` stays one file. Any other `VITE_APP` value fails the build, as does `VITE_APP=talk` for a project whose `project.json` does not declare `"app": "talk"`. `deploy-pages.yml` sets `VITE_APP=talk` on the four talk projects' blocks. Both entries serve `/admin` (`src/admin-route.tsx`).
+
+Both pages are composed from the same parts in `src/chat/`, so a fix lands once:
+
+| Part | What it holds |
+|---|---|
+| `useProjectConfig.ts`, `project-config.ts` | `/api/config`, read by `parseProjectConfig` (checked by `src/project-config.check.ts`) |
+| `useAccessGate.ts` | stored token, `#code=` redemption and scrub, `accessReady`, when the gate shows |
+| `useLanguages.ts` | languages file, the reader's language, `t()`, starter questions, the tab title |
+| `useDeepLink.ts` | `?vignette=` / `?doc=` / `?paper=` through the talk manifest, the picker, `requireKnownVignette` and its refusal, the `talkPublicUrl` redirect, `embeddedInFrame`, the `orcid-display:talk-close` message |
+| `useChatSession.ts` | messages, input, follow-ups, beyond-scope flags, session token, opening turn. A page that speaks its answers (the simulator's TTS) sets `speak` and takes each reply through `beginSpeaking()` / `revealPending()` |
+| `useTabs.ts`, `tabs.ts` | `/api/tabs`, `resolveTabs`, merged editions, first-visit mounting (checked by `src/tabs.check.ts`) |
+| `useDocRefs.ts`, `AssistantContent.tsx` | document and legal references in answers, page maps, jump requests |
+| `TabViews.tsx` | every tab view but the form, the desktop tab panel, the mobile strip |
+| `ChatColumn.tsx` | top bar, header, picker, conversation, starters, follow-ups, input; page-specific controls come in through `headerSlot` and `voiceSlot` |
+| `Screens.tsx` | access gate, unknown-document refusal, loading screen |
+
+`App.tsx` still carries the talk branches (manifest, picker, refusal) for one release so a rollback of the Pages flag alone restores the old page; they are removed one release later.
+
+To check a page inside a frame (the paper popout, a deck's Ask popover), use `tools/embed-harness.html`; see `tools/CLAUDE.md`.
+
 ## Key Files
 
-- `src/App.tsx` -- Main flow: consent → chat + form → transition → next case → end screen
+- `src/App.tsx` -- The simulator page (see above)
+- `src/talk/TalkApp.tsx` -- The talk page (see above)
 - `src/components/NativeKoboForm.tsx` -- Enketo-core form rendering with prefill injection
 - `src/components/SuggestedQuestions.tsx` -- Clickable topic-outline tab (formless projects)
 - `src/components/DocumentPanel.tsx` -- Full-markdown document tab (renders a single .md file)
@@ -117,7 +146,7 @@ Structural change to remember: to convert a multi-select checklist into forced-c
 
 **Translation System** powered by `languages.json`:
 
-**The API is the only source of translations at runtime.** `App.tsx` fetches
+**The API is the only source of translations at runtime.** `useLanguages` (`src/chat/useLanguages.ts`) fetches
 `GET /api/languages`, which reads the copy stored in the database -- the same copy
 the admin Translations tab uploads and edits. If that fetch fails, `langs` is set
 to `null` and every `t()` call degrades to the component's hardcoded default; there
@@ -140,7 +169,7 @@ interface LanguageUISection {
 }
 ```
 
-**Translation Function** (`App.tsx:209-215`):
+**Translation Function** (`src/chat/useLanguages.ts`):
 ```typescript
 function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullable<LanguageUISection[S]>>(section: S, key: K): string {
   const code = selectedLanguageCode || 'en';
@@ -187,7 +216,7 @@ function t<S extends 'welcome' | 'chat' | 'feedback', K extends keyof NonNullabl
 
 ## Tab System
 
-The right panel is a tab container. App.tsx resolves tabs from two sources:
+The right panel is a tab container. `resolveTabs` (`src/chat/tabs.ts`) takes tabs from two sources:
 1. `/api/tabs` (new pattern) — tab structure from `project.json`, content from filesystem. Object-keyed i18n values resolved via `resolveI18n(val, lang)` helper.
 2. `langs.tabs` (legacy pattern, CBS) — tabs embedded in languages.json, string labels only.
 
@@ -198,7 +227,7 @@ Tab types:
 - `document` — renders `<DocumentPanel>` with a single markdown file as formatted HTML (headings, tables, bold, lists)
 - `pdf` — renders `<PdfJsViewer>` on the `{pdfUrl}` returned by `/api/tabs` (bundled pdf.js, lazy-loaded, with a selectable text layer and its own find bar). The find bar also carries a collapsible outline sidebar built from the document's own bookmarks, a back-to-top control, and a single-slot return that goes back to wherever the last jump started from; back-to-top's threshold and icon are imported from `src/back-to-top.tsx`, shared with `DocumentPanel` so the two editions of one tab offer the same affordance at the same point. The outline's **Contents** toggle sits in that same find bar beside return and back-to-top (one `.pdfjs-find-nav`, only its square width overridden so the word fits), reports `aria-expanded` and `aria-controls` on the sidebar, and closes it to give the pages the full panel width — `recomputeScale` is keyed on the open state, so fit-to-width re-measures. Which way the reader left it is remembered in `localStorage` under `pdf_outline_open` (both accessors try/caught: this app is iframed on Canvas, where Safari can make storage throw). A saved choice outranks the opening width rule (`≥ 640px` opens by default); documents with no bookmarks render no toggle at all. **Inside the sidebar every branch starts collapsed**, at every level, with a drawn chevron per branch that has children (a 24px target, the WCAG 2.2 minimum, since it is the only route to 59 of the EIP's 66 entries; rows wrap and are never truncated). HAIVN read the in-app outline and the same file opened in a new tab as two different outlines while this viewer mounted every node open (2026-09-08). Collapsed is a **chosen constant, not the document's own state**: pdf.js exposes a per-node `count` carrying what the file declares, and the viewer ignores it the way Chrome and Arc do. The EIP PDFs themselves are written with every branch closed since the same day (`build-jump-maps.py`, `set_toc(collapse=1)`; see `tools/CLAUDE.md`), so Firefox, Acrobat and Preview, which honor the flag, now agree too. Which branches the reader has opened is held by the viewer, not by each row, so closing and reopening the sidebar keeps them; a new document starts collapsed again. It is deliberately NOT persisted -- `pdf_outline_open` remembers a single choice about the viewer, while expansion is per document and per branch, and the browser does not remember it either.
 
-**Two editions, one tab.** A project may declare the SAME tab id twice — once `pdf`, once `document` — and `mergeTabViews` (App.tsx) folds them into one tab whose `altView` holds the second edition, rendered by `<DualViewTab>` behind a Text/PDF switcher (the Legal Library's `legal-doc-view-*` control, lifted to the top of the tab). Declaration order sets the default view; haivn_eip declares the PDF first, so the EIP tab opens on the PDF. Because both editions answer to one id, `docRefs.tabId`, `pdfScrollTarget.tabId`, `docScrollTarget.tabId` and the active-tab reselect all keep working unchanged — a citation chooses an *edition*, not a tab. `tabMarkdown()` / `tabPdfUrl()` / `tabHasPdf()` read through to whichever view carries the payload, so the doc-reference anchor set is known before the reader has ever opened the text. An id repeated in any other combination is dropped with a console warning. See `projects/CLAUDE.md` for the config shape.
+**Two editions, one tab.** A project may declare the SAME tab id twice — once `pdf`, once `document` — and `mergeTabViews` (`src/chat/tabs.ts`) folds them into one tab whose `altView` holds the second edition, rendered by `<DualViewTab>` behind a Text/PDF switcher (the Legal Library's `legal-doc-view-*` control, lifted to the top of the tab). Declaration order sets the default view; haivn_eip declares the PDF first, so the EIP tab opens on the PDF. Because both editions answer to one id, `docRefs.tabId`, `pdfScrollTarget.tabId`, `docScrollTarget.tabId` and the active-tab reselect all keep working unchanged — a citation chooses an *edition*, not a tab. `tabMarkdown()` / `tabPdfUrl()` / `tabHasPdf()` read through to whichever view carries the payload, so the doc-reference anchor set is known before the reader has ever opened the text. An id repeated in any other combination is dropped with a console warning. See `projects/CLAUDE.md` for the config shape.
 
 `DualViewTab` also remembers the reader's place in each edition. It does so with a *continuous* scroll listener rather than a read at switch time, and that is load-bearing: React hides the outgoing view in the same commit, and a scroller whose content has just collapsed has had `scrollTop` forced to 0 by the browser before any effect can read it — so reading at switch time saved 0 every time and "back to the PDF" always meant page 1. A `jumpNonce` prop suppresses the restore when a citation arrives with the switch, so the jump is not fought.
 
@@ -218,10 +247,10 @@ Headings carry `scroll-margin-top` so a contents link doesn't land underneath th
 
 ### Document references in chat answers (`docRefs`)
 
-`src/doc-refs.ts` recognizes numbered document references in an assistant answer — "Section 4.1", "Appendix 7.1", and the Vietnamese "Mục 4.1" / "Phần 4.1" / "Phụ lục 7.1" — and turns them into links that switch the right panel to the project's `document` tab and scroll the passage in (`handleDocRefClick` in `App.tsx` → `docScrollTarget` → `DocumentPanel`'s `scrollTarget`).
+`src/doc-refs.ts` recognizes numbered document references in an assistant answer — "Section 4.1", "Appendix 7.1", and the Vietnamese "Mục 4.1" / "Phần 4.1" / "Phụ lục 7.1" — and turns them into links that switch the right panel to the project's `document` tab and scroll the passage in (`openDocRef` in `src/chat/useDocRefs.ts` → `docScrollTarget` → `DocumentPanel`'s `scrollTarget`).
 
 - **Gated + generic.** Active only when `/api/config` returns a `docRefs` config (from `project.json`); otherwise assistant messages render exactly as `{message.content}`, byte-identical. The trigger words and their anchor prefix are config (`{tabId, patterns:[{prefix, words}]}`), and the number→anchor transform (`4.1` → `sec-4-1`) is the anchor convention the document markdown is expected to carry.
-- **Validated against the real document.** `App.tsx` derives the valid-anchor set from the loaded document tab's markdown (`extractAnchorIds`) and passes it to `buildDocRefMatcher`. A reference that doesn't resolve to an anchor present in the document (a model-invented section, or one that doesn't exist) is left as ordinary text — never a dead link. Numbered anchors are identical across the English and Vietnamese editions, so a Vietnamese answer scrolls the Vietnamese document to the same anchor.
+- **Validated against the real document.** `useDocRefs` derives the valid-anchor set from the loaded document tab's markdown (`extractAnchorIds`) and passes it to `buildDocRefMatcher`. A reference that doesn't resolve to an anchor present in the document (a model-invented section, or one that doesn't exist) is left as ordinary text — never a dead link. Numbered anchors are identical across the English and Vietnamese editions, so a Vietnamese answer scrolls the Vietnamese document to the same anchor.
 - **No markdown in chat.** Only this narrow affordance is introduced; the rest of the message stays plain text. Segments are rendered as plain strings and React `<a>` nodes (never `innerHTML`), and the href is a validated anchor id, so the model's text can't inject markup.
 
 ### Legal-instrument citations
@@ -238,17 +267,17 @@ The same matcher recognizes citations of a project's **legal library** (a `libra
 
 - **The number is the anchor.** Only instrument numbers present in the library registry match (`legalNumberToId`), longest-first; an article word is recognized only immediately beside one. `Điều 40` on its own, or an invented instrument number, stays plain text.
 - **The reverse-order bridge is a closed vocabulary, not a word budget** (`LEGAL_REF_CONNECTORS` in `doc-refs.ts`). Only possessives/prepositions (`của`, `of`, `trong`, `số`, `the`, `no.`) and the tokens of an instrument-type noun (`Nghị`/`định`, `Thông`/`tư`, `Luật`, `Decree`, `Circular`, `Law`, `Decision`, …) may sit between the article number and the instrument number. An earlier version allowed any four letters-only words, which bound `Điều 40 aligns with Law 15/2023/QH15` to the Law and opened that PDF at a page holding no such article. Any verb or relational phrase now ends the bridge, and the citation falls through to the whole-document link.
-- **The page comes from the document's own map.** `App.tsx` lazily fetches `maps/<id>.json` for a document an answer actually cites an article of (once per document, failures swallowed) and indexes it with `sectionPageIndex` from `src/legal-map.ts` — the *same* filter `LegalLibraryPanel` uses for its section list (`jumpableSections`: confirmed-only where a canonical text is on screen, structural allowed for a PDF-only document). One rule, one module, so a chip can never claim a page the panel beside it refuses to offer.
+- **The page comes from the document's own map.** `useDocRefs` lazily fetches `maps/<id>.json` for a document an answer actually cites an article of (once per document, failures swallowed) and indexes it with `sectionPageIndex` from `src/legal-map.ts` — the *same* filter `LegalLibraryPanel` uses for its section list (`jumpableSections`: confirmed-only where a canonical text is on screen, structural allowed for a PDF-only document). One rule, one module, so a chip can never claim a page the panel beside it refuses to offer.
 - **Degradation is the default.** No article named, an article the map does not carry, a document with no map or no PDF, a map still in flight — all fall through to the whole-document link that already existed. There is no state in which a chip goes nowhere. The `Text` button is rendered only where a text edition exists.
-- **Plumbing.** `handleLegalRefClick(docId, page?)` → `legalSelectTarget={docId, page?, nonce}` → `LegalLibraryPanel`, which holds the request in a ref until the document is selected (the view-reset effect would otherwise clear it in the same commit) and then sets `view='pdf'` + `pdfJump`. Chip labels reuse `DOC_REF_UI` (EN/VI).
+- **Plumbing.** `openLegalRef(docId, page?)` (`useDocRefs`) → `legalSelectTarget={docId, page?, nonce}` → `LegalLibraryPanel`, which holds the request in a ref until the document is selected (the view-reset effect would otherwise clear it in the same commit) and then sets `view='pdf'` + `pdfJump`. Chip labels reuse `DOC_REF_UI` (`src/chat/tabs.ts`).
 
 ## Formless Mode
 
-When `/api/config` returns `formless: true`, App.tsx skips auto-adding a form tab. The project's declared tabs (from `/api/tabs`) are shown as-is. Used by Q&A chatbots that have no Kobo form.
+When `/api/config` returns `formless: true`, App.tsx skips auto-adding a form tab (the talk page never adds one). The project's declared tabs (from `/api/tabs`) are shown as-is. Used by Q&A chatbots that have no Kobo form.
 
 ## Inline Follow-up Suggestions
 
-When `/api/chat` returns a non-empty `followups` array (only when the project has `enableFollowups: true` in `project.json`), the frontend renders 2-3 clickable chips above the input textbox. Clicking a chip calls `handleQuestionClick(text)` → `handleSendMessage(text)` → auto-sends to chat. Follow-ups are cleared at the start of the next user turn.
+When `/api/chat` returns a non-empty `followups` array (only when the project has `enableFollowups: true` in `project.json`), the frontend renders 2-3 clickable chips above the input textbox. Clicking a chip calls the page's `handleQuestionClick(text)` → `session.sendMessage(text)` (`useChatSession`) → auto-sends to chat. Follow-ups are cleared at the start of the next user turn.
 
 CSS: `.followups-bar` + `.followup-chip` in `style.css`.
 
@@ -282,8 +311,9 @@ Used anywhere tab content may be multilingual. Plain strings pass through unchan
 ## Build
 
 ```bash
-npm run dev      # Vite dev server (:5173), proxies /api to :3001
-npm run build    # Vite production build
+npm run dev                  # Vite dev server (:5173), proxies /api to :3001
+npm run build                # Vite production build, simulator page
+VITE_APP=talk npm run build  # the talk page
 ```
 
 `VITE_BASE_PATH` sets the base URL for GitHub Pages per-project subdirectories.

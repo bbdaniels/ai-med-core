@@ -62,6 +62,17 @@ ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url http
 
 For each project with a private `projects/<slug>/tests/smoke.json` (`{"vignetteKey", "question", "language"?}`), or each one named with `--projects a,b`, it checks that `/api/config` answers, that `/api/vignettes` refuses without a token when the project is gated (codes from `ACCESS_CODE_<SLUG>`) and answers with one, that one `/api/chat` turn returns a message, followups when the project is structured, and usage, and that a talk-manifest project lists papers. With `ADMIN_PASSPHRASE` set, each turn's cost is the deployment's own `token_usage` estimate; without it only token counts print. A run costs about a cent. Turns carry a `smoke-chat-<timestamp>` session token, so they can be told apart in `qa_log` exports. Exits 1 on any failure. Test: `packages/api/src/smoke-chat.test.ts`.
 
+## embed-harness.html
+
+A page that frames chat pages the way a host page does (a publication list's popout, a slide deck's Ask popover) and logs every `postMessage` they send. Serve it on its own origin, so the frames are cross-origin as they are in production:
+
+```bash
+python3 -m http.server 8080 -d tools
+# http://localhost:8080/embed-harness.html?src=<url-encoded page>&src=<...>&expect=orcid-display:talk-close
+```
+
+Each `src` is framed in its own panel (URL-encode a page that carries its own query or `#code=` fragment). With `expect`, a banner turns green when a frame posts a message of that type, and that frame is shut, as a host page shuts its popout. What the page has seen is also on `window.harness` (`frames`, `loads`, `messages`) for a script driving it. A cross-origin frame's address cannot be read from the harness; check that a `#code=` fragment is stripped by opening the same URL top-level. A local build in a frame calls its API from its own origin, so that API's `ALLOWED_ORIGINS` must list it. The harness names no project or deployment.
+
 ## export-conversations.ts
 
 Pull a project's **durable conversation log** down for review. Formless advisors like

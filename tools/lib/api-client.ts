@@ -1,13 +1,25 @@
 /**
  * Admin API client for programmatic content management.
  * Used by tools/ scripts to push cases, config, and assignments to running deployments.
+ *
+ * Every admin request is retried while the deployment restarts (502, 503, 504,
+ * a refused or reset connection; tools/lib/retry-fetch.ts), and on nothing
+ * else. That is safe because each call below is safe to repeat: the reads, the
+ * login (it only issues a token), the saves (each sets a value, the vignette
+ * save by key), the deletes (by key, id or path), the private-store upload
+ * (an atomic overwrite of one path) and the bulk assignment add (the server
+ * skips pairs it already has). The one exception is addAssignment, where a
+ * repeat of an applied request is refused as a duplicate; it is sent once.
  */
+import { fetchWithRetry, type RetryOptions } from './retry-fetch.js';
 
 export interface ApiClientConfig {
   baseUrl: string;
   passphrase: string;
   /** Project name sent as X-Project header for multi-tenant routing */
   project?: string;
+  /** Waits between retries of a request the restarting deployment did not answer. Default: retry-fetch's. */
+  retryDelaysMs?: number[];
 }
 
 export interface Vignette {
@@ -46,11 +58,13 @@ export class AdminApiClient {
   private token: string | null = null;
   private passphrase: string;
   private project: string | undefined;
+  private retry: RetryOptions;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.passphrase = config.passphrase;
     this.project = config.project;
+    this.retry = config.retryDelaysMs ? { delaysMs: config.retryDelaysMs } : {};
   }
 
   private projectHeaders(): Record<string, string> {
@@ -58,11 +72,11 @@ export class AdminApiClient {
   }
 
   private async authenticate(): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/api/admin/login`, {
+    const res = await fetchWithRetry(`${this.baseUrl}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...this.projectHeaders() },
       body: JSON.stringify({ passphrase: this.passphrase }),
-    });
+    }, this.retry);
 
     if (!res.ok) {
       throw new Error(`Authentication failed: ${res.status} ${res.statusText}`);
@@ -72,25 +86,17 @@ export class AdminApiClient {
     this.token = data.token;
   }
 
-  private async request(path: string, options: RequestInit = {}): Promise<any> {
+  /**
+   * One admin request. `repeatable: false` sends it exactly once per
+   * authentication, for a call whose repeat the server would refuse.
+   */
+  private async request(path: string, options: RequestInit = {}, repeatable = true): Promise<any> {
     if (!this.token) {
       await this.authenticate();
     }
 
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-        ...this.projectHeaders(),
-        ...options.headers,
-      },
-    });
-
-    // Retry once on auth failure
-    if (res.status === 401) {
-      await this.authenticate();
-      const retry = await fetch(`${this.baseUrl}${path}`, {
+    const send = () => {
+      const init: RequestInit = {
         ...options,
         headers: {
           'Content-Type': 'application/json',
@@ -98,7 +104,16 @@ export class AdminApiClient {
           ...this.projectHeaders(),
           ...options.headers,
         },
-      });
+      };
+      return repeatable ? fetchWithRetry(`${this.baseUrl}${path}`, init, this.retry) : fetch(`${this.baseUrl}${path}`, init);
+    };
+
+    const res = await send();
+
+    // Retry once on auth failure
+    if (res.status === 401) {
+      await this.authenticate();
+      const retry = await send();
       if (!retry.ok) {
         throw new Error(`API request failed: ${retry.status} ${retry.statusText}`);
       }
@@ -207,7 +222,7 @@ export class AdminApiClient {
     await this.request('/api/admin/vignette-assignments', {
       method: 'POST',
       body: JSON.stringify({ uid, vignetteKey }),
-    });
+    }, false);
   }
 
   async deleteAssignment(id: number): Promise<void> {

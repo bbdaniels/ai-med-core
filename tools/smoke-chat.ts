@@ -12,7 +12,12 @@
  *   4. a project that publishes a talk manifest lists at least one paper.
  *
  * Usage:
- *   npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>]
+ *   npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>] [--commit <sha>]
+ *
+ * `--commit <sha>` waits first, up to 10 minutes, until the deployment serves
+ * that commit (tools/lib/deploy-ready.ts). A merge to main restarts the API, so
+ * a smoke run right after one would otherwise test the old container, or fail
+ * on the 502s of the restart. Pass the merged commit.
  *
  * The question asked of each project comes from its private
  * projects/<slug>/tests/smoke.json: { "vignetteKey": "...", "question": "...",
@@ -29,6 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AdminApiClient } from './lib/api-client.js';
+import { unverifiedWarning, waitForDeploy } from './lib/deploy-ready.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -136,10 +142,21 @@ async function smokeProject(base: string, slug: string, smoke: Smoke): Promise<s
 async function main() {
   const url = arg('--url');
   if (!url) {
-    console.error('Usage: npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>]');
+    console.error('Usage: npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>] [--commit <sha>]');
     process.exit(2);
   }
   const base = url.replace(/\/$/, '');
+  const commit = arg('--commit');
+  if (commit) {
+    console.log(`Waiting for ${base} to serve ${commit.slice(0, 7)}...`);
+    try {
+      const ready = await waitForDeploy({ baseUrl: base, commit });
+      console.log(unverifiedWarning(ready, commit)?.replace('::warning::', 'WARNING: ') ?? `  Serving ${ready.commit!.slice(0, 7)}.`);
+    } catch (e) {
+      console.error(`FAIL: ${e instanceof Error ? e.message : e}`);
+      process.exit(1);
+    }
+  }
   const repo = path.resolve(arg('--repo') ?? path.resolve(HERE, '..'));
   const projectsDir = path.join(repo, 'projects');
   const listed = arg('--projects');

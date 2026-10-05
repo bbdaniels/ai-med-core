@@ -75,13 +75,25 @@ npx tsx tools/build-talk-redirects.ts --out _site --to https://chat.example.com 
 
 Tests: `packages/api/src/talk-redirects.test.ts` (fixture projects; runs the stub's and the 404 page's scripts against a fake location).
 
+## wait-for-deploy.ts
+
+Waits until a deployment serves a commit, read from the `commit` field of `GET /api/health` (Railway's `RAILWAY_GIT_COMMIT_SHA`; always sent, `null` when unset). `--commit`, or a later commit that contains it, is ready. Another commit, or no `commit` key at all (the old container), keeps it waiting, and it exits 1 with what it last saw when `--timeout` seconds (default 600) pass. `commit: null` (the deployment does not report one, as after `railway up`) and `--any-commit` (no check asked for) both wait for four healthy answers five seconds apart, exit 0 and print a `::warning::` line. `deploy-pages.yml` runs it before the content push, because the merge that starts the push also restarts the API; a manual run from a branch other than main uses `--any-commit`.
+
+```bash
+npx tsx tools/wait-for-deploy.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
+```
+
+The rule is `lib/deploy-ready.ts`. Tests: `packages/api/src/deploy-race.test.ts`.
+
 ## smoke-chat.ts
 
 The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a merge is a production deploy):
 
 ```bash
-ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url https://api.ai-med.live
+ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
 ```
+
+`--commit` waits, up to 10 minutes, until the deployment serves that commit (`lib/deploy-ready.ts`). Without it a run right after a merge tests the old container, or fails on the 502s of the restart.
 
 For each project with a private `projects/<slug>/tests/smoke.json` (`{"vignetteKey", "question", "language"?}`), or each one named with `--projects a,b`, it checks that `/api/config` answers, that `/api/vignettes` refuses without a token when the project is gated (codes from `ACCESS_CODE_<SLUG>`) and answers with one, that one `/api/chat` turn returns a message, followups when the project is structured, and usage, and that a talk-manifest project lists papers. With `ADMIN_PASSPHRASE` set, each turn's cost is the deployment's own `token_usage` estimate; without it only token counts print. A run costs about a cent. Turns carry a `smoke-chat-<timestamp>` session token, so they can be told apart in `qa_log` exports. Exits 1 on any failure. Test: `packages/api/src/smoke-chat.test.ts`.
 
@@ -348,6 +360,8 @@ present a data-portal listing as course content.
 Shared admin API client used by CLI tools. Handles JWT authentication, content CRUD, and the
 conversation-log read (`getQaLog`). One HTTP layer for every tool -- add a method here rather
 than a second `fetch` wrapper in a script.
+
+Every admin request goes through `lib/retry-fetch.ts`: a 502, 503 or 504, or a refused or reset connection (the API restarting after a merge), is retried after 5, 10, 20, 30 and 45 seconds; any other status is final and sent once. So a method added here must be safe to repeat, or pass `repeatable = false` to `request()` as `addAssignment` does. Tests: `packages/api/src/deploy-race.test.ts`.
 
 ## build-eip-text.py
 

@@ -2657,6 +2657,9 @@ app.get('/api/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
+    // The commit this deployment was built from (Railway sets the variable);
+    // null anywhere else. tools/lib/deploy-ready.ts waits on it.
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
     hasOpenAIKey: !!openai.apiKey,
     // Booleans only: the gateway host is never exposed.
     usesHarvardGateway: openaiClients().usesGateway,

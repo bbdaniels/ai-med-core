@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer, FIXED_CLOCK_URL, DEFAULT_TEST_NOW, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
 import { buildTrackedView } from '../test-support/tracked-view.js';
+import { waitForDeploy } from '../../../tools/lib/deploy-ready.js';
 import { buildFixtureIndex } from '@ai-med/chat-core/test-support/fixture-index';
 import { openReadingsIndex, searchReadings } from '@ai-med/chat-core';
 
@@ -70,6 +71,11 @@ test('a fixture index opens through readings.ts and searches by BM25 alone', () 
 test('the server boots and the fake gateway receives the fixed date', async () => {
   const health = await fetch(`${h.base}/api/health`);
   assert.equal(health.status, 200);
+  // The key is always there, null without Railway's variable: the wait reads
+  // an absent key as an older build, and null as "reports no commit".
+  const body = (await health.json()) as Record<string, unknown>;
+  assert.ok('commit' in body);
+  assert.equal(body.commit, null);
 
   const admin = h.admin('demo');
   await admin.saveSystemPrompt('You are a fixture patient.');
@@ -148,8 +154,12 @@ test('the server admits exactly the projects of the checkout it reads', async ()
     cases: { systemPrompt: '', vignettes: [] }, languages: ['en'],
     deployment: { tablePrefix: 'fixture_only' },
   }));
-  const own = await startServer({ root });
+  const own = await startServer({ root, env: { RAILWAY_GIT_COMMIT_SHA: 'c0ffee1234567890c0ffee1234567890c0ffee12' } });
   try {
+    // /api/health names the commit the deployment was built from, and
+    // tools/lib/deploy-ready.ts accepts it as the commit being waited for.
+    const ready = await waitForDeploy({ baseUrl: own.base, commit: 'c0ffee1', timeoutMs: 5_000, intervalMs: 100, log: () => {} });
+    assert.deepEqual(ready, { commit: 'c0ffee1234567890c0ffee1234567890c0ffee12', later: false, verified: true, attempts: 1 });
     const prefix = async (project: string) =>
       ((await (await fetch(`${own.base}/api/health`, { headers: { 'X-Project': project } })).json()) as any).tablePrefix;
     assert.equal(await prefix('fixture_only'), 'fixture_only_');

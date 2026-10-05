@@ -15,8 +15,9 @@
 // request the fake gateway received (path and body), the token_usage and qa_log
 // rows the turn added, and whether a first-turn prompt snapshot was written.
 // Before recording, the project's system prompt text becomes <<SYSTEM_PROMPT>>
-// and each grounding file's text becomes <<GROUNDING <path>>>, so an edit to a
-// prompt does not churn every snapshot.
+// and each grounding file's text (the project's, and each grounding set's)
+// becomes <<GROUNDING <path>>>, so an edit to a prompt does not churn every
+// snapshot.
 //
 // Case file shape:
 //   { "cases": [ {
@@ -49,7 +50,7 @@ import path from 'node:path';
 import { startServer, REPO_ROOT, type Harness } from '../test-support/server-harness.js';
 import { buildFixtureIndex } from '@ai-med/chat-core/test-support/fixture-index';
 import type { FakeReply } from '../test-support/fake-openai.js';
-import { loadChatProjectConfig, corpusGroundingFile } from '@ai-med/chat-core';
+import { loadChatProjectConfig, corpusGroundingFile, groundingSetFiles } from '@ai-med/chat-core';
 
 const PROJECTS = path.join(REPO_ROOT, 'projects');
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
@@ -120,8 +121,12 @@ async function redactions(project: string): Promise<Array<[string, string]>> {
     const text = fs.readFileSync(path.join(REPO_ROOT, sp), 'utf8');
     if (text) out.push([text, '<<SYSTEM_PROMPT>>']);
   }
-  const g = await corpusGroundingFile(REPO_ROOT, await loadChatProjectConfig(REPO_ROOT, project, ''));
-  if (g && fs.existsSync(g)) {
+  const chatCfg = await loadChatProjectConfig(REPO_ROOT, project, '');
+  // The project's grounding, and each grounding set's file this checkout has.
+  const files = [await corpusGroundingFile(REPO_ROOT, chatCfg),
+    ...groundingSetFiles(project, cfg).map(rel => path.join(REPO_ROOT, rel))];
+  for (const g of files) {
+    if (!g || !fs.existsSync(g)) continue;
     const text = fs.readFileSync(g, 'utf8');
     if (text) out.push([text, `<<GROUNDING ${path.relative(REPO_ROOT, g)}>>`]);
   }

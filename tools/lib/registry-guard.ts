@@ -37,3 +37,15 @@ export function withoutContentMessage(count: number, project: string): string {
     'Nothing was pushed. Push from a checkout that has the vignette files first ' +
     `(npx tsx tools/push-content.ts ${project} --url <deployment-url>), then merge the registry.`;
 }
+
+/**
+ * The refusal for grounding sets (project.json groundingSets) whose file is in
+ * neither this checkout nor the deployment's private store, by count only: a
+ * set's name can name unpublished work too.
+ */
+export function groundingSetsWithoutContentMessage(count: number, project: string): string {
+  return `ABORT: ${count} grounding set(s) listed in projects/${project}/project.json have no file ` +
+    `(projects/${project}/grounding/<set>.md) either in this checkout or in the deployment's private store, ` +
+    'so their turns would lose their grounding. Nothing was pushed. Push from a checkout that has the files first ' +
+    `(npx tsx tools/push-content.ts ${project} --url <deployment-url>), then merge the registry.`;
+}

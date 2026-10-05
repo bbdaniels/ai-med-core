@@ -23,6 +23,18 @@ export const REPO_ROOT = process.env.AI_MED_REPO_ROOT?.trim()
   ? path.resolve(process.env.AI_MED_REPO_ROOT.trim())
   : path.resolve(here, '../../..');
 
+/**
+ * The private content store on the mounted volume (e.g. /data/private-content),
+ * or null when the deployment has none. Files a project serves that are kept
+ * out of git (gitignored) live there at their repo-relative path, filled by
+ * tools/push-content.ts; @ai-med/chat-core's resolveProjectContentFile looks in
+ * the checkout first and here second. Defined here, once, because the server's
+ * file routes and the chat route both read it.
+ */
+export const PRIVATE_CONTENT_ROOT = process.env.PRIVATE_CONTENT_ROOT?.trim()
+  ? path.resolve(process.env.PRIVATE_CONTENT_ROOT.trim())
+  : null;
+
 /** packages/api/defaults: the seed content for a fresh deployment. */
 export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');
 

@@ -151,6 +151,13 @@
       "type": "string",
       "description": "Repo-relative path to the corpus grounding file appended to the prompt after the document (a compact index of the corpus the project answers from)"
     },
+    "groundingSets": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_]+(-[A-Za-z0-9_]+)*$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Document sets grounded on their own file, each the part of a vignette key before \"--\" (a deck's slides are <deck>--<slide>). A turn whose current document is in a listed set is grounded on projects/<slug>/grounding/<set>.md (the checkout, then the private store) instead of groundingFile; any other turn, or a set whose file is in neither place, uses groundingFile. One grounding per turn: the earlier document of a followHost turn adds none of its own. Each set must be some vignette's document set, and grounding/ may hold only these files (tools/validate-projects.ts); a private (gitignored) set file reaches a deployment through tools/push-content.ts, which refuses to push when a listed set's file is neither in the checkout nor deployed. See packages/chat-core/CLAUDE.md"
+    },
     "enableFeedback": { "type": "boolean", "description": "Real-time grading feedback after form submission" },
     "enableFollowups": { "type": "boolean", "description": "Inline AI-suggested follow-up question chips above the chat input" },
     "enableVoice": { "type": "boolean", "description": "TTS playback of assistant messages" },

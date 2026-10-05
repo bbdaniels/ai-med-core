@@ -19,6 +19,7 @@
 // (src/remember-conversation.check.ts).
 
 import type { Message } from './chat/types';
+import { documentSet } from '@ai-med/chat-core/document-set';
 
 export const THREAD_KEY_PREFIX = 'talk_thread:';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -44,14 +45,11 @@ export interface SavedThread {
 }
 
 /**
- * The document set a document belongs to: the part of its key before "--"
- * (a deck's slides, `deck-a--title`, are the set `deck-a`), else
- * the whole key. Two decks never share a thread; two slides of one deck do.
+ * The document set a document belongs to: the part of its key before "--", else
+ * the whole key. Two decks never share a thread; two slides of one deck do. The
+ * one definition is chat-core's, which also picks a project's grounding set by it.
  */
-export function documentSet(documentKey: string): string {
-  const cut = documentKey.indexOf('--');
-  return cut > 0 ? documentKey.slice(0, cut) : documentKey;
-}
+export { documentSet };
 
 /** The storage key for a project's thread on a document set: `talk_thread:<project>:<set>`. */
 export function threadStorageKey(project: string, set: string): string {

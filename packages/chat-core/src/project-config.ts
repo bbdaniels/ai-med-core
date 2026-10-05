@@ -18,6 +18,7 @@
  * need, is read here too (talkManifestPath); only its presence is a flag.
  */
 import type { AppType } from './chat/types.js';
+import { documentSet } from './document-set.js';
 
 export type { AppType };
 
@@ -204,4 +205,63 @@ export function rememberConversationContradictions(cfg: Record<string, any>): st
     return ['rememberConversation needs app "talk" (only the talk page remembers a conversation)'];
   }
   return [];
+}
+
+/**
+ * A grounding set's name: a document-set prefix that can be a file name. No
+ * dots or slashes (it becomes a path), and no "--" (a set is what comes before
+ * the first one).
+ */
+export const GROUNDING_SET_RE = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*$/;
+
+/** The directory, under the project's own, that holds its grounding set files. */
+export const GROUNDING_SET_DIR = 'grounding';
+
+/**
+ * The document sets a project grounds on their own (project.json
+ * `groundingSets`): the well-formed names, in order, without repeats; [] when
+ * the project declares none. A turn on a document of a listed set is grounded
+ * on that set's file instead of the project's `groundingFile`
+ * (chat/grounding.ts).
+ */
+export function groundingSets(cfg: Record<string, any>): string[] {
+  if (!Array.isArray(cfg.groundingSets)) return [];
+  return [...new Set(cfg.groundingSets.filter((s: unknown): s is string => typeof s === 'string' && GROUNDING_SET_RE.test(s)))];
+}
+
+/** A grounding set's file, repo-relative: `projects/<slug>/grounding/<set>.md`. */
+export function groundingSetFile(slug: string, set: string): string {
+  return `projects/${slug}/${GROUNDING_SET_DIR}/${set}.md`;
+}
+
+/** Every grounding set file a project.json names, repo-relative, in declaration order. */
+export function groundingSetFiles(slug: string, cfg: Record<string, any>): string[] {
+  return groundingSets(cfg).map(set => groundingSetFile(slug, set));
+}
+
+/**
+ * What a groundingSets project gets wrong. Each declared set must be the
+ * document set of at least one vignette (the part of its key before "--"), so
+ * a set cannot outlive its documents or be misspelled into grounding nothing.
+ * `filesInDir` is what `projects/<slug>/grounding/` holds in this checkout
+ * (file names; [] when the directory is absent): every file there must be a
+ * declared set's `<set>.md`, so a set file nothing reads is refused rather than
+ * left to drift. A declared set whose file is missing is the validator's
+ * missing-file check (or, for a private file, the content push's guard).
+ */
+export function groundingSetsContradictions(cfg: Record<string, any>, filesInDir: string[] = []): string[] {
+  const out: string[] = [];
+  if (cfg.groundingSets !== undefined) {
+    const sets = new Set((Array.isArray(cfg.cases?.vignettes) ? cfg.cases.vignettes : [])
+      .filter((v: any) => typeof v?.key === 'string')
+      .map((v: any) => documentSet(v.key)));
+    for (const set of groundingSets(cfg)) {
+      if (!sets.has(set)) out.push(`groundingSets: "${set}" is no vignette's document set (the part of its key before "--")`);
+    }
+  }
+  const declared = new Set(groundingSets(cfg).map(s => `${s}.md`));
+  for (const name of [...filesInDir].sort()) {
+    if (!declared.has(name)) out.push(`${GROUNDING_SET_DIR}/${name}: not a declared grounding set's file (groundingSets lists the sets, each grounding/<set>.md)`);
+  }
+  return out;
 }

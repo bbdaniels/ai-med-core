@@ -20,7 +20,7 @@ import {
   type ChatRequestBody,
 } from '@ai-med/chat-core';
 import { activeProjectPrefix, engineStore, getCaseTemplate, getProjectSetting } from '../database.js';
-import { REPO_ROOT } from '../repo-root.js';
+import { PRIVATE_CONTENT_ROOT, REPO_ROOT } from '../repo-root.js';
 import { simulationHooks } from '../sim/hooks.js';
 
 export function chatRouter(guards: express.RequestHandler[]): express.Router {
@@ -47,6 +47,8 @@ export function chatRouter(guards: express.RequestHandler[]): express.Router {
         // Billed per project: the payment source picks the client for this request.
         client: async () => clientForPaymentSource(await getProjectSetting(slug || 'default', 'payment_source')),
         openIndex: cfg => (cfg.readingsIndexPath ? openReadingsIndex(REPO_ROOT, cfg.slug, cfg.readingsIndexPath) : null),
+        // A grounding set's file may be private, delivered to the store by push-content.
+        privateContentRoot: PRIVATE_CONTENT_ROOT,
       });
 
       res.json({

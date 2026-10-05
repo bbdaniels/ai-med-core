@@ -50,6 +50,12 @@ export interface ChatDeps {
   hooks: AppHooks;
   now: () => Date;
   openIndex: (cfg: ChatProjectConfig) => OpenIndex | null;
+  /**
+   * The private store a grounding set file may be in when the checkout lacks
+   * it (the API's PRIVATE_CONTENT_ROOT; see content-files.ts). Omitted or null:
+   * the checkout only.
+   */
+  privateContentRoot?: string | null;
 }
 
 /** A request the route answers with `status` and `{error: message}`. */
@@ -80,7 +86,10 @@ export async function runChatTurn(req: ChatTurnRequest, deps: ChatDeps): Promise
   const promptParts = {
     systemPrompt,
     preamble: hooks.promptPreamble({ now: deps.now(), config }),
-    corpusGrounding: await loadCorpusGrounding(deps.repoRoot, config),
+    // One grounding per turn, chosen by the current document's set (grounding.ts).
+    corpusGrounding: await loadCorpusGrounding(deps.repoRoot, config, {
+      documentKey, privateRoot: deps.privateContentRoot ?? null,
+    }),
     structured: config.enableFollowups,
     language,
   };

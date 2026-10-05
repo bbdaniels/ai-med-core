@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  followHostContradictions, projectUrlSlug, rememberConversationContradictions, resolveProjectFlags, talkContradictions,
+  followHostContradictions, groundingSetFile, groundingSetFiles, groundingSets, groundingSetsContradictions, projectUrlSlug, rememberConversationContradictions, resolveProjectFlags, talkContradictions,
   talkManifestPath, TALK_IMPLIED, urlAliasContradictions, urlAliases,
 } from './project-config.js';
 
@@ -265,5 +265,66 @@ test('the validator: an alias another project claims, as its slug or its alias, 
     assert.match(r3.stderr, /urlAliases: "temp" is also claimed by temp/);
   } finally {
     for (const d of [ok, sim, clash]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('groundingSets: the well-formed names, without repeats; each set\'s file is projects/<slug>/grounding/<set>.md', () => {
+  assert.deepEqual(groundingSets({}), []);
+  assert.deepEqual(groundingSets({ groundingSets: ['deck-a', 'deck-a', 'a--b', '../x', 'x.y', '', 7, 'deck_b-2'] }), ['deck-a', 'deck_b-2']);
+  assert.equal(groundingSetFile('proj', 'deck-a'), 'projects/proj/grounding/deck-a.md');
+  assert.deepEqual(groundingSetFiles('proj', { groundingSets: ['deck-a', 'deck-b'] }),
+    ['projects/proj/grounding/deck-a.md', 'projects/proj/grounding/deck-b.md']);
+});
+
+test('groundingSetsContradictions: each set is some vignette\'s set, and grounding/ holds only declared files', () => {
+  const vignettes = [{ key: 'deck-a--one' }, { key: 'deck-a--two' }, { key: 'paper' }];
+  const cfg = (sets?: string[]) => ({ cases: { vignettes }, ...(sets ? { groundingSets: sets } : {}) });
+  assert.deepEqual(groundingSetsContradictions(cfg()), []);
+  assert.deepEqual(groundingSetsContradictions(cfg(['deck-a', 'paper']), ['deck-a.md', 'paper.md']), []);
+  assert.match(groundingSetsContradictions(cfg(['deck-b'])).join('\n'), /"deck-b" is no vignette's document set/);
+  assert.match(groundingSetsContradictions(cfg(['deck-a']), ['deck-a.md', 'deck-b.md']).join('\n'), /grounding\/deck-b\.md: not a declared grounding set's file/);
+  // A grounding/ directory in a project that declares no sets is refused too.
+  assert.match(groundingSetsContradictions(cfg(), ['deck-a.md']).join('\n'), /grounding\/deck-a\.md: not a declared/);
+});
+
+test('the validator: grounding sets must match a vignette\'s set, their files must exist, and grounding/ holds nothing else', () => {
+  const vignettes = [
+    { key: 'set-a--one', template: 'doc', file: 'projects/temp/cases/doc/one.md' },
+    { key: 'set-a--two', template: 'doc', file: 'projects/temp/cases/doc/one.md' },
+  ];
+  const withFile = (root: string, name: string) => {
+    fs.mkdirSync(path.join(root, 'projects/temp/grounding'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'projects/temp/grounding', name), 'Notes.\n');
+    return root;
+  };
+  const project = (sets: unknown) => ({ app: 'talk', groundingSets: sets,
+    cases: { systemPrompt: 'projects/temp/system-prompt.md', vignettes } });
+  const ok = withFile(tempProject(project(['set-a'])), 'set-a.md');
+  const missing = tempProject(project(['set-a']));
+  const unknown = withFile(tempProject(project(['set-b'])), 'set-b.md');
+  const stray = withFile(withFile(tempProject(project(['set-a'])), 'set-a.md'), 'set-z.md');
+  const undeclared = withFile(tempProject({ app: 'talk' }), 'one.md');
+  const malformed = tempProject(project(['set-a.md']));
+  const all = [ok, missing, unknown, stray, undeclared, malformed];
+  try {
+    const r = runValidator(ok);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const r2 = runValidator(missing);
+    assert.equal(r2.status, 1);
+    assert.match(r2.stderr, /missing file: projects\/temp\/grounding\/set-a\.md/);
+    const r3 = runValidator(unknown);
+    assert.equal(r3.status, 1);
+    assert.match(r3.stderr, /"set-b" is no vignette's document set/);
+    const r4 = runValidator(stray);
+    assert.equal(r4.status, 1);
+    assert.match(r4.stderr, /grounding\/set-z\.md: not a declared grounding set's file/);
+    const r5 = runValidator(undeclared);
+    assert.equal(r5.status, 1);
+    assert.match(r5.stderr, /grounding\/one\.md: not a declared/);
+    const r6 = runValidator(malformed);
+    assert.equal(r6.status, 1);
+    assert.match(r6.stderr, /groundingSets\/0 must match pattern/);
+  } finally {
+    for (const d of all) fs.rmSync(d, { recursive: true, force: true });
   }
 });

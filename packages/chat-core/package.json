@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./talk-url": "./src/talk-url.ts",
+    "./document-set": "./src/document-set.ts",
     "./test-support/fixture-index": "./test-support/fixture-index.ts"
   },
   "scripts": {

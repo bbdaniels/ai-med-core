@@ -6,16 +6,20 @@
  *   to it, ChatStore (the database) and AppHooks (what differs per app);
  * - readings search (readings.ts) and the one OpenAI client module
  *   (openai-clients.ts);
- * - project.json flag resolution (project-config.ts).
+ * - project.json flag resolution (project-config.ts), the document set of a
+ *   key (document-set.ts), and where a content file is on disk (content-files.ts).
  *
- * Subpath `@ai-med/chat-core/talk-url` holds the browser-safe DOI and
- * public-URL helpers the frontend imports on its own.
+ * Subpaths `@ai-med/chat-core/talk-url` (the DOI and public-URL helpers) and
+ * `@ai-med/chat-core/document-set` are browser-safe; the frontend imports them
+ * on their own.
  */
 export * from './talk-url.js';
 export * from './gateway.js';
 export * from './openai-clients.js';
 export * from './readings.js';
 export * from './project-config.js';
+export * from './document-set.js';
+export * from './content-files.js';
 export * from './chat/types.js';
 export * from './chat/answer.js';
 export * from './chat/completion.js';

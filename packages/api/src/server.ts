@@ -1,7 +1,11 @@
 import express from 'express';
 import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
-import { openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost, type ResolvedFlags } from '@ai-med/chat-core';
+import {
+  openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost, type ResolvedFlags,
+  groundingSetFiles, projectContentRelPath, privateContentPath as privateContentPathIn,
+  resolveProjectContentFile as resolveContentFile,
+} from '@ai-med/chat-core';
 import path from 'path';
 import fs from 'fs/promises';
 import { readdirSync, readFileSync } from 'fs';
@@ -64,7 +68,7 @@ import {
   exportNpj26Csv,
   TOKEN_RE as NPJ26_TOKEN_RE,
 } from './npj26.js';
-import { REPO_ROOT } from './repo-root.js';
+import { PRIVATE_CONTENT_ROOT, REPO_ROOT } from './repo-root.js';
 import { talkRoutes } from './talk/routes.js';
 import { talkPagesRouter, talkPagesSettings } from './talk/pages.js';
 import { chatRouter } from './routes/chat.js';
@@ -510,46 +514,21 @@ const requireAccessCode = async (req: express.Request, res: express.Response,
 //
 // Some files a project serves are deliberately not in the repository: the
 // papers project's PDFs are gitignored (several are publisher-copyright, and none
-// belong in git history). A Railway deploy is built from git, so those files are
+// belong in git history), and a project's grounding set files may hold
+// unpublished results. A Railway deploy is built from git, so those files are
 // never on its disk. They live instead in a private store on the mounted volume,
-// PRIVATE_CONTENT_ROOT (e.g. /data/private-content), at the SAME repo-relative
-// path they have in a checkout (projects/papers/content/library/x.pdf). Every
-// reader resolves a content path through resolveProjectContentFile(), which tries
-// the checkout first and the store second, so project.json names one path and it
-// works in dev and in production alike. tools/push-content.ts fills the store.
-const PRIVATE_CONTENT_ROOT = process.env.PRIVATE_CONTENT_ROOT?.trim()
-  ? path.resolve(process.env.PRIVATE_CONTENT_ROOT.trim())
-  : null;
-
-/** A repo-relative path under projects/, normalized; null for anything else. */
-function projectContentRelPath(rel: string): string | null {
-  if (typeof rel !== 'string' || !rel || rel.includes('\0')) return null;
-  const normalized = path.posix.normalize(rel.replace(/\\/g, '/'));
-  if (normalized.startsWith('/') || normalized.startsWith('../')) return null;
-  if (!normalized.startsWith('projects/')) return null;
-  return normalized;
-}
+// PRIVATE_CONTENT_ROOT (repo-root.ts), at the SAME repo-relative path they have
+// in a checkout. Every reader resolves a content path through chat-core's
+// resolveProjectContentFile (content-files.ts), which tries the checkout first
+// and the store second, so project.json names one path and it works in dev and
+// in production alike. tools/push-content.ts fills the store.
 
 /** Where a private file lives in the store; null when no store is configured. */
-function privateContentPath(rel: string): string | null {
-  if (!PRIVATE_CONTENT_ROOT) return null;
-  const abs = path.resolve(PRIVATE_CONTENT_ROOT, rel);
-  return abs.startsWith(PRIVATE_CONTENT_ROOT + path.sep) ? abs : null;
-}
+const privateContentPath = (rel: string): string | null => privateContentPathIn(PRIVATE_CONTENT_ROOT, rel);
 
 /** The file on disk for a project content path: the checkout, then the private store. */
-async function resolveProjectContentFile(rel: string): Promise<string | null> {
-  const clean = projectContentRelPath(rel);
-  if (!clean) return null;
-  const candidates = [path.resolve(REPO_ROOT, clean), privateContentPath(clean)];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      if ((await fs.stat(candidate)).isFile()) return candidate;
-    } catch { /* try the next */ }
-  }
-  return null;
-}
+const resolveProjectContentFile = (rel: string): Promise<string | null> =>
+  resolveContentFile(rel, { repoRoot: REPO_ROOT, privateRoot: PRIVATE_CONTENT_ROOT });
 
 /** Every file a project's tabs point at, all languages, as repo-relative paths. */
 function projectTabContentFiles(config: Record<string, any>): Set<string> {
@@ -562,6 +541,16 @@ function projectTabContentFiles(config: Record<string, any>): Set<string> {
       if (clean) out.add(clean);
     }
   }
+  return out;
+}
+
+/**
+ * Every path the private store may hold for a project: its tab files and its
+ * grounding set files (project.json groundingSets). Nothing else is accepted.
+ */
+function projectStoreFiles(slug: string, config: Record<string, any>): Set<string> {
+  const out = projectTabContentFiles(config);
+  for (const f of groundingSetFiles(slug, config)) out.add(f);
   return out;
 }
 
@@ -1639,8 +1628,9 @@ app.post('/api/admin/readings-index',
 // ── Private content store (see resolveProjectContentFile) ──────────────
 //
 // Global admin only. A file may be stored only at a path the requesting
-// project's own project.json names as a tab contentFile, so the store cannot be
-// used for anything a project does not actually serve. tools/push-content.ts
+// project's own project.json names as a tab contentFile or as a grounding set
+// file (groundingSets), so the store cannot be used for anything a project does
+// not actually serve. tools/push-content.ts
 // lists, uploads changed files, and removes ones project.json no longer names.
 
 /** A request path for this project's store, or an error to send. */
@@ -1656,13 +1646,14 @@ async function privateContentTarget(req: express.Request):
   if (!rel || !dest || !rel.startsWith(`projects/${slug}/`)) {
     return { status: 403, error: `Path must lie under projects/${slug}/` };
   }
-  const referenced = projectTabContentFiles(await readProjectConfig(slug)).has(rel);
+  const referenced = projectStoreFiles(slug, await readProjectConfig(slug)).has(rel);
   return { rel, dest, referenced };
 }
 
 app.get('/api/admin/private-content', authenticateAdmin, requireContentWrite, async (req, res) => {
   const slug = requestProjectSlug(req);
-  if (!PRIVATE_CONTENT_ROOT) return res.json({ configured: false, files: [] });
+  const storeRoot = PRIVATE_CONTENT_ROOT;
+  if (!storeRoot) return res.json({ configured: false, files: [] });
   const dir = privateContentPath(`projects/${slug}`);
   const files: Array<{ path: string; bytes: number; sha256: string }> = [];
   const walk = async (abs: string): Promise<void> => {
@@ -1679,7 +1670,7 @@ app.get('/api/admin/private-content', authenticateAdmin, requireContentWrite, as
       } else if (e.isFile() && !e.name.includes('.upload-')) {
         const buf = await fs.readFile(child);
         files.push({
-          path: path.relative(PRIVATE_CONTENT_ROOT, child).split(path.sep).join('/'),
+          path: path.relative(storeRoot, child).split(path.sep).join('/'),
           bytes: buf.length,
           sha256: createHash('sha256').update(buf).digest('hex'),
         });
@@ -1698,7 +1689,7 @@ app.put('/api/admin/private-content/*',
       const target = await privateContentTarget(req);
       if ('error' in target) return res.status(target.status).json({ error: target.error });
       if (!target.referenced) {
-        return res.status(400).json({ error: `${target.rel} is not a contentFile in this project's project.json` });
+        return res.status(400).json({ error: `${target.rel} is neither a tab contentFile nor a grounding set file in this project's project.json` });
       }
       const body = req.body as Buffer;
       if (!Buffer.isBuffer(body) || body.length === 0) {

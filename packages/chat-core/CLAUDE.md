@@ -12,6 +12,9 @@
 - **The gateway contract** (`gateway.ts`): the env names `HARVARD_GATEWAY_URL` and `OPENAI_API_KEY`, the default host, and the embedding model. `tools/lib/openai_gateway.py` holds the same values for the Python corpus builders; `gateway-contract.test.ts` fails when the two drift and pins the Python side's request headers.
 - **Project flags** (`project-config.ts`): `resolveProjectFlags`, which resolves a `project.json` to its `app` and the flags `/api/config` emits (talk implies the four advisor flags), and `talkContradictions`, `followHostContradictions` and `rememberConversationContradictions`, which `tools/validate-projects.ts` uses. `rememberConversation` (`{days}` or null) is the talk page's alone: the engine ignores it, since the page sends the whole history with every turn whether or not it was restored from the browser.
 - **Following a host page** (`chat/follow-host.ts`): the prompt and history of a `followHost` turn; see below.
+- **Grounding** (`chat/grounding.ts`): `corpusGroundingFile` and `loadCorpusGrounding`, the one grounding file of a turn: the current document's grounding set's file when the project lists that set in `groundingSets`, else `groundingFile`, else the legacy locations. See "Grounding" below.
+- **Document sets** (`document-set.ts`, also the browser-safe subpath `@ai-med/chat-core/document-set`): `documentSet(key)`, the part of a key before the first `--`, else the key. The one definition: the talk page keys a remembered thread by it and the pipeline picks a grounding set by it. `project-config.ts` holds `groundingSets`, `groundingSetFile`, `groundingSetFiles` and `groundingSetsContradictions`, which the validator, the content push and the server's private store use.
+- **Content files** (`content-files.ts`): `resolveProjectContentFile(rel, {repoRoot, privateRoot})`, where a project content path is on disk, the checkout first and the private store (the API's `PRIVATE_CONTENT_ROOT`) second. The API's tab and file routes and the grounding sets use it; there is no second copy.
 - **Talk hooks**: `talkHooks()` and `datePreamble` (`chat/hooks.ts`).
 
 `@ai-med/chat-core/talk-url` (`src/talk-url.ts`): DOI normalization and the `talkPublicUrl` fill. It is browser-safe and the frontend imports it on its own, so it must never import a Node module.
@@ -28,7 +31,7 @@ A talk project that sets `"followHost": true` (with `"embedOrigins"`, the origin
 
 1. the project's system prompt;
 2. the app's preamble blocks (the date);
-3. the corpus grounding (`groundingFile`), if any;
+3. the corpus grounding, if any: **one** file, chosen by the current document (see "Grounding" below);
 4. the JSON instruction (`STRUCTURED_INSTRUCTION`; talk implies `enableFollowups`);
 5. the language directive (`SPEAK ONLY IN <language>`), if the page sent one;
 6. a section headed exactly `## Current document: <title> (<key>)`, then that document's content;
@@ -42,6 +45,18 @@ Compared with a project that does not follow a host (`assemblePrompt`: system pr
 
 Tests: `src/chat/follow-host.test.ts` (the parts), `src/chat/pipeline.test.ts` (the branch), and `packages/api/src/follow-host.test.ts`, a characterization through the real server on an invented fixture project (switch, earlier-document section, an unknown key, the history cap), with its snapshot in `packages/api/test-fixtures/follow-host/snapshots.json`.
 
+## Grounding
+
+A turn's corpus grounding is one file, resolved by `corpusGroundingFile(repoRoot, config, {documentKey, privateRoot})`:
+
+1. if the project lists the current document's set in `groundingSets` (project.json; the set is `documentSet(documentKey)`, the part of the key before the first `--`), the file `projects/<slug>/grounding/<set>.md`, looked up in the checkout and then in the private store (`ChatDeps.privateContentRoot`);
+2. else, and also when a listed set's file is in neither place (logged as a warning), `groundingFile`;
+3. else the legacy locations, `content/legal/grounding.md` then `content/readings/grounding.md`.
+
+It goes where the corpus grounding always went: item 3 of a followHost prompt above, and after the document in every other project's prompt. **One grounding per turn, chosen by the current document alone.** In a followHost turn the earlier document shares the current document's grounding when it is of the same set; when it is of another set it is sent under its `## Earlier document` heading with no grounding of its own, and that set's file is not read. A project that follows a host across sets should therefore keep in each set's file what a reader needs to read that set's documents, and write its documents so that the earlier one stands on its content alone. A project that lists no sets grounds exactly as before.
+
+Tests: `src/chat/grounding.test.ts` (the order of resolution, the store, the fallback), `src/chat/pipeline.test.ts` (the turn's document picks the set; the earlier-document rule) and `packages/api/src/grounding-sets.test.ts`, a characterization through the real server on an invented fixture project with a private store (a set in the checkout, a set only in the store, a document outside the sets, an earlier document of the same set and of another, and the store's upload guard), with its snapshot in `packages/api/test-fixtures/grounding-sets/snapshots.json`.
+
 ## Ports: what an app hands the pipeline
 
 `ChatDeps` is everything `runChatTurn` touches outside itself:
@@ -50,6 +65,7 @@ Tests: `src/chat/follow-host.test.ts` (the parts), `src/chat/pipeline.test.ts` (
 - `hooks: AppHooks`: what differs between the apps. The prompt preamble, the case template a response carries, and an optional first-turn hook. `talkHooks()` lives here; `simulationHooks()` is simulator code and lives in the API (`packages/api/src/sim/hooks.ts`).
 - `client`: the completion client for this request, chosen by the caller (the API picks it by the project's `payment_source`). The pipeline never builds or fetches a client.
 - `openIndex`, `now`, `repoRoot`, `config`.
+- `privateContentRoot` (optional): the private store a grounding set's file may be in when the checkout lacks it. The API passes `PRIVATE_CONTENT_ROOT` (`packages/api/src/repo-root.ts`); omitted, only the checkout is read.
 
 ## What may not be imported
 

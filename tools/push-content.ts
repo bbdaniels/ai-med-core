@@ -23,7 +23,11 @@
  * The push fails before writing anything when project.json registers a
  * vignette whose file is neither in this checkout nor already deployed
  * (tools/lib/registry-guard.ts): a registry that arrives before its content
- * would publish titles whose links all answer as unknown.
+ * would publish titles whose links all answer as unknown. It fails the same
+ * way when project.json lists a grounding set (groundingSets) whose file,
+ * projects/<slug>/grounding/<set>.md, is neither here nor in the deployment's
+ * private store. A private (gitignored) set file is uploaded to the store with
+ * the private tab files; a tracked one deploys with the code.
  *
  * Deployed vignettes that project.json no longer names are removed, except
  * that tools/lib/stale-removal.ts refuses every removal without --prune when
@@ -37,7 +41,8 @@ import path from 'path';
 import { AdminApiClient } from './lib/api-client.js';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
 import { planStaleRemoval, refusalReason } from './lib/stale-removal.js';
-import { vignettesWithoutContent, withoutContentMessage } from './lib/registry-guard.js';
+import { groundingSetsWithoutContentMessage, vignettesWithoutContent, withoutContentMessage } from './lib/registry-guard.js';
+import { groundingSetFiles } from '../packages/chat-core/src/project-config.js';
 
 interface ProjectJson {
   name: string;
@@ -58,6 +63,7 @@ interface ProjectJson {
   formless?: boolean;
   requireKnownVignette?: boolean;
   tabs?: Array<{ contentFile?: string | Record<string, string> }>;
+  groundingSets?: string[];
   deployment: {
     tablePrefix: string;
   };
@@ -174,6 +180,21 @@ async function main() {
   if (withoutContent.length > 0) {
     console.error(withoutContentMessage(withoutContent.length, projectName));
     process.exit(1);
+  }
+
+  // The same guard for grounding sets: a set project.json lists is grounded on
+  // projects/<slug>/grounding/<set>.md, which must be in this checkout (a
+  // tracked file deploys with the code; a private one is uploaded below) or
+  // already in the deployment's private store.
+  const groundingFiles = groundingSetFiles(projectName, project);
+  const storeListing = groundingFiles.length > 0 ? await client.listPrivateContent() : null;
+  if (storeListing) {
+    const registeredSets = await Promise.all(groundingFiles.map(async rel => ({ key: rel, inCheckout: await exists(rel) })));
+    const setsWithoutContent = vignettesWithoutContent(registeredSets, storeListing.files.map(f => f.path));
+    if (setsWithoutContent.length > 0) {
+      console.error(groundingSetsWithoutContentMessage(setsWithoutContent.length, projectName));
+      process.exit(1);
+    }
   }
 
   // Push system prompt
@@ -315,10 +336,11 @@ async function main() {
     }
   }
 
-  // Private tab files (PDFs kept out of git) -> the deployment's private store.
-  const privateFiles = tabContentFiles(project).filter(isPrivateFile);
+  // Private tab files (PDFs kept out of git) and private grounding set files
+  // -> the deployment's private store.
+  const privateFiles = [...tabContentFiles(project), ...groundingFiles].filter(isPrivateFile);
   if (privateFiles.length > 0) {
-    const store = await client.listPrivateContent();
+    const store = storeListing ?? await client.listPrivateContent();
     const present: string[] = [];
     for (const rel of privateFiles) if (await exists(rel)) present.push(rel);
     console.log(`Private content: ${privateFiles.length} file(s) named, ${present.length} in this checkout`);

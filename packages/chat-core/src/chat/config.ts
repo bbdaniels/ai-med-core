@@ -7,7 +7,7 @@ import path from 'path';
 import type { ChatProjectConfig, FollowHostConfig, KnownChatModel, RetrievalScope } from './types.js';
 import { DEFAULT_HISTORY_TOKENS } from './follow-host.js';
 import { KNOWN_CHAT_MODELS } from './usage.js';
-import { resolveProjectFlags } from '../project-config.js';
+import { groundingSets as declaredGroundingSets, resolveProjectFlags } from '../project-config.js';
 
 /**
  * Read the project's chat settings. A project.json that is missing or does not
@@ -26,6 +26,7 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   let readingsQueryLanguage: string | null = null;
   let chatModel: KnownChatModel = 'gpt-4o-mini';
   let groundingFile: string | null = null;
+  let groundingSets: string[] = [];
   let retrievalScope: RetrievalScope = 'corpus';
   let searchFirst = false;
   let followHost: FollowHostConfig | null = null;
@@ -36,6 +37,8 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     logConversations = cfg.logConversations === true;
     readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
     groundingFile = typeof cfg.groundingFile === 'string' && cfg.groundingFile ? cfg.groundingFile : null;
+    // Document sets with their own grounding file (chat/grounding.ts).
+    groundingSets = declaredGroundingSets(cfg);
     // A document-scoped project searches only the passages of the document the
     // turn is about (its key is the index's document id), and a search-first
     // project must search before it answers. Both default off.
@@ -84,6 +87,7 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     readingsQueryLanguage,
     chatModel,
     groundingFile,
+    groundingSets,
     retrievalScope,
     searchFirst,
     followHost,

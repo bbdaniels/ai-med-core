@@ -45,6 +45,12 @@ export interface ChatProjectConfig {
   /** The declared grounding file, repo-relative; null looks in the legacy locations. */
   groundingFile: string | null;
   /**
+   * The document sets grounded on their own file (project.json groundingSets):
+   * a turn on a document of one of them is grounded on
+   * `projects/<slug>/grounding/<set>.md` instead of groundingFile. [] when none.
+   */
+  groundingSets: string[];
+  /**
    * What a search may return: the whole corpus ('corpus', the default), or
    * only the passages of the document the turn is about ('document'). The
    * scope is applied by the server; the model cannot widen it.

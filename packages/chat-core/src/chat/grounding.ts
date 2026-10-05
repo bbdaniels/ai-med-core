@@ -8,10 +8,25 @@
  * A project names its file in project.json (`groundingFile`, repo-relative). A
  * project that does not is looked up at the legacy locations, so a project.json
  * from before the field still grounds the same way.
+ *
+ * Grounding sets. A project that holds several document sets (a deck's slides
+ * are keyed `<deck>--<slide>`, the set being the part before "--", see
+ * document-set.ts) may ground each set on its own file: project.json lists the
+ * sets in `groundingSets`, and a turn whose CURRENT document is in a listed set
+ * is grounded on `projects/<slug>/grounding/<set>.md`, found in the checkout
+ * and then in the private store (content-files.ts), since a set's notes may be
+ * private. A document outside the listed sets, or a listed set whose file is
+ * in neither place, falls back to groundingFile and the legacy locations. A
+ * turn carries one grounding, chosen by its current document alone: the
+ * earlier document of a followHost turn shares it when it is of the same set,
+ * and when it is of another set it brings no grounding of its own.
  */
 import fs from 'fs/promises';
 import path from 'path';
 import type { ChatProjectConfig } from './types.js';
+import { documentSet } from '../document-set.js';
+import { groundingSetFile } from '../project-config.js';
+import { resolveProjectContentFile } from '../content-files.js';
 
 /** Candidate files under projects/<slug>/, in order; the first that reads wins. */
 const LEGACY_CANDIDATES = [
@@ -19,14 +34,31 @@ const LEGACY_CANDIDATES = [
   ['content', 'readings', 'grounding.md'],
 ];
 
+/** What decides a turn's grounding beyond the project: its current document, and the private store. */
+export interface GroundingLookup {
+  /** The turn's current document. Without it no grounding set applies. */
+  documentKey?: string | null;
+  /** The private store a set file may be in (the API's PRIVATE_CONTENT_ROOT); null for none. */
+  privateRoot?: string | null;
+}
+
+type GroundingConfig = Pick<ChatProjectConfig, 'slug' | 'groundingFile'> & Partial<Pick<ChatProjectConfig, 'groundingSets'>>;
+
 /**
- * The absolute path of the project's grounding file, or null when it has none.
+ * The absolute path of the turn's grounding file, or null when it has none.
  * A declared path is resolved against the repo root and must stay inside it
  * (it is repo content, not user input, but a bad edit must not read outside
  * the tree), as readings index paths are.
  */
-export async function corpusGroundingFile(repoRoot: string, cfg: Pick<ChatProjectConfig, 'slug' | 'groundingFile'>): Promise<string | null> {
+export async function corpusGroundingFile(repoRoot: string, cfg: GroundingConfig, lookup: GroundingLookup = {}): Promise<string | null> {
   const root = path.resolve(repoRoot);
+  const set = lookup.documentKey ? documentSet(lookup.documentKey) : null;
+  if (set && cfg.groundingSets?.includes(set)) {
+    const rel = groundingSetFile(cfg.slug, set);
+    const file = await resolveProjectContentFile(rel, { repoRoot: root, privateRoot: lookup.privateRoot ?? null });
+    if (file) return file;
+    console.warn(`[grounding] ${cfg.slug}: ${rel} is in neither the checkout nor the private store; using the project's grounding`);
+  }
   if (cfg.groundingFile) {
     const declared = path.resolve(root, cfg.groundingFile);
     if (!declared.startsWith(root + path.sep)) {
@@ -45,14 +77,14 @@ export async function corpusGroundingFile(repoRoot: string, cfg: Pick<ChatProjec
   return null;
 }
 
-/** The grounding text, or '' when the project has none. */
-export async function loadCorpusGrounding(repoRoot: string, cfg: ChatProjectConfig): Promise<string> {
-  const file = await corpusGroundingFile(repoRoot, cfg);
+/** The grounding text for the turn, or '' when it has none. */
+export async function loadCorpusGrounding(repoRoot: string, cfg: GroundingConfig, lookup: GroundingLookup = {}): Promise<string> {
+  const file = await corpusGroundingFile(repoRoot, cfg, lookup);
   if (!file) return '';
   try {
     return await fs.readFile(file, 'utf-8');
   } catch {
-    if (cfg.groundingFile) console.warn(`[grounding] ${cfg.slug}: cannot read ${cfg.groundingFile}`);
+    console.warn(`[grounding] ${cfg.slug}: cannot read ${path.relative(path.resolve(repoRoot), file)}`);
     return '';
   }
 }

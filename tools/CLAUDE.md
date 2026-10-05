@@ -40,6 +40,8 @@ A refusal removes nothing, prints each kept key, and the push carries on with ev
 
 The opposite hazard is a `project.json` that names vignettes the deployment cannot serve. Private vignette files are gitignored, so CI's push never has them; if the registry (and the titles in `languages.json`) reaches main before the files were pushed from a checkout that has them, every link to those vignettes is refused as unknown while the page shows their titles. `tools/lib/registry-guard.ts` (`vignettesWithoutContent`) counts the registered vignettes whose file is neither in this checkout nor already deployed (the deployed list is read before any write). If there is one, the push stops before writing anything and exits 1 with the count, never the keys. The order that works: push from a checkout that has the files, then merge the registry. In CI (`deploy-pages.yml`) every project is still attempted and the step fails at the end. Tests: `packages/api/src/registry-guard.test.ts`.
 
+Grounding sets (`project.json` `groundingSets`, see `projects/CLAUDE.md`) are guarded the same way: each listed set's file, `projects/<slug>/grounding/<set>.md`, must be in this checkout or already in the deployment's private store (`groundingSetsWithoutContentMessage`, a count only). A private (gitignored) set file is uploaded to the private store with the private tab files (only when changed, by SHA-256); a tracked one deploys with the code.
+
 ### Assignments sync
 
 When `projects/<name>/assignments.json` exists, `push-content.ts` diffs the local rows against the remote DB (via `GET /api/admin/vignette-assignments`) using the `(uid, vignette_key)` pair as the key. It then:

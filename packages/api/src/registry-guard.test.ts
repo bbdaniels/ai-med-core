@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { vignettesWithoutContent, withoutContentMessage } from '../../../tools/lib/registry-guard.js';
+import { groundingSetsWithoutContentMessage, vignettesWithoutContent, withoutContentMessage } from '../../../tools/lib/registry-guard.js';
 import { startServer, REPO_ROOT, TEST_PASSPHRASE, type Harness } from '../test-support/server-harness.js';
 
 const PUSH_TOOL = path.join(REPO_ROOT, 'tools', 'push-content.ts');
@@ -37,6 +37,9 @@ test('the refusal names the count and never a key', () => {
   const msg = withoutContentMessage(124, 'some_project');
   assert.match(msg, /^ABORT: 124 vignette\(s\)/);
   assert.match(msg, /then merge the registry/);
+  const sets = groundingSetsWithoutContentMessage(2, 'some_project');
+  assert.match(sets, /^ABORT: 2 grounding set\(s\)/);
+  assert.match(sets, /projects\/some_project\/grounding\/<set>\.md/);
 });
 
 let h: Harness;
@@ -46,7 +49,7 @@ const TITLE = 'FIXTURE REGISTRY TITLE';
 const KEYS = ['fixture-registry--one', 'fixture-registry--two'];
 
 /** A checkout holding only a registry for the demo slug: project.json and languages.json, no vignette files. */
-function registryTree(): string {
+function registryTree(extra: Record<string, unknown> = {}): string {
   const root = fs.mkdtempSync(path.join(tmp, 'tree-'));
   const dir = path.join(root, 'projects', 'demo');
   fs.mkdirSync(dir, { recursive: true });
@@ -61,6 +64,7 @@ function registryTree(): string {
     },
     languages: ['en'],
     deployment: { tablePrefix: 'demo' },
+    ...extra,
   }));
   fs.writeFileSync(path.join(dir, 'languages.json'), JSON.stringify({
     languages: [{ code: 'en', name: 'English' }],
@@ -121,4 +125,32 @@ test('with the files in the checkout, the same registry pushes', async () => {
   assert.deepEqual(content.vignettes.map(v => v.key).filter(k => KEYS.includes(k)).sort(), [...KEYS].sort());
   const langs = await (await fetch(`${h.base}/api/languages`, { headers: { 'X-Project': 'demo' } })).text();
   assert.ok(langs.includes(TITLE));
+});
+
+// A grounding set (project.json groundingSets) is guarded the same way: its
+// file, projects/<slug>/grounding/<set>.md, must be here or in the private store.
+const SET = 'fixture-registry';
+
+test('push-content refuses a grounding set whose file is nowhere, and writes nothing', async () => {
+  const root = registryTree({ groundingSets: [SET] });
+  fs.mkdirSync(path.join(root, 'projects', 'demo', 'cases'), { recursive: true });
+  for (const k of KEYS) fs.writeFileSync(path.join(root, 'projects', 'demo', 'cases', `${k}.md`), `FIXTURE content for ${k}`);
+  const before = await h.admin('demo').getContent();
+  const r = await runPush(root);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /ABORT: 1 grounding set\(s\)/);
+  assert.ok(!r.out.includes(SET), 'the output names no set');
+  const after = await h.admin('demo').getContent();
+  assert.equal(after.systemPrompt, before.systemPrompt);
+  assert.deepEqual(after.vignettes.map(v => v.key).sort(), before.vignettes.map(v => v.key).sort());
+});
+
+test('with the set file in the checkout, the same registry pushes', async () => {
+  const root = registryTree({ groundingSets: [SET] });
+  fs.mkdirSync(path.join(root, 'projects', 'demo', 'cases'), { recursive: true });
+  for (const k of KEYS) fs.writeFileSync(path.join(root, 'projects', 'demo', 'cases', `${k}.md`), `FIXTURE content for ${k}`);
+  fs.mkdirSync(path.join(root, 'projects', 'demo', 'grounding'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'grounding', `${SET}.md`), 'FIXTURE set notes');
+  const r = await runPush(root);
+  assert.equal(r.code, 0, r.out);
 });

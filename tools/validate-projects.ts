@@ -12,6 +12,8 @@
  * a talk project sets no flag that contradicts `app: "talk"`, a followHost
  * project has what following a host needs (followHostContradictions), and only
  * a talk project remembers a conversation (rememberConversationContradictions),
+ * a project's grounding sets are document sets of its vignettes and its
+ * grounding/ directory holds only their files (groundingSetsContradictions),
  * and a talk page's urlAliases (urlAliasContradictions) are no other project's
  * URL slug or alias, since the server would serve only one of them.
  *
@@ -25,7 +27,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
 import {
-  followHostContradictions, projectUrlSlug, rememberConversationContradictions, talkContradictions,
+  followHostContradictions, GROUNDING_SET_DIR, groundingSetFiles, groundingSetsContradictions, projectUrlSlug,
+  rememberConversationContradictions, talkContradictions,
   urlAliasContradictions, urlAliases,
 } from '../packages/chat-core/src/project-config.js';
 
@@ -69,7 +72,7 @@ if (dirs.length === 0) {
   process.exit(1);
 }
 
-function pathFields(p: any): string[] {
+function pathFields(p: any, slug: string): string[] {
   const out: string[] = [];
   out.push(p.cases?.systemPrompt);
   for (const v of p.cases?.vignettes ?? []) out.push(v.file);
@@ -77,8 +80,19 @@ function pathFields(p: any): string[] {
   if (p.kobo?.template) out.push(p.kobo.template);
   if (p.talkManifest) out.push(p.talkManifest);
   if (p.groundingFile) out.push(p.groundingFile);
+  out.push(...groundingSetFiles(slug, p));
   // readingsIndex is deliberately excluded: gitignored, uploaded to Railway out of band.
   return out.filter(Boolean);
+}
+
+/** The file names in projects/<slug>/grounding/ in this checkout; [] when there is no such directory. */
+function groundingDirFiles(slug: string): string[] {
+  try {
+    return fs.readdirSync(path.join(root, 'projects', slug, GROUNDING_SET_DIR), { withFileTypes: true })
+      .filter(e => e.isFile() && e.name !== '.DS_Store').map(e => e.name);
+  } catch {
+    return [];
+  }
 }
 
 let failed = 0;
@@ -101,11 +115,12 @@ for (const slug of dirs) {
     errors.push(...followHostContradictions(p));
     errors.push(...rememberConversationContradictions(p));
     errors.push(...urlAliasContradictions(p));
+    errors.push(...groundingSetsContradictions(p, groundingDirFiles(slug)));
     errors.push(...aliasClashes(slug));
     if (p.name !== slug) errors.push(`name "${p.name}" does not match directory "${slug}"`);
     if (!fs.existsSync(path.join(root, 'projects', slug, 'languages.json'))) errors.push('languages.json missing');
     let privateAbsent = 0;
-    for (const rel of pathFields(p)) {
+    for (const rel of pathFields(p, slug)) {
       if (fs.existsSync(path.join(root, rel))) continue;
       // A gitignored file is absent from any checkout but the author's, by
       // design (see tools/lib/private-files.ts); anything else missing is a bug.

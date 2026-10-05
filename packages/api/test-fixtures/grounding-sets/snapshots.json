@@ -1,0 +1,245 @@
+{
+  "by-set": [
+    {
+      "status": 200,
+      "response": {
+        "message": "A1.",
+        "followups": [
+          "One?",
+          "Two?"
+        ],
+        "beyondScope": false,
+        "usage": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5,
+          "total_tokens": 15
+        },
+        "caseTemplate": null
+      },
+      "sent": [
+        [
+          {
+            "role": "system",
+            "content": "FIXTURE grounding-sets prompt. Answer from the current document and its notes.\n\nToday is Thursday, October 1, 2026. Yesterday was Wednesday, September 30, 2026. Two days ago was Tuesday, September 29, 2026. Three days ago was Monday, September 28, 2026. Four days ago was Sunday, September 27, 2026. One week ago was Thursday, September 24, 2026.\n\nFIXTURE NOTES SET A. Every table in set A is weighted by clinic.\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.\n\nSPEAK ONLY IN English\n\n## Current document: FIXTURE A one (set-a--one)\n\nFIXTURE DOCUMENT A1. Table A1, row 1: 12 clinics."
+          },
+          {
+            "role": "assistant",
+            "content": "FIXTURE opening."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE A one] How many clinics?"
+          }
+        ]
+      ],
+      "qaLog": [
+        {
+          "project": "fixture_sets",
+          "session_token": "fixture-session-grounding-sets-0001",
+          "vignette_key": "set-a--one",
+          "language": "English",
+          "question": "How many clinics?",
+          "answer": "A1."
+        }
+      ]
+    },
+    {
+      "status": 200,
+      "response": {
+        "message": "B1.",
+        "followups": [
+          "One?",
+          "Two?"
+        ],
+        "beyondScope": false,
+        "usage": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5,
+          "total_tokens": 15
+        },
+        "caseTemplate": null
+      },
+      "sent": [
+        [
+          {
+            "role": "system",
+            "content": "FIXTURE grounding-sets prompt. Answer from the current document and its notes.\n\nToday is Thursday, October 1, 2026. Yesterday was Wednesday, September 30, 2026. Two days ago was Tuesday, September 29, 2026. Three days ago was Monday, September 28, 2026. Four days ago was Sunday, September 27, 2026. One week ago was Thursday, September 24, 2026.\n\nFIXTURE NOTES SET B. Every figure in set B is unweighted.\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.\n\nSPEAK ONLY IN English\n\n## Current document: FIXTURE B one (set-b--one)\n\nFIXTURE DOCUMENT B1. Figure B1: two lines, blue above red."
+          },
+          {
+            "role": "assistant",
+            "content": "FIXTURE opening."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE B one] Which line is higher?"
+          }
+        ]
+      ],
+      "qaLog": [
+        {
+          "project": "fixture_sets",
+          "session_token": "fixture-session-grounding-sets-0001",
+          "vignette_key": "set-b--one",
+          "language": "English",
+          "question": "Which line is higher?",
+          "answer": "B1."
+        }
+      ]
+    },
+    {
+      "status": 200,
+      "response": {
+        "message": "L1.",
+        "followups": [
+          "One?",
+          "Two?"
+        ],
+        "beyondScope": false,
+        "usage": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5,
+          "total_tokens": 15
+        },
+        "caseTemplate": null
+      },
+      "sent": [
+        [
+          {
+            "role": "system",
+            "content": "FIXTURE grounding-sets prompt. Answer from the current document and its notes.\n\nToday is Thursday, October 1, 2026. Yesterday was Wednesday, September 30, 2026. Two days ago was Tuesday, September 29, 2026. Three days ago was Monday, September 28, 2026. Four days ago was Sunday, September 27, 2026. One week ago was Thursday, September 24, 2026.\n\nFIXTURE PROJECT GROUNDING. The project-wide index.\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.\n\nSPEAK ONLY IN English\n\n## Current document: FIXTURE loose (loose)\n\nFIXTURE DOCUMENT LOOSE. A note on its own."
+          },
+          {
+            "role": "assistant",
+            "content": "FIXTURE opening."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE loose] What is this?"
+          }
+        ]
+      ],
+      "qaLog": [
+        {
+          "project": "fixture_sets",
+          "session_token": "fixture-session-grounding-sets-0001",
+          "vignette_key": "loose",
+          "language": "English",
+          "question": "What is this?",
+          "answer": "L1."
+        }
+      ]
+    }
+  ],
+  "earlier-document": [
+    {
+      "status": 200,
+      "response": {
+        "message": "A2.",
+        "followups": [
+          "One?",
+          "Two?"
+        ],
+        "beyondScope": false,
+        "usage": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5,
+          "total_tokens": 15
+        },
+        "caseTemplate": null
+      },
+      "sent": [
+        [
+          {
+            "role": "system",
+            "content": "FIXTURE grounding-sets prompt. Answer from the current document and its notes.\n\nToday is Thursday, October 1, 2026. Yesterday was Wednesday, September 30, 2026. Two days ago was Tuesday, September 29, 2026. Three days ago was Monday, September 28, 2026. Four days ago was Sunday, September 27, 2026. One week ago was Thursday, September 24, 2026.\n\nFIXTURE NOTES SET A. Every table in set A is weighted by clinic.\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.\n\nSPEAK ONLY IN English\n\n## Current document: FIXTURE A two (set-a--two)\n\nFIXTURE DOCUMENT A2. Table A2, column 1: the coefficient is 0.21.\n\n## Earlier document: FIXTURE A one (set-a--one)\n\nFIXTURE DOCUMENT A1. Table A1, row 1: 12 clinics."
+          },
+          {
+            "role": "assistant",
+            "content": "FIXTURE opening."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE A one] How many clinics?"
+          },
+          {
+            "role": "assistant",
+            "content": "A1."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE A two] And the coefficient?"
+          }
+        ]
+      ],
+      "qaLog": [
+        {
+          "project": "fixture_sets",
+          "session_token": "fixture-session-grounding-sets-0001",
+          "vignette_key": "set-a--two",
+          "language": "English",
+          "question": "And the coefficient?",
+          "answer": "A2."
+        }
+      ]
+    },
+    {
+      "status": 200,
+      "response": {
+        "message": "B1.",
+        "followups": [
+          "One?",
+          "Two?"
+        ],
+        "beyondScope": false,
+        "usage": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5,
+          "total_tokens": 15
+        },
+        "caseTemplate": null
+      },
+      "sent": [
+        [
+          {
+            "role": "system",
+            "content": "FIXTURE grounding-sets prompt. Answer from the current document and its notes.\n\nToday is Thursday, October 1, 2026. Yesterday was Wednesday, September 30, 2026. Two days ago was Tuesday, September 29, 2026. Three days ago was Monday, September 28, 2026. Four days ago was Sunday, September 27, 2026. One week ago was Thursday, September 24, 2026.\n\nFIXTURE NOTES SET B. Every figure in set B is unweighted.\n\nYou will respond as a JSON object with {answer, followups, beyondScope}. The answer MUST be plain prose — no markdown, no **, no *, no #, no lists, no bullets, no tables. Write 1-3 short sentences maximum unless the user explicitly asks for detail. The followups array contains 2-3 short questions (each under 12 words) in the same language as the answer. Only suggest follow-up questions that can be answered from the reference content provided in this conversation. If your answer declines the question or states it is out of scope, the followups must instead redirect to topics the reference content does cover. Set beyondScope to true whenever the answer says anything the reference content does not itself cover — a declined or out-of-scope question, a partially covered question, or any general framing you added around what the reference content says — and to false only when every statement in the answer is drawn from the reference content. Do not mention the beyondScope flag in the answer text; the interface discloses it.\n\nSPEAK ONLY IN English\n\n## Current document: FIXTURE B one (set-b--one)\n\nFIXTURE DOCUMENT B1. Figure B1: two lines, blue above red.\n\n## Earlier document: FIXTURE A two (set-a--two)\n\nFIXTURE DOCUMENT A2. Table A2, column 1: the coefficient is 0.21."
+          },
+          {
+            "role": "assistant",
+            "content": "FIXTURE opening."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE A one] How many clinics?"
+          },
+          {
+            "role": "assistant",
+            "content": "A1."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE A two] And the coefficient?"
+          },
+          {
+            "role": "assistant",
+            "content": "A2."
+          },
+          {
+            "role": "user",
+            "content": "[On: FIXTURE B one] Which line is higher?"
+          }
+        ]
+      ],
+      "qaLog": [
+        {
+          "project": "fixture_sets",
+          "session_token": "fixture-session-grounding-sets-0001",
+          "vignette_key": "set-b--one",
+          "language": "English",
+          "question": "Which line is higher?",
+          "answer": "B1."
+        }
+      ]
+    }
+  ]
+}

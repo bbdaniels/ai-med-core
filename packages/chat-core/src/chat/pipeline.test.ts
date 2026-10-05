@@ -21,7 +21,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const config: ChatProjectConfig = {
   slug: 'fixture', usageProject: 'fixture_', app: 'talk', enableFollowups: true, logConversations: true,
-  readingsIndexPath: null, readingsQueryLanguage: null, chatModel: 'gpt-4o-mini', groundingFile: null,
+  readingsIndexPath: null, readingsQueryLanguage: null, chatModel: 'gpt-4o-mini', groundingFile: null, groundingSets: [],
   retrievalScope: 'corpus', searchFirst: false, followHost: null,
 };
 
@@ -181,4 +181,47 @@ test('a project that does not follow a host ignores the tags and sends the histo
   assert.deepEqual(a.events.filter(e => e.startsWith('getDocument')), ['getDocument doc']);
   assert.deepEqual(a.sent[0].messages.slice(1), messages);
   assert.match(a.sent[0].messages[0].content, /^SYS\n\nPRE\n\nDOC\n\n/);
+});
+
+test('grounding sets: the current document\'s set grounds the turn, from the private store; an earlier one of another set adds none', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-sets-repo-'));
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-sets-store-'));
+  try {
+    fs.mkdirSync(path.join(repo, 'projects/fixture/grounding'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'projects/fixture/grounding/set-a.md'), 'NOTES-A');
+    fs.writeFileSync(path.join(repo, 'projects/fixture/project-grounding.md'), 'NOTES-PROJECT');
+    fs.mkdirSync(path.join(store, 'projects/fixture/grounding'), { recursive: true });
+    fs.writeFileSync(path.join(store, 'projects/fixture/grounding/set-b.md'), 'NOTES-B');
+    const docs: Record<string, string> = { 'set-a--one': 'DOC-A1', 'set-a--two': 'DOC-A2', 'set-b--one': 'DOC-B1', other: 'DOC-O' };
+    const run = async (documentKey: string, earlier?: string) => {
+      const a = setup();
+      a.deps.repoRoot = repo;
+      a.deps.privateContentRoot = store;
+      a.deps.store.getDocument = async key => (key in docs ? { key, content: docs[key] } : null);
+      a.deps.config = {
+        ...config, groundingFile: 'projects/fixture/project-grounding.md', groundingSets: ['set-a', 'set-b'],
+        followHost: { historyTokens: 24000, titles: {} },
+      };
+      const messages = earlier
+        ? [{ role: 'user' as const, content: 'Before?', documentKey: earlier }, { role: 'assistant' as const, content: 'A.' },
+           { role: 'user' as const, content: 'Now?', documentKey }]
+        : [{ role: 'user' as const, content: 'Now?', documentKey }];
+      await runChatTurn({ messages, documentKey }, a.deps);
+      return a.sent[0].messages[0].content as string;
+    };
+    const a1 = await run('set-a--one');
+    assert.match(a1, /^SYS\n\nPRE\n\nNOTES-A\n\nYou will respond as a JSON object/);
+    assert.equal((await run('set-b--one')).match(/NOTES-[A-Z]+/g)!.join(), 'NOTES-B');
+    assert.equal((await run('other')).match(/NOTES-[A-Z]+/g)!.join(), 'NOTES-PROJECT');
+    // The earlier document of the same set shares its grounding; of another set it brings none.
+    const same = await run('set-a--two', 'set-a--one');
+    assert.equal(same.match(/NOTES-[A-Z]+/g)!.join(), 'NOTES-A');
+    assert.match(same, /## Earlier document: set-a--one \(set-a--one\)\n\nDOC-A1$/);
+    const across = await run('set-b--one', 'set-a--one');
+    assert.equal(across.match(/NOTES-[A-Z]+/g)!.join(), 'NOTES-B');
+    assert.match(across, /## Earlier document: set-a--one \(set-a--one\)\n\nDOC-A1$/);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    fs.rmSync(store, { recursive: true, force: true });
+  }
 });

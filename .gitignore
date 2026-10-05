@@ -137,6 +137,9 @@ projects/papers/content/readings/ocr-cache/
 # them from the deck's packs/ folder and tools/push-content.ts pushes them from
 # a checkout that has them (see projects/decks/README.md, which IS tracked).
 projects/decks/cases/slide/*.md
+# A deck's grounding set file (its deck-wide notes, project.json groundingSets)
+# is the same kind of content; push-content.ts uploads it to the private store.
+projects/decks/grounding/*.md
 
 # haivn_eip legal index: the database itself IS tracked (public government
 # instruments, already shipped here as text and PDF), but SQLite's sidecars and

@@ -9,7 +9,8 @@
 // - talkPublicUrl: opened top-level, the page leaves for the author's public
 //   page at once; only the popout iframe stays.
 // - Embedded in another site's popout, the header's picker link becomes a Close
-//   control that posts `orcid-display:talk-close` to the host page.
+//   control that posts `orcid-display:talk-close` to the host page, and Escape
+//   anywhere in the page posts the same message (frame-escape.ts).
 //
 // Every other project opens its first vignette, as it always has, and the
 // simulator's case sequence moves on through selectVignette().
@@ -17,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiFetch } from '../api-base';
 import { type TalkPaper, publicRedirectUrl, requestedVignette } from '../talk-paper';
+import { listenForFrameEscape } from '../frame-escape';
 import { UnknownVignetteError, fetchVignettes } from './api';
 
 /** The message a host page listens for to dismiss its popout. */
@@ -59,6 +61,10 @@ export function useDeepLink(o: DeepLinkOptions) {
     try { window.parent.postMessage({ type: TALK_CLOSE_MESSAGE }, '*'); } catch { /* not embedded */ }
   }, []);
   const redirectsToPublicPage = !!talkPublicUrl && !embeddedInFrame && !isLocalDevHost;
+  // Framed, Escape anywhere in the page (the chat's text box included) asks
+  // the host to close, the same as the header's Close control.
+  useEffect(() => (embeddedInFrame ? listenForFrameEscape(window, closeEmbeddingFrame) : undefined),
+    [embeddedInFrame, closeEmbeddingFrame]);
 
   // Resolve the vignette the URL asks for (?vignette=, ?doc=, or ?paper=<DOI>
   // through the talk manifest) before any vignette is chosen. A manifest that fails to load,

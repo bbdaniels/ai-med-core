@@ -24,7 +24,13 @@ export function useDismiss(
     const onDown = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) handler.current();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handler.current(); };
+    // The Escape is consumed here: an open popover takes it, so the embedded
+    // page's close-on-Escape (frame-escape.ts) leaves it alone.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      handler.current();
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('touchstart', onDown);
     document.addEventListener('keydown', onKey);

@@ -172,7 +172,14 @@
       "items": { "type": "string", "pattern": "^https?://[^/\\s?#@]+$" },
       "minItems": 1,
       "uniqueItems": true,
-      "description": "followHost only: the origins (scheme://host[:port], no path, no trailing slash) whose host:document messages the talk page obeys; a message from any other origin, or from any window but the page's parent, is ignored"
+      "description": "followHost only: the origins (scheme://host[:port], no path, no trailing slash) whose host:document messages the talk page obeys; a message from any other origin, or from any window but the page's parent, is ignored. The API server, which serves the talk page, also lets only these origins (and its own) frame it: Content-Security-Policy frame-ancestors 'self' <origins> (packages/api/src/talk/pages.ts)"
+    },
+    "urlAliases": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Talk page only: former URL slugs of this project's page; the API server answers /<alias>/<rest> with a 301 to /<url-slug>/<rest>. Requires app \"talk\", and may not be another project's URL slug or alias (tools/validate-projects.ts)"
     },
     "historyTokens": {
       "type": "integer",

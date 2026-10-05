@@ -340,4 +340,4 @@ npm run build                # Vite production build, simulator page
 VITE_APP=talk npm run build  # the talk page
 ```
 
-`VITE_BASE_PATH` sets the base URL for GitHub Pages per-project subdirectories.
+`VITE_BASE_PATH` sets the per-project base URL (`/<url-slug>/`). Deploys never run these by hand: `tools/build-frontends.ts` builds every project from its `project.json`, the simulators for GitHub Pages (`VITE_API_BASE_URL=https://api.ai-med.live`) and the talk pages for the API server, which serves them at `chat.benjaminbdaniels.com/<url-slug>/` with `VITE_API_BASE_URL` unset, so they call `/api` on their own origin.

@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 dist/
+# Talk page builds for the API server (tools/build-frontends.ts --app talk).
+dist-talk/
 
 # Environment variables. The glob is deliberate: an enumerated list let
 # .env.staging, .env.prod, and .env.bak be tracked by accident. env.example has

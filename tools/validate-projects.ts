@@ -11,7 +11,9 @@
  * file names exists (or is private, i.e. gitignored: see lib/private-files.ts),
  * a talk project sets no flag that contradicts `app: "talk"`, a followHost
  * project has what following a host needs (followHostContradictions), and only
- * a talk project remembers a conversation (rememberConversationContradictions).
+ * a talk project remembers a conversation (rememberConversationContradictions),
+ * and a talk page's urlAliases (urlAliasContradictions) are no other project's
+ * URL slug or alias, since the server would serve only one of them.
  *
  * AI_MED_REPO_ROOT, when set, names the checkout whose projects/ are validated
  * (the schema is always this repository's); the tests use it on a temp tree.
@@ -22,7 +24,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isPrivateFile, tabContentFiles } from './lib/private-files.js';
-import { followHostContradictions, rememberConversationContradictions, talkContradictions } from '../packages/chat-core/src/project-config.js';
+import {
+  followHostContradictions, projectUrlSlug, rememberConversationContradictions, talkContradictions,
+  urlAliasContradictions, urlAliases,
+} from '../packages/chat-core/src/project-config.js';
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = process.env.AI_MED_REPO_ROOT?.trim() ? path.resolve(process.env.AI_MED_REPO_ROOT.trim()) : here;
@@ -32,10 +37,32 @@ addFormats(ajv);
 const validate = ajv.compile(schema);
 
 const only = process.argv[2];
-const dirs = fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })
+const allDirs = fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })
   .filter(d => d.isDirectory() && fs.existsSync(path.join(root, 'projects', d.name, 'project.json')))
-  .map(d => d.name)
-  .filter(d => !only || d === only);
+  .map(d => d.name);
+const dirs = allDirs.filter(d => !only || d === only);
+
+/** Every URL path segment a project claims (its URL slug, then its aliases), by directory, read from every project. */
+const claims = new Map<string, string[]>();
+for (const dir of allDirs) {
+  let aliases: string[] = [];
+  try {
+    aliases = urlAliases(JSON.parse(fs.readFileSync(path.join(root, 'projects', dir, 'project.json'), 'utf8')));
+  } catch { /* reported below as invalid JSON */ }
+  claims.set(dir, [projectUrlSlug(dir), ...aliases]);
+}
+
+/** The aliases of `dir` that another project also claims. */
+function aliasClashes(dir: string): string[] {
+  const [, ...aliases] = claims.get(dir) ?? [];
+  const out: string[] = [];
+  for (const alias of aliases) {
+    for (const [other, segs] of claims) {
+      if (other !== dir && segs.includes(alias)) out.push(`urlAliases: "${alias}" is also claimed by ${other}`);
+    }
+  }
+  return out;
+}
 
 if (dirs.length === 0) {
   console.error(only ? `No project named ${only}` : 'No projects found');
@@ -73,6 +100,8 @@ for (const slug of dirs) {
     errors.push(...talkContradictions(p));
     errors.push(...followHostContradictions(p));
     errors.push(...rememberConversationContradictions(p));
+    errors.push(...urlAliasContradictions(p));
+    errors.push(...aliasClashes(slug));
     if (p.name !== slug) errors.push(`name "${p.name}" does not match directory "${slug}"`);
     if (!fs.existsSync(path.join(root, 'projects', slug, 'languages.json'))) errors.push('languages.json missing');
     let privateAbsent = 0;

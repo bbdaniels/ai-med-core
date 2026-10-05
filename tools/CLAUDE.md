@@ -52,6 +52,17 @@ The file format is a JSON array of `{ "uid": "...", "vignette_key": "..." }` obj
 
 Projects without an `assignments.json` file skip this step silently — the tool also still supports formless and non-assignment projects unchanged.
 
+## build-frontends.ts
+
+The one build of the per-project frontends, driven by `projects/*/project.json`:
+
+```bash
+npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # railway.json: talk pages, same origin
+npx tsx tools/build-frontends.ts --app sim --out _site --api-base https://api.ai-med.live    # deploy-pages.yml: simulators
+```
+
+`--app talk` builds every project whose flags resolve to app "talk" (`VITE_APP=talk`), `--app sim` every other one, each into `<out>/<url-slug>/` with `VITE_BASE_PATH=/<url-slug>/` (`projectUrlSlug`, chat-core). `--api-base` sets `VITE_API_BASE_URL`; without it the variable is cleared and the page calls `/api` on its own origin. A project's `static/*` and `images/*.png` are copied into its build. `--only a,b` limits the run. The talk pages the API server serves (`packages/api/src/talk/pages.ts`) are read from `packages/frontend-chat/dist-talk/` (gitignored).
+
 ## smoke-chat.ts
 
 The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a merge is a production deploy):
@@ -71,7 +82,7 @@ python3 -m http.server 8080 -d tools
 # http://localhost:8080/embed-harness.html?src=<url-encoded page>&src=<...>&expect=orcid-display:talk-close
 ```
 
-Each `src` is framed in its own panel (URL-encode a page that carries its own query or `#code=` fragment). With `expect`, a banner turns green when a frame posts a message of that type, and that frame is shut, as a host page shuts its popout. What the page has seen is also on `window.harness` (`frames`, `loads`, `messages`) for a script driving it. A cross-origin frame's address cannot be read from the harness; check that a `#code=` fragment is stripped by opening the same URL top-level. A local build in a frame calls its API from its own origin, so that API's `ALLOWED_ORIGINS` must list it. The harness names no project or deployment.
+Each `src` is framed in its own panel (URL-encode a page that carries its own query or `#code=` fragment). A project that lists `embedOrigins` (decks) is served with `frame-ancestors` limited to those origins, so its page frames only when the harness is served on one of them (port 8770 below). With `expect`, a banner turns green when a frame posts a message of that type, and that frame is shut, as a host page shuts its popout. What the page has seen is also on `window.harness` (`frames`, `loads`, `messages`) for a script driving it. A cross-origin frame's address cannot be read from the harness; check that a `#code=` fragment is stripped by opening the same URL top-level. A local build in a frame calls its API from its own origin, so that API's `ALLOWED_ORIGINS` must list it. The harness names no project or deployment.
 
 For a project that follows a host page (`followHost`), each panel also has a key box, a title box and a Send button that post `{type: 'host:document', key, title}` to that frame (an empty key sends `null`), the message the host sends when its current document changes; `harness.sendDocument(frame, key, title)` does the same from a script. The frame's `talk:ready` shows in the log. The page obeys only origins in the project's `embedOrigins`, so serve the harness on one of them, e.g. `python3 -m http.server 8770 -d tools`.
 

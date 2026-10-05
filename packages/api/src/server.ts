@@ -6,7 +6,6 @@ import path from 'path';
 import fs from 'fs/promises';
 import { readdirSync, readFileSync } from 'fs';
 import { createHash, randomUUID } from 'crypto';
-import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
@@ -67,10 +66,8 @@ import {
 } from './npj26.js';
 import { REPO_ROOT } from './repo-root.js';
 import { talkRoutes } from './talk/routes.js';
+import { talkPagesRouter, talkPagesSettings } from './talk/pages.js';
 import { chatRouter } from './routes/chat.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Load .env from repo root
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
@@ -715,12 +712,15 @@ app.post('/npj26/:token/:cellId', npj26Limiter, async (req, res) => {
   }
 });
 
-// Serve static files from dist/client in production (unless SERVE_FRONTEND=false)
-const serveFrontend = process.env.SERVE_FRONTEND !== 'false';
-if (process.env.NODE_ENV === 'production' && serveFrontend) {
-  const staticDir = process.env.STATIC_DIR || path.join(__dirname, '../../frontend-chat/dist');
-  app.use(express.static(staticDir));
-}
+// The talk pages, served here on one origin with /api (talk/pages.ts): every
+// talk project at /<url-slug>/ on the canonical host, redirected there from any
+// other host. It answers only talk paths and /, so the routes below are untouched.
+// Simulator pages are static sites on their own host and are never served here.
+app.use(talkPagesRouter({
+  projectsDir: path.join(REPO_ROOT, 'projects'),
+  projects: validProjectSlugs,
+  ...talkPagesSettings(process.env),
+}));
 
 // API Routes
 
@@ -2685,14 +2685,6 @@ app.get('/api/health', (_req, res) => {
     tablePrefix: activeProjectPrefix() || 'not set',
   });
 });
-
-// SPA catch-all: serve React app in production (unless SERVE_FRONTEND=false)
-if (process.env.NODE_ENV === 'production' && serveFrontend) {
-  const staticDir = process.env.STATIC_DIR || path.join(__dirname, '../../frontend-chat/dist');
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
-  });
-}
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

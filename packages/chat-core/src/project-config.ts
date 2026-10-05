@@ -159,6 +159,41 @@ export function followHostContradictions(cfg: Record<string, any>): string[] {
 }
 
 /**
+ * The URL path segment a project is served under: its directory name with every
+ * `_` written `-` (projects/haivn_eip is /haivn-eip/). The one definition: the
+ * frontend builds (tools/build-frontends.ts) and the server's talk pages
+ * (packages/api/src/talk/pages.ts) both use it.
+ */
+export function projectUrlSlug(dir: string): string {
+  return dir.replace(/_/g, '-');
+}
+
+/** A URL alias: a lower-case path segment, as the schema states it. */
+export const URL_ALIAS_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * The project's declared urlAliases, the well-formed ones, in order, without
+ * repeats: former URL slugs of a talk page, each redirected to the page's own.
+ */
+export function urlAliases(cfg: Record<string, any>): string[] {
+  if (!Array.isArray(cfg.urlAliases)) return [];
+  return [...new Set(cfg.urlAliases.filter((a: unknown): a is string => typeof a === 'string' && URL_ALIAS_RE.test(a)))];
+}
+
+/**
+ * urlAliases redirect to a talk page, the only page the API server serves, so
+ * they need app "talk". (A clash with another project's slug or alias is a
+ * cross-project check, in tools/validate-projects.ts.)
+ */
+export function urlAliasContradictions(cfg: Record<string, any>): string[] {
+  if (cfg.urlAliases === undefined) return [];
+  if (resolveProjectFlags(cfg).app !== 'talk') {
+    return ['urlAliases needs app "talk" (only talk pages are served with redirects)'];
+  }
+  return [];
+}
+
+/**
  * rememberConversation belongs to the talk page, which is the only page that
  * keeps a thread in the browser. The schema checks the shape and the range of
  * days; this checks the application. One message per problem.

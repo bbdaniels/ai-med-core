@@ -179,7 +179,9 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     HARVARD_GATEWAY_URL: fake.url,
     OPENAI_BASE_URL: '', OPENAI_ORG_ID: '', OPENAI_PROJECT_ID: '',
     OPENAI_TTS_KEY: '', OPENAI_REALTIME_KEY: '', KOBO_API_TOKEN: '', GEMINI_API_KEY: '',
-    PRIVATE_CONTENT_ROOT: '', ALLOWED_ORIGINS: '', SERVE_FRONTEND: '', STATIC_DIR: '',
+    PRIVATE_CONTENT_ROOT: '', ALLOWED_ORIGINS: '',
+    // No talk pages unless a test supplies builds; no canonical-host redirect.
+    TALK_DIST_DIR: path.join(tmp, 'no-talk-dist'), TALK_CANONICAL_HOST: '', TALK_HOME_URL: '',
     ...pinned,
     ...(o.env ?? {}),
   };

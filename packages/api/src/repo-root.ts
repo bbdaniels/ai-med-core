@@ -25,3 +25,11 @@ export const REPO_ROOT = process.env.AI_MED_REPO_ROOT?.trim()
 
 /** packages/api/defaults: the seed content for a fresh deployment. */
 export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');
+
+/**
+ * packages/frontend-chat/dist-talk: the talk page builds the server serves, one
+ * `<url-slug>/` each (tools/build-frontends.ts --app talk, run by railway.json).
+ * Like PACKAGE_DEFAULTS_DIR it is found from this package, not from REPO_ROOT,
+ * so a test's fixture checkout never hides it; TALK_DIST_DIR overrides it.
+ */
+export const DEFAULT_TALK_DIST_DIR = path.resolve(here, '../../frontend-chat/dist-talk');

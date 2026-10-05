@@ -9,7 +9,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { followHostContradictions, rememberConversationContradictions, resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
+import {
+  followHostContradictions, projectUrlSlug, rememberConversationContradictions, resolveProjectFlags, talkContradictions,
+  talkManifestPath, TALK_IMPLIED, urlAliasContradictions, urlAliases,
+} from './project-config.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -219,5 +222,48 @@ test('the validator: followHost needs talk and an origin; a malformed origin fai
     assert.match(r4.stderr, /embedOrigins\/0 must match pattern/);
   } finally {
     for (const d of [ok, bare, stray, slash]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('a project is served under its directory name with _ written -', () => {
+  assert.equal(projectUrlSlug('haivn_eip'), 'haivn-eip');
+  assert.equal(projectUrlSlug('a_b_c'), 'a-b-c');
+  assert.equal(projectUrlSlug('papers'), 'papers');
+});
+
+test('urlAliases: the well-formed ones, without repeats, and only on talk', () => {
+  assert.deepEqual(urlAliases({}), []);
+  assert.deepEqual(urlAliases({ urlAliases: ['old-name', 'Bad', 'x/y', '', 7, 'old-name', 'b2'] }), ['old-name', 'b2']);
+  assert.deepEqual(urlAliasContradictions({ app: 'talk', urlAliases: ['old'] }), []);
+  assert.deepEqual(urlAliasContradictions({ kobo: {} }), []);
+  assert.match(urlAliasContradictions({ kobo: {}, urlAliases: ['old'] }).join('\n'), /urlAliases needs app "talk"/);
+});
+
+test('the validator: an alias another project claims, as its slug or its alias, fails', () => {
+  const ok = tempProject({ app: 'talk', urlAliases: ['old-temp'] });
+  const sim = tempProject({ kobo: { formUrl: 'https://example.org/f', formUid: 'f' }, urlAliases: ['old-temp'] });
+  const clash = tempProject({ app: 'talk', urlAliases: ['other-one'] });
+  // A second project whose URL slug is other-one (directory other_one) and whose alias is old-temp.
+  const second = path.join(clash, 'projects', 'other_one');
+  fs.cpSync(path.join(clash, 'projects', 'temp'), second, { recursive: true });
+  const cfg = JSON.parse(fs.readFileSync(path.join(second, 'project.json'), 'utf8'));
+  fs.writeFileSync(path.join(second, 'project.json'), JSON.stringify({
+    ...cfg, name: 'other_one', urlAliases: ['temp'],
+    cases: { ...cfg.cases, systemPrompt: 'projects/other_one/system-prompt.md',
+      vignettes: [{ key: 'one', template: 'doc', file: 'projects/other_one/cases/doc/one.md' }] },
+    deployment: { tablePrefix: 'other_one' },
+  }));
+  try {
+    const r = runValidator(ok);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const r2 = runValidator(sim);
+    assert.equal(r2.status, 1);
+    assert.match(r2.stderr, /urlAliases needs app "talk"/);
+    const r3 = runValidator(clash);
+    assert.equal(r3.status, 1);
+    assert.match(r3.stderr, /urlAliases: "other-one" is also claimed by other_one/);
+    assert.match(r3.stderr, /urlAliases: "temp" is also claimed by temp/);
+  } finally {
+    for (const d of [ok, sim, clash]) fs.rmSync(d, { recursive: true, force: true });
   }
 });

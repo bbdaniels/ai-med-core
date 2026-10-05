@@ -317,34 +317,20 @@ Also update `kobo/registry.json` to keep the cross-project registry current.
 
 > **Note:** Anonymous submissions are _not_ needed. The backend proxies form submissions to KoboToolbox using the server-side `KOBO_API_TOKEN`, so respondents never authenticate directly with Kobo.
 
-### 10. Add the GitHub Actions build step
+### 10. No build step to add
 
-Edit `.github/workflows/deploy-pages.yml` to add a build block for the new project. Duplicate the demo block and change the slug:
-
-```yaml
-- name: Build <name> frontend
-  run: |
-    VITE_API_BASE_URL=$API_BASE_URL \
-    VITE_PROJECT=<name> \
-    VITE_BASE_PATH=/ai-med/<name>/ \
-    npm run build:frontend
-
-    mkdir -p _site/<name>
-    cp -r packages/frontend-chat/dist/* _site/<name>/
-```
-
-The content push step and eval dashboard copy step already loop over all projects automatically.
+The deploy builds every project from its `project.json` with `tools/build-frontends.ts`: a simulator onto GitHub Pages at `ai-med.live/<url-slug>/`, a talk project (`"app": "talk"`) into the API server's deploy at `chat.benjaminbdaniels.com/<url-slug>/` (the URL slug is the directory name with `_` written `-`). `static/*` and `images/*.png` are copied when the project has them. The content push step and eval dashboard copy step already loop over all projects automatically.
 
 ### 11. Push to main and verify
 
 ```
-git add projects/<name>/ .github/workflows/deploy-pages.yml
+git add projects/<name>/
 git commit -m "Add <name> project"
 git push
 ```
 
 On push to main:
-- **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://bbdaniels.github.io/ai-med/<name>/`
+- **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://ai-med.live/<url-slug>/` (a talk project's page is built and served by Railway instead, at `https://chat.benjaminbdaniels.com/<url-slug>/`)
 - **GitHub Actions** runs `push-content.ts` for each project, pushing vignettes, system prompt, Kobo config, and languages to the Railway backend
 - **Railway** auto-deploys the API (if backend code changed)
 

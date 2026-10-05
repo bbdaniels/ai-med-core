@@ -196,4 +196,4 @@ npm run dev      # tsx watch
 npm start        # NODE_ENV=production node dist/server.js
 ```
 
-When `SERVE_FRONTEND=true`, serves the built frontend from `packages/frontend-chat/dist/`.
+It also serves the talk pages (`src/talk/pages.ts`): every project whose project.json resolves to app "talk", at `/<url-slug>/`, from the builds `tools/build-frontends.ts --app talk` writes to `packages/frontend-chat/dist-talk/` (`railway.json` runs it at deploy). The pages call `/api` on their own origin. Hashed `assets/` are cached for a year, everything else (index.html first) is `no-cache`; a path with no file and no extension gets index.html, a missing file a 404. A project's `urlAliases` redirect (301) to its slug; a project with `embedOrigins` is sent `frame-ancestors 'self' <origins>`. With a canonical host (`TALK_CANONICAL_HOST`, default `chat.benjaminbdaniels.com` in production, off elsewhere) a talk path on any other host redirects there and `/` on it redirects to `TALK_HOME_URL`. Only talk paths and `/` are answered, so `/api`, `/t` and `/npj26` behave the same on every host. Simulator projects are never served here. Tests: `src/talk-pages.test.ts`.

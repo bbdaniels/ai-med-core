@@ -82,9 +82,10 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
   "talkManifest": "projects/papers/manifest.json", // Optional — public paper list + public_chat kill switch (see below)
   "talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}", // Optional — the public page that fronts a talkManifest project (see below)
   "followHost": false,              // Optional, talk only — the framing page drives which document is current, one conversation across documents (see below)
-  "embedOrigins": ["https://www.example.org"], // followHost only — origins (scheme://host[:port]) allowed to drive the page
+  "embedOrigins": ["https://www.example.org"], // followHost only — origins (scheme://host[:port]) allowed to drive the page, and the only ones (with the page's own) allowed to frame it
   "historyTokens": 24000,           // followHost only — history cap per turn, estimated tokens; default 24000
   "rememberConversation": { "days": 7 }, // Optional, talk only — the reader's browser keeps the thread for this many days (1–30) after the last turn (see below)
+  "urlAliases": ["old-name"],       // Optional, talk only — former URL slugs; /old-name/... answers 301 to /<url-slug>/... (see "Where a talk page is served")
   "docRefs": {                      // Optional — linkify document references in chat answers
     "tabId": "eip-doc",             // id of the tab the links point into (its `document` edition)
     "patterns": [                   // surface words -> anchor prefix (the {#sec-…}/{#app-…} ids in the document)
@@ -126,7 +127,16 @@ Document chat (papers, decks, course readings, document advisors) declares `"app
 - A corpus index for the prompt goes in `groundingFile` (repo-relative). Without it the pipeline looks in `content/legal/grounding.md`, then `content/readings/grounding.md`
 - The frontend skips the auto-added form tab; define `tabs` in project.json to give users something to interact with (e.g. a `suggestions` tab)
 
-Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advisor; slug `haivn_eip`, served at `/haivn-eip/`, formerly `stitch`).
+Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advisor; slug `haivn_eip`, served at `/haivn-eip/`; its former slug `stitch` is a `urlAliases` entry).
+
+### Where a talk page is served
+
+The API server serves every talk project's page itself, at `https://chat.benjaminbdaniels.com/<url-slug>/`, on one origin with `/api` (`packages/api/src/talk/pages.ts`). The URL slug is the directory name with `_` written `-`. Railway builds the pages at deploy time (`railway.json` runs `tools/build-frontends.ts --app talk`), so a new talk project needs nothing beyond its `projects/<dir>/`. Simulator projects stay static sites on GitHub Pages at `https://ai-med.live/<url-slug>/`, calling the API at `https://api.ai-med.live`.
+
+- A talk path asked of any other host the server answers on (`api.ai-med.live`, the Railway domain) redirects (301) to the same path on the chat host; `/` on the chat host redirects to the author's site. `/api` answers on every host.
+- `urlAliases` keeps an old link working: `/stitch/...` answers 301 to `/haivn-eip/...`. `tools/validate-projects.ts` refuses an alias on a project that is not talk, and an alias another project claims as its slug or alias.
+- A project that lists `embedOrigins` (decks) may be framed only by those origins and its own: the page is sent with `Content-Security-Policy: frame-ancestors 'self' <origins>`. A project without them (ppol5013 inside Canvas, the papers popout) sends no frame-ancestors.
+- For now the Pages workflow still builds the talk projects for `ai-med.live` too; those copies become redirects to the chat host in a later step.
 
 ### talkManifest — externally embedded advisors and the public-chat kill switch
 

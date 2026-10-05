@@ -59,7 +59,7 @@ Projects without an `assignments.json` file skip this step silently — the tool
 The one build of the per-project frontends, driven by `projects/*/project.json`:
 
 ```bash
-npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # railway.json: talk pages, same origin
+npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # npm run build:railway: talk pages, same origin
 npx tsx tools/build-frontends.ts --app sim --out _site --api-base https://api.ai-med.live    # deploy-pages.yml: simulators
 ```
 

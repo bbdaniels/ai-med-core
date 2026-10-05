@@ -4,7 +4,7 @@
  * Every project whose project.json resolves to app "talk" is served at
  * `/<url-slug>/` (projectUrlSlug: the directory name with `_` written `-`) from
  * its Vite build in TALK_DIST_DIR/<url-slug>/, which `tools/build-frontends.ts
- * --app talk` writes (railway.json runs it at build time). A simulator project is
+ * --app talk` writes (npm run build:railway runs it at build time). A simulator project is
  * never served here, even if a build of it sits in that directory: simulators
  * are static sites with their own host.
  *

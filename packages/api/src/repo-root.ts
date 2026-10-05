@@ -40,7 +40,7 @@ export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');
 
 /**
  * packages/frontend-chat/dist-talk: the talk page builds the server serves, one
- * `<url-slug>/` each (tools/build-frontends.ts --app talk, run by railway.json).
+ * `<url-slug>/` each (tools/build-frontends.ts --app talk, run by npm run build:railway).
  * Like PACKAGE_DEFAULTS_DIR it is found from this package, not from REPO_ROOT,
  * so a test's fixture checkout never hides it; TALK_DIST_DIR overrides it.
  */

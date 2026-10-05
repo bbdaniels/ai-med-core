@@ -133,7 +133,7 @@ Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advi
 
 ### Where a talk page is served
 
-The API server serves every talk project's page itself, at `https://chat.benjaminbdaniels.com/<url-slug>/`, on one origin with `/api` (`packages/api/src/talk/pages.ts`). The URL slug is the directory name with `_` written `-`. Railway builds the pages at deploy time (`railway.json` runs `tools/build-frontends.ts --app talk`), so a new talk project needs nothing beyond its `projects/<dir>/`. Simulator projects stay static sites on GitHub Pages at `https://ai-med.live/<url-slug>/`, calling the API at `https://api.ai-med.live`.
+The API server serves every talk project's page itself, at `https://chat.benjaminbdaniels.com/<url-slug>/`, on one origin with `/api` (`packages/api/src/talk/pages.ts`). The URL slug is the directory name with `_` written `-`. Railway builds the pages at deploy time (`npm run build:railway` runs `tools/build-frontends.ts --app talk`), so a new talk project needs nothing beyond its `projects/<dir>/`. Simulator projects stay static sites on GitHub Pages at `https://ai-med.live/<url-slug>/`, calling the API at `https://api.ai-med.live`.
 
 - A talk path asked of any other host the server answers on (`api.ai-med.live`, the Railway domain) redirects (301) to the same path on the chat host; `/` on the chat host redirects to the author's site. `/api` answers on every host.
 - `urlAliases` keeps an old link working: `/stitch/...` answers 301 to `/haivn-eip/...`. `tools/validate-projects.ts` refuses an alias on a project that is not talk, and an alias another project claims as its slug or alias.

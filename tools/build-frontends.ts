@@ -13,7 +13,7 @@
  * `--api-base` sets VITE_API_BASE_URL, for a page served from a host other than
  * the API's (GitHub Pages). Without it the variable is unset and the page calls
  * `/api` on its own origin, which is how the API server serves the talk pages
- * (railway.json builds them with no `--api-base`).
+ * (`npm run build:railway` builds them with no `--api-base`).
  *
  * A project's own static files ride along: `projects/<dir>/static/*` is copied
  * to the build's root and `projects/<dir>/images/*.png` to its `images/`.
@@ -24,7 +24,7 @@
  *
  * This is the one build path for project frontends: the Pages workflow
  * (.github/workflows/deploy-pages.yml) and the API's Railway build
- * (railway.json) both call it, so the two cannot drift.
+ * (`npm run build:railway`) both call it, so the two cannot drift.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

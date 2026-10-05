@@ -6,6 +6,14 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 export interface ChatMessage { role: ChatRole; content: string }
 
+/**
+ * A message of the history a page sends with every turn (the server holds no
+ * conversation). A followHost page tags each question with the key of the
+ * document that was current when it was asked; every other page sends none,
+ * and the pipeline ignores the tag unless the project follows a host.
+ */
+export interface HistoryMessage extends ChatMessage { documentKey?: string }
+
 /** The two applications: the clinical simulator, and document chat. */
 export type AppType = 'simulation' | 'talk';
 
@@ -44,6 +52,16 @@ export interface ChatProjectConfig {
   retrievalScope: RetrievalScope;
   /** The first completion must search (tool_choice 'required' on hop 0 only). */
   searchFirst: boolean;
+  /** Set when the project follows a host page (project.json followHost); null otherwise. */
+  followHost: FollowHostConfig | null;
+}
+
+/** What a followHost turn needs beyond the rest of the config (follow-host.ts). */
+export interface FollowHostConfig {
+  /** The most history, in estimated tokens, a turn sends; the oldest turns go first. */
+  historyTokens: number;
+  /** Each document's title by key, from project.json's vignettes; a key without one is titled by itself. */
+  titles: Record<string, string>;
 }
 
 export type RetrievalScope = 'corpus' | 'document';

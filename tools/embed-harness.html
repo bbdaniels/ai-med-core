@@ -18,6 +18,14 @@
   expect  a message type the frames must post (for example the popout's close
           message); the banner turns green once one arrives.
 
+  Host documents (a followHost project): each frame has a key and a title box
+  and a Send button that posts {type: 'host:document', key, title} to it, the
+  message a host page sends when its current document changes (an empty key
+  sends null: nothing to ask about here). The talk page obeys it only from an
+  origin in the project's embedOrigins, so serve the harness on one of them
+  (for example port 8770 on localhost). Scripted: harness.sendDocument(frame,
+  key, title). A frame's talk:ready is logged like any other message.
+
   Everything seen is also on window.harness ({frames, loads, messages}) for a
   script driving the page. The harness names no project or deployment.
 -->
@@ -41,6 +49,8 @@
   .frame header span { overflow-wrap: anywhere; }
   .frame iframe { width: 100%; height: 640px; border: 0; border-radius: 6px; background: #fff; }
   .frame.closed iframe { display: none; }
+  .frame .host { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .frame .host input { flex: 1 1 120px; min-width: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
   .frame.closed::after { content: "closed by its page"; display: block; padding: 24px; text-align: center; color: var(--muted); }
   #log { margin-top: 16px; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; }
 </style>
@@ -94,10 +104,31 @@
     });
     reload.addEventListener('click', () => { box.classList.remove('closed'); iframe.src = src; });
     iframe.src = src;
-    box.append(head, iframe);
+    const host = document.createElement('form');
+    host.className = 'host';
+    const keyInput = document.createElement('input');
+    keyInput.placeholder = 'Document key (empty: none)';
+    const titleInput = document.createElement('input');
+    titleInput.placeholder = 'Title';
+    const send = document.createElement('button');
+    send.type = 'submit';
+    send.textContent = 'Send';
+    host.append(keyInput, titleInput, send);
+    host.addEventListener('submit', (e) => { e.preventDefault(); harness.sendDocument(index, keyInput.value, titleInput.value); });
+    box.append(head, iframe, host);
     framesEl.append(box);
     harness.frames.push({ index, src, iframe, box });
     log(`frame #${index} -> ${src}`);
+  };
+
+  // What a host page sends when its current document changes.
+  harness.sendDocument = (index, key, title) => {
+    const frame = harness.frames[index];
+    if (!frame) return false;
+    const data = { type: 'host:document', key: key ? String(key) : null, title: String(title || '') };
+    frame.iframe.contentWindow.postMessage(data, '*');
+    log(`to frame #${index}: ${JSON.stringify(data)}`);
+    return true;
   };
 
   window.addEventListener('message', (event) => {

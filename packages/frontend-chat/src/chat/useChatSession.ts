@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { scrollListToBottom } from '../scroll-list';
 import { ChatSwitchedOffError, postChat } from './api';
+import { questionOn } from '../host-document';
 import type { LanguagesJson, Message } from './types';
 
 export interface ChatSessionOptions {
@@ -29,6 +30,14 @@ export interface ChatSessionOptions {
   speak: boolean;
   /** Called when the opening turn has landed, with the case template the API returned. */
   onOpened?: (caseTemplate: string | null) => void;
+  /**
+   * followHost: tag each question with the document current when it was asked
+   * (its key and title), for the API's history and the thread's dividers. The
+   * conversation is never cleared when documentKey changes, here or anywhere.
+   */
+  tagQuestions?: boolean;
+  /** The current document's title, for tagQuestions. */
+  documentTitle?: string;
 }
 
 function randomToken(): string {
@@ -38,7 +47,7 @@ function randomToken(): string {
 }
 
 export function useChatSession(o: ChatSessionOptions) {
-  const { active, documentKey, languageName, languageCode, langs, epoch, speak, onOpened } = o;
+  const { active, documentKey, languageName, languageCode, langs, epoch, speak, onOpened, tagQuestions, documentTitle } = o;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -177,7 +186,9 @@ export function useChatSession(o: ChatSessionOptions) {
     if (sendInFlightRef.current) return;
     sendInFlightRef.current = true;
 
-    const userMessage: Message = { role: 'user', content: messageText };
+    const userMessage: Message = tagQuestions
+      ? questionOn(messageText, { key: documentKey, title: documentTitle })
+      : { role: 'user', content: messageText };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     if (typeof overrideText !== 'string') setInput('');

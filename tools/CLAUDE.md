@@ -73,6 +73,8 @@ python3 -m http.server 8080 -d tools
 
 Each `src` is framed in its own panel (URL-encode a page that carries its own query or `#code=` fragment). With `expect`, a banner turns green when a frame posts a message of that type, and that frame is shut, as a host page shuts its popout. What the page has seen is also on `window.harness` (`frames`, `loads`, `messages`) for a script driving it. A cross-origin frame's address cannot be read from the harness; check that a `#code=` fragment is stripped by opening the same URL top-level. A local build in a frame calls its API from its own origin, so that API's `ALLOWED_ORIGINS` must list it. The harness names no project or deployment.
 
+For a project that follows a host page (`followHost`), each panel also has a key box, a title box and a Send button that post `{type: 'host:document', key, title}` to that frame (an empty key sends `null`), the message the host sends when its current document changes; `harness.sendDocument(frame, key, title)` does the same from a script. The frame's `talk:ready` shows in the log. The page obeys only origins in the project's `embedOrigins`, so serve the harness on one of them, e.g. `python3 -m http.server 8770 -d tools`.
+
 ## ab-grounding.ts
 
 An A/B of two grounding configurations of one document chat: arm A is the deployed project, arm B a copy of it that grounds differently (for example on paper cards with `"retrievalScope": "document"` and `"searchFirst": true`), both served by one deployment. Never run it against production; run it against a local production-mode server, with both projects on `payment_source=direct`.

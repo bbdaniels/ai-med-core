@@ -20,6 +20,7 @@ export * from './chat/types.js';
 export * from './chat/answer.js';
 export * from './chat/completion.js';
 export * from './chat/config.js';
+export * from './chat/follow-host.js';
 export * from './chat/grounding.js';
 export * from './chat/hooks.js';
 export * from './chat/language.js';

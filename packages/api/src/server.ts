@@ -2547,6 +2547,10 @@ app.get('/api/config', async (_req, res) => {
       talkPublicUrl: flags.talkPublicUrl,
       // Document-reference linking config (frontend doc-refs.ts), or null.
       docRefs: flags.docRefs,
+      // The talk page follows the page that frames it (host:document
+      // messages), obeying only these origins. See chat-core CLAUDE.md.
+      followHost: flags.followHost,
+      embedOrigins: flags.embedOrigins,
     });
   } catch (error) {
     console.error('Error reading config:', error);

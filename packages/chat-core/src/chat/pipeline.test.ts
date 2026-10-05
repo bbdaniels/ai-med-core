@@ -22,7 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const config: ChatProjectConfig = {
   slug: 'fixture', usageProject: 'fixture_', app: 'talk', enableFollowups: true, logConversations: true,
   readingsIndexPath: null, readingsQueryLanguage: null, chatModel: 'gpt-4o-mini', groundingFile: null,
-  retrievalScope: 'corpus', searchFirst: false,
+  retrievalScope: 'corpus', searchFirst: false, followHost: null,
 };
 
 function setup() {
@@ -144,4 +144,41 @@ test('a document-scoped, search-first project: hop 0 must search, and only the t
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('a followHost project: the current document under its heading, the earlier one from the store, tagged questions', async () => {
+  const a = setup();
+  const docs: Record<string, string> = { doc: 'DOC', prev: 'PREV' };
+  a.deps.store.getDocument = async key => { a.events.push(`getDocument ${key}`); return key in docs ? { key, content: docs[key] } : null; };
+  a.deps.config = { ...config, followHost: { historyTokens: 24000, titles: { doc: 'The document', prev: 'The previous one' } } };
+  const messages = [
+    { role: 'user' as const, content: 'First?', documentKey: 'prev' },
+    { role: 'assistant' as const, content: 'A.', beyondScope: false } as any,
+    { role: 'user' as const, content: 'Second?', documentKey: 'doc' },
+  ];
+  await runChatTurn({ messages, documentKey: 'doc', sessionToken: 'fixture-session-0001' }, a.deps);
+  assert.deepEqual(a.events.filter(e => e.startsWith('getDocument')), ['getDocument doc', 'getDocument prev']);
+  const sent = a.sent[0].messages;
+  assert.match(sent[0].content, /^SYS\n\nPRE\n\nYou will respond as a JSON object[^]*\n\n## Current document: The document \(doc\)\n\nDOC\n\n## Earlier document: The previous one \(prev\)\n\nPREV$/);
+  assert.deepEqual(sent.slice(1), [
+    { role: 'user', content: '[On: The previous one] First?' },
+    { role: 'assistant', content: 'A.' },
+    { role: 'user', content: '[On: The document] Second?' },
+  ]);
+  // the log keeps the question as asked, under the document it was asked on
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(a.rows.qa, [['fixture', 'fixture-session-0001', 'doc', null, 'Second?', 'A.']]);
+});
+
+test('a project that does not follow a host ignores the tags and sends the history as it came', async () => {
+  const a = setup();
+  const messages = [
+    { role: 'user' as const, content: 'First?', documentKey: 'prev' },
+    { role: 'assistant' as const, content: 'A.' },
+    { role: 'user' as const, content: 'Second?', documentKey: 'doc' },
+  ];
+  await runChatTurn({ messages, documentKey: 'doc' }, a.deps);
+  assert.deepEqual(a.events.filter(e => e.startsWith('getDocument')), ['getDocument doc']);
+  assert.deepEqual(a.sent[0].messages.slice(1), messages);
+  assert.match(a.sent[0].messages[0].content, /^SYS\n\nPRE\n\nDOC\n\n/);
 });

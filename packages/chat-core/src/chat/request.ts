@@ -8,10 +8,11 @@
  * (`qa_log.vignette_key`, the vignette rows); only the request gains an alias.
  */
 import { ChatInputError } from './pipeline.js';
-import type { ChatMessage } from './types.js';
+import type { HistoryMessage } from './types.js';
 
 export interface ChatRequestBody {
-  messages: ChatMessage[];
+  /** The conversation so far; a followHost page tags each question with documentKey. */
+  messages: HistoryMessage[];
   documentKey?: string;
   vignetteKey?: string;
   language?: string | null;

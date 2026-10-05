@@ -49,3 +49,23 @@ test('an unknown scope searches the corpus; a truthy non-boolean is not search-f
     console.warn = quiet;
   }
 });
+
+test('followHost: null unless the project follows a host; then its titles and history cap', async () => {
+  await withProject({ app: 'talk' }, async root => {
+    assert.equal((await loadChatProjectConfig(root, 'fixture', 'fixture')).followHost, null);
+  });
+  const vignettes = [
+    { key: 'k1', template: 't', title: ' First ', file: 'x.md' },
+    { key: 'k2', template: 't', file: 'y.md' },
+    { key: 'k3', template: 't', title: '', file: 'z.md' },
+  ];
+  await withProject({ app: 'talk', followHost: true, embedOrigins: ['https://example.org'], cases: { vignettes } }, async root => {
+    const c = await loadChatProjectConfig(root, 'fixture', 'fixture');
+    assert.deepEqual(c.followHost, { historyTokens: 24000, titles: { k1: 'First' } });
+  });
+  for (const [historyTokens, expected] of [[4000, 4000], [100, 24000], [4000.5, 24000], ['4000', 24000]] as const) {
+    await withProject({ app: 'talk', followHost: true, historyTokens }, async root => {
+      assert.equal((await loadChatProjectConfig(root, 'fixture', 'fixture')).followHost?.historyTokens, expected, String(historyTokens));
+    });
+  }
+});

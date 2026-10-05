@@ -17,9 +17,9 @@ import { resolveProjectFlags } from '@ai-med/chat-core';
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 
-/** The boolean flags and passthrough strings ResolvedFlags carries (not app, not docRefs, not the talkManifest path). */
+/** The boolean flags and passthrough values ResolvedFlags carries (not app, not docRefs, not the talkManifest path). */
 const FLAGS = Object.entries(resolveProjectFlags({}))
-  .filter(([k, v]) => typeof v === 'boolean' || k === 'talkPublicUrl')
+  .filter(([k, v]) => typeof v === 'boolean' || k === 'talkPublicUrl' || k === 'embedOrigins')
   .map(([k]) => k);
 
 function sourceFiles(dir: string): string[] {
@@ -31,7 +31,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 test('the flag list covers the gate, the refusal and the voice switches', () => {
-  for (const f of ['requireAccessCode', 'requireKnownVignette', 'enableVoice', 'enableRealtime', 'talkManifest', 'talkPublicUrl']) {
+  for (const f of ['requireAccessCode', 'requireKnownVignette', 'enableVoice', 'enableRealtime', 'talkManifest', 'talkPublicUrl', 'followHost', 'embedOrigins']) {
     assert.ok(FLAGS.includes(f), f);
   }
 });

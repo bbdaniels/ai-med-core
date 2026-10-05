@@ -6,12 +6,21 @@
 // builds that entry when VITE_APP=talk.
 //
 // Everything it shows comes from the parts both pages share in src/chat/.
+//
+// A followHost project inside a frame follows the host page instead of its
+// link (src/host-document.ts): the host says which document is current, the
+// header shows it, each question is asked on it, and the one conversation
+// carries on across documents with a "Now on" divider where a question moves
+// to another one. Every other project, and a followHost project opened
+// top-level, is unchanged.
 
 import { useEffect, useState } from 'react';
 import { useProjectConfig } from '../chat/useProjectConfig';
 import { useAccessGate } from '../chat/useAccessGate';
 import { useDocumentTitle, useLanguages } from '../chat/useLanguages';
 import { useDeepLink } from '../chat/useDeepLink';
+import { useHostDocument } from '../chat/useHostDocument';
+import { currentDocument, questionsBlocked } from '../host-document';
 import { useChatSession } from '../chat/useChatSession';
 import { useTabs } from '../chat/useTabs';
 import { useDocRefs } from '../chat/useDocRefs';
@@ -50,11 +59,29 @@ export default function TalkApp() {
     talkManifestSlug: config.talkManifestSlug,
     talkPublicUrl: config.talkPublicUrl,
     requireKnownVignette: config.requireKnownVignette,
+    followHost: config.followHost,
     accessReady,
     active: started,
   });
-  const { selectedVignetteKey, selectedPaper } = deepLink;
+  const { selectedPaper, hostDriven } = deepLink;
   useDocumentTitle(langs, selectedLanguageCode, selectedPaper?.title);
+
+  // followHost, framed: the host's current document, checked against the
+  // deployment's list on every switch. Ready (talk:ready) once access is
+  // settled and that list has loaded.
+  const { hostDocument } = useHostDocument({
+    enabled: hostDriven,
+    embedOrigins: config.embedOrigins,
+    ready: started && accessReady && deepLink.vignetteKeysLoaded,
+  });
+  const hosted = hostDriven
+    ? currentDocument(hostDocument, deepLink.selectedVignetteKey,
+      deepLink.vignetteKeysLoaded ? deepLink.vignetteKeys : null,
+      key => langs?.vignetteInfo?.[key]?.title)
+    : null;
+  // The document questions are asked on. Followed, it is the host's (null
+  // while the host's page has none); otherwise the link's, as always.
+  const selectedVignetteKey = hostDriven ? hosted?.key ?? null : deepLink.selectedVignetteKey;
   const vignetteInfo = selectedVignetteKey ? langs?.vignetteInfo?.[selectedVignetteKey] : undefined;
 
   const session = useChatSession({
@@ -65,6 +92,8 @@ export default function TalkApp() {
     langs,
     epoch,
     speak: false,
+    tagQuestions: hostDriven,
+    documentTitle: hosted?.title,
   });
 
   const tabs = useTabs({
@@ -154,6 +183,11 @@ export default function TalkApp() {
           starterQuestions={starterQuestions}
           renderAssistant={(text) => renderAssistantContent(text, refs, selectedLanguageCode)}
           onQuestionClick={handleQuestionClick}
+          headerTitle={hostDriven ? hosted?.title : undefined}
+          documentDividers={hostDriven}
+          sendBlockedNotice={questionsBlocked({ hostDriven, listLoaded: deepLink.vignetteKeysLoaded, key: selectedVignetteKey })
+            ? t('chat', 'noCurrentDocument') || 'Nothing on this page can be asked about. Move to a page that can, and the conversation carries on.'
+            : undefined}
         />
         {!noPanel && (
           <div className={`right-panel ${mobileActivePanel === 'chat' ? 'mobile-hidden' : ''}`}>

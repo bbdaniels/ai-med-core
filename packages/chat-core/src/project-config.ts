@@ -49,6 +49,14 @@ export interface ResolvedFlags {
   talkPublicUrl: string;
   /** The document-reference linking config, passed through verbatim, or null. */
   docRefs: unknown;
+  /**
+   * The talk page follows a host page: the page that frames it says which
+   * document is current, and one conversation runs across documents. Implied
+   * by nothing; see followHostContradictions for what it requires.
+   */
+  followHost: boolean;
+  /** The origins allowed to drive a followHost page, each `scheme://host[:port]`; [] otherwise. */
+  embedOrigins: string[];
 }
 
 type ImpliedFlag = keyof typeof TALK_IMPLIED;
@@ -81,7 +89,18 @@ export function resolveProjectFlags(cfg: Record<string, any>): ResolvedFlags {
     talkManifest: typeof cfg.talkManifest === 'string' && cfg.talkManifest !== '',
     talkPublicUrl: typeof cfg.talkPublicUrl === 'string' ? cfg.talkPublicUrl : '',
     docRefs: cfg.docRefs && typeof cfg.docRefs === 'object' ? cfg.docRefs : null,
+    followHost: flag('followHost'),
+    embedOrigins: embedOrigins(cfg),
   };
+}
+
+/** An origin as a browser reports it in MessageEvent.origin: scheme, host, optional port, nothing after. */
+export const ORIGIN_RE = /^https?:\/\/[^/\s?#@]+$/;
+
+/** The declared embedOrigins that are origins, in order, without repeats. */
+function embedOrigins(cfg: Record<string, any>): string[] {
+  if (!Array.isArray(cfg.embedOrigins)) return [];
+  return [...new Set(cfg.embedOrigins.filter((o: unknown): o is string => typeof o === 'string' && ORIGIN_RE.test(o)))];
 }
 
 /** The repo-relative path of the project's talk manifest, or null when it declares none. */
@@ -99,5 +118,24 @@ export function talkContradictions(cfg: Record<string, any>): string[] {
   const out: string[] = [];
   if (cfg.formless === false) out.push('app "talk" contradicts formless: false (talk is formless)');
   if (cfg.enableFeedback === true) out.push('app "talk" contradicts enableFeedback: true (talk has no grading)');
+  return out;
+}
+
+/**
+ * What a followHost project needs, and the settings that mean nothing without
+ * it. Only the talk page follows a host, and it obeys only the origins the
+ * project lists, so followHost with no origin could never be driven. One
+ * message per problem; none for a project that uses none of the three keys.
+ */
+export function followHostContradictions(cfg: Record<string, any>): string[] {
+  const out: string[] = [];
+  const flags = resolveProjectFlags(cfg);
+  if (flags.followHost) {
+    if (flags.app !== 'talk') out.push('followHost needs app "talk" (only the talk page follows a host)');
+    if (flags.embedOrigins.length === 0) out.push('followHost needs embedOrigins: at least one origin allowed to drive the page');
+  } else {
+    if (cfg.embedOrigins !== undefined) out.push('embedOrigins is read only with followHost: true');
+    if (cfg.historyTokens !== undefined) out.push('historyTokens is read only with followHost: true');
+  }
   return out;
 }

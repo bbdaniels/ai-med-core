@@ -39,6 +39,11 @@ export interface ProjectConfig {
   // the document tab to that passage. Absent this config the feature is off and
   // assistant messages render exactly as before. See doc-refs.ts.
   docRefs: DocRefsConfig | null;
+  // followHost (project.json): framed, the talk page follows the host page's
+  // current document and keeps one conversation (host-document.ts), obeying
+  // only messages from embedOrigins.
+  followHost: boolean;
+  embedOrigins: string[];
 }
 
 /** What a page assumes before /api/config answers, and keeps if it never does. */
@@ -55,6 +60,8 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   talkPublicUrl: '',
   enableFeedback: true,
   docRefs: null,
+  followHost: false,
+  embedOrigins: [],
 };
 
 /**
@@ -85,5 +92,7 @@ export function parseProjectConfig(data: any, buildProject: string): ProjectConf
     enableFeedback: d.enableFeedback !== false,
     docRefs: d.docRefs && typeof d.docRefs === 'object' && typeof d.docRefs.tabId === 'string'
       ? d.docRefs as DocRefsConfig : null,
+    followHost: d.followHost === true,
+    embedOrigins: Array.isArray(d.embedOrigins) ? d.embedOrigins.filter((o: unknown): o is string => typeof o === 'string') : [],
   };
 }

@@ -20,6 +20,7 @@ Both pages are composed from the same parts in `src/chat/`, so a fix lands once:
 | `useLanguages.ts` | languages file, the reader's language, `t()`, starter questions, the tab title |
 | `useDeepLink.ts` | `?vignette=` / `?doc=` / `?paper=` through the talk manifest, the picker, `requireKnownVignette` and its refusal, the `talkPublicUrl` redirect, `embeddedInFrame`, the `orcid-display:talk-close` message, posted by the header's Close and by Escape anywhere in a framed page through `src/frame-escape.ts` (one window listener; skips IME composition and an Escape a popover already consumed; checked by `src/frame-escape.check.ts`) |
 | `useChatSession.ts` | messages, input, follow-ups, beyond-scope flags, session token, opening turn. A page that speaks its answers (the simulator's TTS) sets `speak` and takes each reply through `beginSpeaking()` / `revealPending()` |
+| `useHostDocument.ts`, `../host-document.ts` | a `followHost` project in a frame: the host page's current document (`host:document`), the `talk:ready` message, the "Now on" dividers, and when sending is blocked (checked by `src/host-document.check.ts`); see "Following a host page" below |
 | `useTabs.ts`, `tabs.ts` | `/api/tabs`, `resolveTabs`, merged editions, first-visit mounting (checked by `src/tabs.check.ts`) |
 | `useDocRefs.ts`, `AssistantContent.tsx` | document and legal references in answers, page maps, jump requests |
 | `TabViews.tsx` | every tab view but the form, the desktop tab panel, the mobile strip |
@@ -29,6 +30,17 @@ Both pages are composed from the same parts in `src/chat/`, so a fix lands once:
 `App.tsx` still carries the talk branches (manifest, picker, refusal) for one release so a rollback of the Pages flag alone restores the old page; they are removed one release later.
 
 To check a page inside a frame (the paper popout, a deck's Ask popover), use `tools/embed-harness.html`; see `tools/CLAUDE.md`.
+
+## Following a host page (`followHost`)
+
+A talk project that sets `"followHost": true` in `project.json` is driven by the page that frames it: a deck's side panel stays open, with the talk page alive in its iframe, while the reader tabs through slides, and the deck tells the page which slide is current. The conversation is one session across them. Only the talk page does this, only inside a frame (a top-level visit behaves as any project), and only for that project; every other project's page is unchanged. The messages and their checks are in `src/host-document.ts`:
+
+- **Ready.** Once the page is mounted and access is settled (the access code entered once, as on any gated project, and the document list loaded), it posts `{type: 'talk:ready'}` to its parent with target origin `'*'`, which is acceptable only because it carries nothing. The host answers with the current document and sends it again on every change.
+- **Documents.** The host posts `{type: 'host:document', key: '<key>' | null, title: '<string>'}`. The page obeys it only when the project sets `followHost`, the page is framed, `event.source === window.parent`, and `event.origin` is exactly one of the project's `embedOrigins` (`/api/config`). Anything else is dropped silently. The close message `orcid-display:talk-close` and Escape (`src/frame-escape.ts`) are unchanged.
+- **The current document.** The host's latest word, else the document the link names (`?vignette=`), checked against the deployment's document list on every switch (`requireKnownVignette`, applied per switch rather than per link; a link naming none, or one the deployment lacks, waits for the host instead of being refused). The header shows the host's title, else the document's own. A `null` key, or one the deployment does not hold, leaves the conversation in place, shows `chat.noCurrentDocument` above the input (a generic default when the project has none), and disables the send button and the chips until a document is current again; what was typed stays in the box.
+- **One thread.** Switching never clears the conversation and never draws a new session token. Each question carries the key and title of the document current when it was asked (`questionOn`); the key goes to `/api/chat` with the history, where the server builds the prompt around it (`packages/chat-core/CLAUDE.md`, "Following a host page"), and the title stays on the page. The thread shows a divider, `chat.nowOn` (default "Now on:") and the title, only before a question asked on a different document from the question before it (`threadWithDividers`), so paging through twenty slides without asking adds nothing, and consecutive switches collapse into one.
+
+To try it, frame the page in `tools/embed-harness.html` served on an origin the project lists; each panel can send `host:document` (see `tools/CLAUDE.md`).
 
 ## Key Files
 

@@ -46,4 +46,13 @@ check('docRefs needs a tabId', () => {
   assert.equal(parseProjectConfig({ docRefs: 'doc' }, 's').docRefs, null);
 });
 
+check('followHost is on only when the body says true; embedOrigins keeps strings', () => {
+  assert.equal(parseProjectConfig({}, 's').followHost, false);
+  assert.equal(parseProjectConfig({ followHost: 1 }, 's').followHost, false);
+  const c = parseProjectConfig({ followHost: true, embedOrigins: ['https://host.example', 3, null] }, 's');
+  assert.equal(c.followHost, true);
+  assert.deepEqual(c.embedOrigins, ['https://host.example']);
+  assert.deepEqual(parseProjectConfig({ embedOrigins: 'https://host.example' }, 's').embedOrigins, []);
+});
+
 console.log(`project-config checks: ${n}/${n} passed`);

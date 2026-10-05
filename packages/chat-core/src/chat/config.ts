@@ -4,7 +4,8 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { ChatProjectConfig, KnownChatModel, RetrievalScope } from './types.js';
+import type { ChatProjectConfig, FollowHostConfig, KnownChatModel, RetrievalScope } from './types.js';
+import { DEFAULT_HISTORY_TOKENS } from './follow-host.js';
 import { KNOWN_CHAT_MODELS } from './usage.js';
 import { resolveProjectFlags } from '../project-config.js';
 
@@ -27,6 +28,7 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   let groundingFile: string | null = null;
   let retrievalScope: RetrievalScope = 'corpus';
   let searchFirst = false;
+  let followHost: FollowHostConfig | null = null;
   try {
     const cfgPath = path.join(repoRoot, 'projects', slug, 'project.json');
     const cfg = JSON.parse(await fs.readFile(cfgPath, 'utf-8'));
@@ -67,6 +69,9 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     } else if (typeof cfg.chatModel === 'string') {
       console.warn(`[chat] ${slug}: unknown chatModel "${cfg.chatModel}", using the default`);
     }
+    // A project that follows a host page runs one conversation across its
+    // documents; its prompt names each one by title (follow-host.ts).
+    if (flags.followHost) followHost = followHostConfig(cfg);
   } catch { /* ignore — default off */ }
 
   return {
@@ -81,5 +86,17 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     groundingFile,
     retrievalScope,
     searchFirst,
+    followHost,
   };
+}
+
+/** historyTokens (an integer in the schema's range, else the default) and the vignette titles. */
+function followHostConfig(cfg: Record<string, any>): FollowHostConfig {
+  const n = cfg.historyTokens;
+  const historyTokens = Number.isInteger(n) && n >= 256 && n <= 100_000 ? n : DEFAULT_HISTORY_TOKENS;
+  const titles: Record<string, string> = {};
+  for (const v of Array.isArray(cfg.cases?.vignettes) ? cfg.cases.vignettes : []) {
+    if (typeof v?.key === 'string' && typeof v?.title === 'string' && v.title.trim()) titles[v.key] = v.title.trim();
+  }
+  return { historyTokens, titles };
 }

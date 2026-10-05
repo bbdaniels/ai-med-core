@@ -34,7 +34,9 @@ export const postChat = async ({ messages, vignetteKey, language, sessionToken }
     headers: { 'Content-Type': 'application/json' },
     // documentKey is the document's name in the API; vignetteKey carries the
     // same key so an API rolled back to before documentKey still answers.
-    body: JSON.stringify({ messages, documentKey: vignetteKey, vignetteKey, language, sessionToken }),
+    // A question's documentTitle (followHost) is the page's own display text;
+    // its documentKey goes, and the server titles it from project.json.
+    body: JSON.stringify({ messages: messages.map(({ documentTitle: _shown, ...m }) => m), documentKey: vignetteKey, vignetteKey, language, sessionToken }),
   });
   if (!response.ok) {
     // A talkManifest project switched off from the global admin page answers 503

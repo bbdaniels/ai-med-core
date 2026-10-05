@@ -12,6 +12,11 @@
 //   control that posts `orcid-display:talk-close` to the host page, and Escape
 //   anywhere in the page posts the same message (frame-escape.ts).
 //
+// - followHost, framed: the host page drives which document is current
+//   (useHostDocument). The page then loads the whole document list, opens the
+//   linked document if the link names one it holds, and refuses nothing: a
+//   missing or unknown link waits for the host instead.
+//
 // Every other project opens its first vignette, as it always has, and the
 // simulator's case sequence moves on through selectVignette().
 
@@ -29,6 +34,8 @@ export interface DeepLinkOptions {
   talkManifestSlug: string | null;
   talkPublicUrl: string;
   requireKnownVignette: boolean;
+  /** The project follows a host page (project.json followHost); it takes effect only framed. */
+  followHost?: boolean;
   /** The gated endpoints will answer (useAccessGate). */
   accessReady: boolean;
   /** Load the vignette list only once the reader has started. */
@@ -45,6 +52,7 @@ export function useDeepLink(o: DeepLinkOptions) {
   // (the manifest fetch), null when the URL names none, else the key.
   const [urlVignette, setUrlVignette] = useState<string | null | undefined>(undefined);
   const [vignetteKeys, setVignetteKeys] = useState<string[]>([]);
+  const [vignetteKeysLoaded, setVignetteKeysLoaded] = useState(false);
   const [selectedVignetteKey, setSelectedVignetteKey] = useState<string | null>(null);
   const [currentVignetteIndex, setCurrentVignetteIndex] = useState<number>(0);
   const [vignetteRefused, setVignetteRefused] = useState(false);
@@ -61,6 +69,9 @@ export function useDeepLink(o: DeepLinkOptions) {
     try { window.parent.postMessage({ type: TALK_CLOSE_MESSAGE }, '*'); } catch { /* not embedded */ }
   }, []);
   const redirectsToPublicPage = !!talkPublicUrl && !embeddedInFrame && !isLocalDevHost;
+  // The host page says which document is current (useHostDocument). Top-level,
+  // a followHost project behaves as any other.
+  const hostDriven = !!o.followHost && embeddedInFrame;
   // Framed, Escape anywhere in the page (the chat's text box included) asks
   // the host to close, the same as the header's Close control.
   useEffect(() => (embeddedInFrame ? listenForFrameEscape(window, closeEmbeddingFrame) : undefined),
@@ -108,14 +119,23 @@ export function useDeepLink(o: DeepLinkOptions) {
   // Load vignettes only after the reader starts (filtered by uid if present)
   useEffect(() => {
     if (!active || !accessReady || urlVignette === undefined) return;
-    if (requireKnownVignette && !urlVignette) {
+    if (requireKnownVignette && !urlVignette && !hostDriven) {
       setVignetteRefused(true);
       return;
     }
-    fetchVignettes(uid, requireKnownVignette ? urlVignette : null)
+    fetchVignettes(uid, requireKnownVignette && !hostDriven ? urlVignette : null)
       .then(keys => {
         setVignetteKeys(keys);
-        if (requireKnownVignette) {
+        setVignetteKeysLoaded(true);
+        if (hostDriven) {
+          // Every switch is checked against this list (host-document.ts
+          // currentDocument). The link only says where to start.
+          const index = urlVignette ? keys.indexOf(urlVignette) : -1;
+          if (index >= 0) {
+            setCurrentVignetteIndex(index);
+            setSelectedVignetteKey(keys[index]);
+          }
+        } else if (requireKnownVignette) {
           // The server has confirmed it holds the key (else it answered 404).
           const index = urlVignette ? keys.indexOf(urlVignette) : -1;
           if (index < 0) { setVignetteRefused(true); return; }
@@ -142,7 +162,7 @@ export function useDeepLink(o: DeepLinkOptions) {
         if (error instanceof UnknownVignetteError) { setVignetteRefused(true); return; }
         console.error('Error loading vignette keys:', error);
       });
-  }, [active, uid, accessReady, urlVignette, talkManifestSlug, talkPapers, requireKnownVignette]);
+  }, [active, uid, accessReady, urlVignette, talkManifestSlug, talkPapers, requireKnownVignette, hostDriven]);
 
   // The talk-manifest paper currently open, and the papers the picker offers
   // (only those whose vignette the deployment actually serves).
@@ -180,10 +200,10 @@ export function useDeepLink(o: DeepLinkOptions) {
   };
 
   return {
-    embeddedInFrame, closeEmbeddingFrame,
+    embeddedInFrame, closeEmbeddingFrame, hostDriven,
     /** Render nothing: the page is leaving for the project's public page. */
     leavingForPublicPage: redirectsToPublicPage,
-    vignetteKeys, selectedVignetteKey, currentVignetteIndex, vignetteRefused,
+    vignetteKeys, vignetteKeysLoaded, selectedVignetteKey, currentVignetteIndex, vignetteRefused,
     selectedPaper, pickerPapers, selectVignette, openPaper,
   };
 }

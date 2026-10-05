@@ -10,6 +10,7 @@ This repo contains the **platform code only**. Clinical content (vignettes, rubr
 
 - **Multi-project architecture** -- run multiple independent training programs from one deployment
 - **AI patient simulation** -- LLM-powered conversations following structured clinical vignettes
+- **Document chat** -- talk to a paper, a slide deck or a reading, answered from that document; embedded in a page that tracks which document is current (`followHost`), one conversation carries across documents
 - **KoboToolbox integration** -- structured assessment forms with automatic transcript attachment
 - **Multi-language support** -- full i18n for UI, forms, and AI-generated feedback
 - **Real-time grading** -- instant student feedback on clinical competencies

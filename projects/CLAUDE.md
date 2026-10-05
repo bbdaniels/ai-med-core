@@ -81,6 +81,9 @@ JSON array of `{uid, vignette_key}` rows mapping participants to vignettes. When
   "groundingFile": "projects/demo/content/readings/grounding.md", // Optional — corpus index appended to the prompt after the document
   "talkManifest": "projects/papers/manifest.json", // Optional — public paper list + public_chat kill switch (see below)
   "talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}", // Optional — the public page that fronts a talkManifest project (see below)
+  "followHost": false,              // Optional, talk only — the framing page drives which document is current, one conversation across documents (see below)
+  "embedOrigins": ["https://www.example.org"], // followHost only — origins (scheme://host[:port]) allowed to drive the page
+  "historyTokens": 24000,           // followHost only — history cap per turn, estimated tokens; default 24000
   "docRefs": {                      // Optional — linkify document references in chat answers
     "tabId": "eip-doc",             // id of the tab the links point into (its `document` edition)
     "patterns": [                   // surface words -> anchor prefix (the {#sec-…}/{#app-…} ids in the document)
@@ -140,6 +143,12 @@ It is served without auth, to any origin, at `GET /api/talk-manifest/<slug>`. De
 Unknown slugs and projects without `talkManifest` get 404 from the manifest route; projects without `talkManifest` are untouched by the switch. A malformed manifest file is logged and served as `{"papers": []}`, never a 500.
 
 **`talkPublicUrl`: the author's page is the only public front door.** The app is the backend behind an iframe popout on another site and must not act as a public landing page itself. A project that declares `"talkPublicUrl": "https://www.benjaminbdaniels.com/publications/#talk-doi-{slug}"` redirects every top-level visit (`window.self === window.top`) with `location.replace`: a link naming a manifest paper (`?paper=<DOI>`, `?vignette=<key>` or `?doc=<key>`) goes to the template filled for that paper, and any other visit goes to the template with everything from `#` stripped. Inside an iframe nothing changes. `{slug}` is the DOI lower-cased with every run outside `[a-z0-9]` collapsed to `-` and trimmed, exactly as orcid-display's `slugForWork` builds its `#talk-doi-<slug>` ids; `{doi}` is the URL-encoded DOI. The manifest route then also returns each paper's filled `publicUrl`, so any consumer can link canonically. The slug and template fill live in one place, `packages/chat-core/src/talk-url.ts` (`@ai-med/chat-core/talk-url`), imported by both the API and `packages/frontend-chat/src/talk-paper.ts` (checks: `npx tsx packages/frontend-chat/src/talk-paper.check.ts`). The redirect is skipped when the page is served from `localhost`, `127.0.0.1` or `[::1]`, so a dev server still renders top-level in a plain tab.
+
+### followHost — a host page drives the current document
+
+A talk project embedded in a page that stays open while the reader moves between documents (a deck's side panel across its slides) sets `"followHost": true` and lists in `"embedOrigins"` the origins allowed to drive it (scheme, host and port exactly as a browser reports `event.origin`; no path, no trailing slash). The host posts `{type: 'host:document', key, title}` on every change (`key: null` for a part with no document), after the page posts `{type: 'talk:ready'}`. The conversation is one session across documents: each question is sent with the key of the document current when it was asked, and the server builds each turn's prompt around the current document and the last other one asked about. The prompt shape a followHost project's system prompt is written against is in `packages/chat-core/CLAUDE.md` ("Following a host page"); the page side in `packages/frontend-chat/CLAUDE.md`. Titles in the prompt come from each vignette's `title` here, so a followHost project should give every vignette one. `"historyTokens"` caps the history a turn sends (default 24,000 estimated tokens, oldest turns dropped first; `qa_log` keeps everything).
+
+`followHost` is implied by nothing, and `tools/validate-projects.ts` refuses it without `"app": "talk"` or without an origin, and refuses `embedOrigins` or `historyTokens` on a project without it. A followHost project opened top-level, and every project without the flag, behaves exactly as before.
 
 ## Private content (files kept out of git)
 

@@ -7,6 +7,11 @@ export interface Message {
   // Set by /api/chat when the answer states anything the project's reference
   // content does not itself cover; drives the per-answer disclosure marker.
   beyondScope?: boolean;
+  // followHost pages only (host-document.ts): the document current when this
+  // question was asked. The key goes to the API with the history; the title
+  // stays on the page, for the thread's "Now on" dividers.
+  documentKey?: string;
+  documentTitle?: string;
 }
 
 // Language types
@@ -56,6 +61,10 @@ export interface LanguageUISection {
     unknownVignette?: string
     pickerBack?: string
     pickerClose?: string
+    /** followHost: the thread's divider before a question on another document, followed by its title. */
+    nowOn?: string
+    /** followHost: shown, with sending disabled, while the host's current page has no document. */
+    noCurrentDocument?: string
   }
   feedback?: {
     loading: string

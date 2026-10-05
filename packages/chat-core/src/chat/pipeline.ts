@@ -13,9 +13,10 @@ import { languageCode, parseLanguageList } from './language.js';
 import { loadCorpusGrounding } from './grounding.js';
 import type { AppHooks } from './hooks.js';
 import { assemblePrompt } from './prompt.js';
+import { followHostTurn } from './follow-host.js';
 import { makeEmbedder, makeRestater, runRetrievalLoop } from './retrieval.js';
 import { logChatUsage, sumUsages, type UsageSink } from './usage.js';
-import type { ChatMessage, ChatProjectConfig, ChatTurnResult } from './types.js';
+import type { ChatProjectConfig, ChatTurnResult, HistoryMessage } from './types.js';
 import type { OpenIndex } from '../readings.js';
 
 export interface ChatStore extends UsageSink {
@@ -28,7 +29,8 @@ export interface ChatStore extends UsageSink {
 }
 
 export interface ChatTurnRequest {
-  messages: ChatMessage[];
+  /** The whole conversation so far, as the page sends it with every turn. */
+  messages: HistoryMessage[];
   documentKey: string;
   language?: string | null;
   sessionToken?: string | null;
@@ -75,14 +77,26 @@ export async function runChatTurn(req: ChatTurnRequest, deps: ChatDeps): Promise
   // Validate language parameter (prevents prompt injection via the language field)
   if (language && !LANGUAGE_RE.test(language)) throw new ChatInputError('Invalid language parameter');
 
-  const completeSystemPrompt = assemblePrompt({
+  const promptParts = {
     systemPrompt,
     preamble: hooks.promptPreamble({ now: deps.now(), config }),
-    documentContent: document.content,
     corpusGrounding: await loadCorpusGrounding(deps.repoRoot, config),
     structured: config.enableFollowups,
     language,
-  });
+  };
+  // A project that follows a host page runs one conversation across its
+  // documents (follow-host.ts): its prompt names the current document and the
+  // last other one asked about, and its history is tagged and capped. Every
+  // other project sends the document and the history exactly as before.
+  const hosted = config.followHost
+    ? await followHostTurn({
+      messages, document, follow: config.followHost, prompt: promptParts,
+      getDocument: key => store.getDocument(key),
+    })
+    : null;
+  const completeSystemPrompt = hosted
+    ? hosted.system
+    : assemblePrompt({ ...promptParts, documentContent: document.content });
 
   if (Array.isArray(messages) && messages.length === 1 && hooks.onFirstTurn) {
     await hooks.onFirstTurn({ systemPrompt: completeSystemPrompt, messages, language, documentKey });
@@ -92,7 +106,7 @@ export async function runChatTurn(req: ChatTurnRequest, deps: ChatDeps): Promise
   // assistant turn holding tool calls, then one tool result per call.
   const convo: any[] = [
     { role: 'system', content: completeSystemPrompt },
-    ...messages,
+    ...(hosted ? hosted.history : messages),
   ];
 
   const client = await deps.client();

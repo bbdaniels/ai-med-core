@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
+import { followHostContradictions, resolveProjectFlags, talkContradictions, talkManifestPath, TALK_IMPLIED } from './project-config.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -23,6 +23,7 @@ test('no file: every default, and the simulator', () => {
   assert.equal(f.app, 'simulation');
   for (const [k, v] of Object.entries(f)) {
     if (k === 'app') continue;
+    if (k === 'embedOrigins') { assert.deepEqual(v, [], k); continue; }
     assert.equal(v, k === 'talkPublicUrl' ? '' : k === 'docRefs' ? null : false, k);
   }
 });
@@ -92,6 +93,30 @@ test('contradictions: talk with formless:false or enableFeedback:true', () => {
   assert.equal(talkContradictions({ app: 'talk', formless: false, enableFeedback: true }).length, 2);
 });
 
+test('followHost is implied by nothing, and embedOrigins keeps only origins', () => {
+  assert.equal(resolveProjectFlags({ app: 'talk' }).followHost, false);
+  assert.equal(resolveProjectFlags({ app: 'talk', followHost: 'yes' }).followHost, false);
+  const f = resolveProjectFlags({
+    app: 'talk', followHost: true,
+    embedOrigins: ['https://example.org', 'http://localhost:8770', 'https://example.org', 'https://example.org/', 'https://example.org/path', 'example.org', 3],
+  });
+  assert.equal(f.followHost, true);
+  assert.deepEqual(f.embedOrigins, ['https://example.org', 'http://localhost:8770']);
+  assert.deepEqual(resolveProjectFlags({ embedOrigins: 'https://example.org' }).embedOrigins, []);
+});
+
+test('followHost contradictions: talk only, needs an origin; its settings need it', () => {
+  const origins = { embedOrigins: ['https://example.org'] };
+  assert.deepEqual(followHostContradictions({ app: 'talk' }), []);
+  assert.deepEqual(followHostContradictions({ app: 'talk', followHost: true, ...origins, historyTokens: 4000 }), []);
+  assert.deepEqual(followHostContradictions({ app: 'talk', followHost: false }), []);
+  assert.match(followHostContradictions({ followHost: true, ...origins, kobo: {} }).join('\n'), /needs app "talk"/);
+  assert.match(followHostContradictions({ app: 'talk', followHost: true }).join('\n'), /needs embedOrigins/);
+  assert.match(followHostContradictions({ app: 'talk', followHost: true, embedOrigins: ['nope'] }).join('\n'), /needs embedOrigins/);
+  assert.match(followHostContradictions({ app: 'talk', ...origins }).join('\n'), /embedOrigins is read only with followHost/);
+  assert.match(followHostContradictions({ app: 'talk', historyTokens: 4000 }).join('\n'), /historyTokens is read only with followHost/);
+});
+
 /** A throwaway projects/ tree holding one talk project, as the validator reads it. */
 function tempProject(extra: Record<string, unknown>): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-projects-'));
@@ -137,5 +162,27 @@ test('the validator: a talk project needs no kobo; contradictions fail', () => {
     assert.match(r3.stderr, /contradicts enableFeedback: true/);
   } finally {
     for (const d of [ok, bare, bad]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('the validator: followHost needs talk and an origin; a malformed origin fails the schema', () => {
+  const ok = tempProject({ app: 'talk', followHost: true, embedOrigins: ['https://example.org', 'http://localhost:8770'], historyTokens: 8000 });
+  const bare = tempProject({ app: 'talk', followHost: true });
+  const stray = tempProject({ app: 'talk', embedOrigins: ['https://example.org'] });
+  const slash = tempProject({ app: 'talk', followHost: true, embedOrigins: ['https://example.org/'] });
+  try {
+    const r = runValidator(ok);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const r2 = runValidator(bare);
+    assert.equal(r2.status, 1);
+    assert.match(r2.stderr, /followHost needs embedOrigins/);
+    const r3 = runValidator(stray);
+    assert.equal(r3.status, 1);
+    assert.match(r3.stderr, /embedOrigins is read only with followHost/);
+    const r4 = runValidator(slash);
+    assert.equal(r4.status, 1);
+    assert.match(r4.stderr, /embedOrigins\/0 must match pattern/);
+  } finally {
+    for (const d of [ok, bare, stray, slash]) fs.rmSync(d, { recursive: true, force: true });
   }
 });

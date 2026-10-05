@@ -12,7 +12,7 @@ let root = '';
 const cfg = (slug: string, groundingFile: string | null): ChatProjectConfig => ({
   slug, usageProject: `${slug}_`, app: 'talk', enableFollowups: true, logConversations: false,
   readingsIndexPath: null, readingsQueryLanguage: null, chatModel: 'gpt-4o-mini', groundingFile,
-  retrievalScope: 'corpus', searchFirst: false,
+  retrievalScope: 'corpus', searchFirst: false, followHost: null,
 });
 
 before(() => {

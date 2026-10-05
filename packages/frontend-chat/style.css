@@ -2891,6 +2891,35 @@ body {
   white-space: normal;
 }
 
+/* followHost (src/host-document.ts): where a question moves to another
+   document, and the line above the input while the host's page has none. */
+.thread-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  font-size: 0.78em;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.thread-divider::before,
+.thread-divider::after {
+  content: "";
+  flex: 1 1 24px;
+  border-top: 1px solid var(--border);
+}
+.thread-divider span {
+  max-width: 80%;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.no-current-document {
+  margin: 0 0 8px;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 .chat-notice-bar {
   position: relative;
   /* Right-hand half of the top bar. margin-left: auto keeps it in the corner

@@ -10,6 +10,7 @@ import type React from 'react';
 import ChatNoticeBar from '../ChatNoticeBar';
 import LanguageSwitcher from '../LanguageSwitcher';
 import type { TalkPaper } from '../talk-paper';
+import { type ThreadItem, threadWithDividers } from '../host-document';
 import type { LanguagesJson, Message, VignetteInfo } from './types';
 import type { ChatSession } from './useChatSession';
 import type { Translate } from './useLanguages';
@@ -38,12 +39,19 @@ export interface ChatColumnProps {
   starterQuestions: string[];
   renderAssistant: (text: string) => React.ReactNode;
   onQuestionClick: (question: string) => void;
+  /** followHost: the current document's title, in place of the vignette's. */
+  headerTitle?: string;
+  /** followHost: a "Now on" divider before each question asked on another document. */
+  documentDividers?: boolean;
+  /** followHost: nothing here can be asked about. Shown above the input, and sending is off. */
+  sendBlockedNotice?: string;
 }
 
 export default function ChatColumn({
   session, t, langs, lang, onLanguageChange, showTopBar, mobileHidden, headerSlot, voiceSlot,
   documentKey, vignetteInfo, hasContentTab, selectedPaper, pickerPapers, openPaper,
   embeddedInFrame, closeEmbeddingFrame, starterQuestions, renderAssistant, onQuestionClick,
+  headerTitle, documentDividers, sendBlockedNotice,
 }: ChatColumnProps) {
   const { messages, input, setInput, isLoading, followups, inputRef, messagesEndRef, sendMessage } = session;
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -107,7 +115,7 @@ export default function ChatColumn({
                   const vi = vignetteInfo;
                   return (
                     <div className="vignette-info">
-                      <h1>{vi?.title || selectedPaper?.title || t('chat','headerTitle')}</h1>
+                      <h1>{headerTitle || vi?.title || selectedPaper?.title || t('chat','headerTitle')}</h1>
                       {selectedPaper && (
                         <p className="paper-meta">
                           {[selectedPaper.venue, selectedPaper.year].filter(Boolean).join(', ')}
@@ -161,16 +169,23 @@ export default function ChatColumn({
                     </ul>
                   </div>
                 )}
-                {messages.map((message: Message, index: number) => (
-                  <div key={index} className={`message ${message.role === 'user' ? 'user-message' : 'bot-message'}`}>
+                {(documentDividers
+                  ? threadWithDividers(messages)
+                  : messages.map((message, index): ThreadItem<Message> => ({ kind: 'message', message, index }))
+                ).map(item => item.kind === 'divider' ? (
+                  <div key={`divider-${item.index}`} className="thread-divider" role="separator">
+                    <span>{t('chat', 'nowOn') || 'Now on:'} {item.title}</span>
+                  </div>
+                ) : (
+                  <div key={item.index} className={`message ${item.message.role === 'user' ? 'user-message' : 'bot-message'}`}>
                     <div className="message-content">
-                      {message.role === 'assistant' ? renderAssistant(message.content) : message.content}
+                      {item.message.role === 'assistant' ? renderAssistant(item.message.content) : item.message.content}
                       {/* Per-answer disclosure: this reply said something the
                           project's reference content does not itself cover.
                           Shown only when the project supplies the localized
                           string, so other projects are unaffected; when the
                           model omits the flag the standing note still applies. */}
-                      {message.role === 'assistant' && message.beyondScope && t('chat', 'beyondScopeNotice') && (
+                      {item.message.role === 'assistant' && item.message.beyondScope && t('chat', 'beyondScopeNotice') && (
                         <div className="beyond-scope-note">
                           <span aria-hidden="true">⚠</span> {t('chat', 'beyondScopeNotice')}
                         </div>
@@ -208,6 +223,7 @@ export default function ChatColumn({
                     <button
                       key={`starter-${i}`}
                       type="button"
+                      disabled={!!sendBlockedNotice}
                       onClick={() => onQuestionClick(q)}
                     >
                       {q}
@@ -222,6 +238,7 @@ export default function ChatColumn({
                       key={`${i}-${q}`}
                       type="button"
                       className="followup-chip"
+                      disabled={!!sendBlockedNotice}
                       onClick={() => onQuestionClick(q)}
                     >
                       {q}
@@ -233,6 +250,9 @@ export default function ChatColumn({
 
             {/* Input Area */}
             <div className="input-container input-container-inner">
+              {sendBlockedNotice && (
+                <p className="no-current-document" role="status">{sendBlockedNotice}</p>
+              )}
               <div className="input-wrapper">
                 <textarea
                   ref={inputRef}
@@ -246,7 +266,7 @@ export default function ChatColumn({
                 />
                 <button
                   onClick={() => sendMessage()}
-                  disabled={!input.trim() || isLoading}
+                  disabled={!input.trim() || isLoading || !!sendBlockedNotice}
                   className="send-button"
                   type="button"
                   aria-label={t('chat','send')}

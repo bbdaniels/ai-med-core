@@ -163,6 +163,23 @@
       "type": "boolean",
       "description": "Refuse a deep link (?vignette=) naming no vignette or an unknown one, instead of opening the first vignette: /api/vignettes?vignette=<key> answers 404 and the page says so"
     },
+    "followHost": {
+      "type": "boolean",
+      "description": "Talk page only: the page that frames the chat says which document is current (postMessage host:document), and one conversation runs across documents. Implied by nothing; requires app \"talk\" and embedOrigins (tools/validate-projects.ts). See packages/chat-core/CLAUDE.md, \"Following a host page\""
+    },
+    "embedOrigins": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^https?://[^/\\s?#@]+$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "followHost only: the origins (scheme://host[:port], no path, no trailing slash) whose host:document messages the talk page obeys; a message from any other origin, or from any window but the page's parent, is ignored"
+    },
+    "historyTokens": {
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 100000,
+      "description": "followHost only: the most conversation history, in estimated tokens (characters / 4), one turn sends the model; the oldest turns are dropped first and the log keeps everything. Default 24000"
+    },
     "requireAccessCode": {
       "type": "boolean",
       "description": "Gate the project behind an access code from the access_code project setting or ACCESS_CODE_<SLUG>; fails closed when none is configured. Also withholds vignetteInfo from /api/languages until the code is given"

@@ -202,3 +202,27 @@ test('the ladder: json_schema, then json_object, then plain', async () => {
     console.warn = quiet;
   }
 });
+
+test('search first: hop 0 requires a search, later hops are free', async () => {
+  const m = memoryClient([search({ query: 'zebrafish protocol' }), answer('Twelve weeks.')]);
+  await loop(m.client, { searchFirst: true });
+  assert.deepEqual(m.chats.map(c => c.tool_choice), ['required', 'auto']);
+  // Without an index there is no tool to require.
+  const none = memoryClient([answer('A.')]);
+  await loop(none.client, { index: null, searchFirst: true });
+  assert.equal(none.chats[0].tool_choice, undefined);
+  // Off by default.
+  const off = memoryClient([search({ query: 'zebrafish' }), answer('A.')]);
+  await loop(off.client);
+  assert.deepEqual(off.chats.map(c => c.tool_choice), ['auto', 'auto']);
+});
+
+test('document scope: the search runs over the given ids only', async () => {
+  const inScope = memoryClient([search({ query: 'zebrafish protocol' }), answer('A.')]);
+  const r = await loop(inScope.client, { docIds: ['doc-one'] });
+  assert.ok(r.searches[0].results >= 1);
+  const outOfScope = memoryClient([search({ query: 'zebrafish protocol' }), answer('A.')]);
+  const r2 = await loop(outOfScope.client, { docIds: ['another-doc'] });
+  assert.equal(r2.searches[0].results, 0);
+  assert.doesNotMatch(outOfScope.chats[1].messages.at(-1).content, /zebrafish protocol ran/);
+});

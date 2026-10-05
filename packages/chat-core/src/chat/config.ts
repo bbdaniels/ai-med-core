@@ -4,7 +4,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { ChatProjectConfig, KnownChatModel } from './types.js';
+import type { ChatProjectConfig, KnownChatModel, RetrievalScope } from './types.js';
 import { KNOWN_CHAT_MODELS } from './usage.js';
 import { resolveProjectFlags } from '../project-config.js';
 
@@ -25,6 +25,8 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
   let readingsQueryLanguage: string | null = null;
   let chatModel: KnownChatModel = 'gpt-4o-mini';
   let groundingFile: string | null = null;
+  let retrievalScope: RetrievalScope = 'corpus';
+  let searchFirst = false;
   try {
     const cfgPath = path.join(repoRoot, 'projects', slug, 'project.json');
     const cfg = JSON.parse(await fs.readFile(cfgPath, 'utf-8'));
@@ -32,6 +34,14 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     logConversations = cfg.logConversations === true;
     readingsIndexPath = typeof cfg.readingsIndex === 'string' ? cfg.readingsIndex : null;
     groundingFile = typeof cfg.groundingFile === 'string' && cfg.groundingFile ? cfg.groundingFile : null;
+    // A document-scoped project searches only the passages of the document the
+    // turn is about (its key is the index's document id), and a search-first
+    // project must search before it answers. Both default off.
+    if (cfg.retrievalScope === 'document') retrievalScope = 'document';
+    else if (cfg.retrievalScope !== undefined && cfg.retrievalScope !== 'corpus') {
+      console.warn(`[readings] ${slug}: unknown retrievalScope, searching the corpus`);
+    }
+    searchFirst = cfg.searchFirst === true;
     // The language the corpus is WRITTEN in, when that is not the language its
     // users ask in. haivn_eip's legal library is entirely Vietnamese, so an
     // English question searches it across a language boundary: the BM25 half
@@ -69,5 +79,7 @@ export async function loadChatProjectConfig(repoRoot: string, slug: string, usag
     readingsQueryLanguage,
     chatModel,
     groundingFile,
+    retrievalScope,
+    searchFirst,
   };
 }

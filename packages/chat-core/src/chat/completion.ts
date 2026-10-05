@@ -43,8 +43,12 @@ export interface CompletionClient {
   embeddings: { create(req: any): Promise<any> };
 }
 
-/** Issue one completion over the conversation so far, offering `tools` when given. */
-export type Issue = (convo: unknown[], tools: unknown[] | null) => Promise<any>;
+/**
+ * Issue one completion over the conversation so far, offering `tools` when
+ * given. `toolChoice` applies only with tools; the default is 'auto'.
+ */
+export type Issue = (convo: unknown[], tools: unknown[] | null,
+                     opts?: { toolChoice?: 'auto' | 'required' }) => Promise<any>;
 
 /**
  * An Issue for this model. A structured project asks for the json_schema; a
@@ -59,9 +63,10 @@ export function makeIssuer(client: CompletionClient, o: { model: KnownChatModel;
     temperature: 0.7,
   };
   const schemaRequest = { ...baseChatRequest, response_format: CHAT_RESPONSE_SCHEMA };
-  return async (convo, tools) => {
+  return async (convo, tools, opts) => {
+    const toolChoice = opts?.toolChoice ?? 'auto';
     const withTools = (req: Record<string, unknown>) =>
-      (tools && tools.length ? { ...req, tools, tool_choice: 'auto' } : req);
+      (tools && tools.length ? { ...req, tools, tool_choice: toolChoice } : req);
     const request = { ...baseChatRequest, messages: convo };
     if (!o.structured) {
       return client.chat.completions.create(withTools(request) as any);

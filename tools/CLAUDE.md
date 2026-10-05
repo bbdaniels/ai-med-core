@@ -73,6 +73,18 @@ python3 -m http.server 8080 -d tools
 
 Each `src` is framed in its own panel (URL-encode a page that carries its own query or `#code=` fragment). With `expect`, a banner turns green when a frame posts a message of that type, and that frame is shut, as a host page shuts its popout. What the page has seen is also on `window.harness` (`frames`, `loads`, `messages`) for a script driving it. A cross-origin frame's address cannot be read from the harness; check that a `#code=` fragment is stripped by opening the same URL top-level. A local build in a frame calls its API from its own origin, so that API's `ALLOWED_ORIGINS` must list it. The harness names no project or deployment.
 
+## ab-grounding.ts
+
+An A/B of two grounding configurations of one document chat: arm A is the deployed project, arm B a copy of it that grounds differently (for example on paper cards with `"retrievalScope": "document"` and `"searchFirst": true`), both served by one deployment. Never run it against production; run it against a local production-mode server, with both projects on `payment_source=direct`.
+
+```bash
+npx tsx tools/ab-grounding.ts gold  --questions Q.jsonl --texts <dir of <documentKey>.md> --out GOLD.jsonl
+ADMIN_PASSPHRASE=... npx tsx tools/ab-grounding.ts run --url http://localhost:3901 --arms A,B --questions Q.jsonl --gold GOLD.jsonl
+npx tsx tools/ab-grounding.ts report --dir exports/ab-<date> [--questions SUBSET.jsonl --out DIR]
+```
+
+`gold` writes a reference answer per question with gpt-4o from the document's full text alone, with the sentence that supports it. `run` asks every question once per arm, each a fresh turn with its own session token, arms in a seeded random order, records answer, `beyondScope`, latency and usage, reads each arm's cost from `/api/admin/token-usage`, then judges: gpt-4o, blind to the arm, grades both answers to a question in one call (correct, partial, incorrect, declined; wrong-paper flag). `judge --dir` re-judges saved turns; `report` re-reports saved judgements, on a subset if given. The pass criterion (all five must hold for B) is `lib/ab-criteria.ts`, tested in `packages/api/src/ab-criteria.test.ts`. Gold and judge use the direct key through the one client module. Output goes to `exports/ab-<date>/` (gitignored) and holds questions and answers. The tool names no project or paper.
+
 ## export-conversations.ts
 
 Pull a project's **durable conversation log** down for review. Formless advisors like

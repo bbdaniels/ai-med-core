@@ -185,6 +185,14 @@
       "pattern": "^[A-Za-z][A-Za-z ]{1,31}$",
       "description": "Language the corpus is written in, named in English; queries are restated into it before retrieval, except in a session already in it (the session language is matched through languages.json, so \"Tiếng Việt\" matches \"Vietnamese\")"
     },
+    "retrievalScope": {
+      "enum": ["corpus", "document"],
+      "description": "What a search_readings call may return: the whole readings corpus (corpus, the default) or only the passages of the document the turn is about (document; the vignette key must be the index's document id). Enforced by the server, so the model cannot widen it"
+    },
+    "searchFirst": {
+      "type": "boolean",
+      "description": "Require a search_readings call on the first completion of every turn (tool_choice required on hop 0 only); later hops choose freely. Default false"
+    },
     "talkManifest": {
       "type": "string",
       "description": "Repo-relative path to a JSON manifest {\"papers\": [{\"doi\", \"title\", \"vignette\"}]} served publicly at GET /api/talk-manifest/<slug> for external 'Talk to this paper' buttons. Declaring it puts the project behind the public_chat kill switch (default off): when off the manifest is empty and /api/chat, /api/tts, /api/realtime/session and /api/grade-session return 503 code public_chat_disabled."

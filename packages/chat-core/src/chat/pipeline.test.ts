@@ -8,6 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import os from 'node:os';
+import { buildFixtureIndex } from '../../test-support/fixture-index.js';
+import { openReadingsIndex } from '../readings.js';
 import { runChatTurn, ChatInputError, type ChatDeps, type ChatStore } from './pipeline.js';
 import type { AppHooks } from './hooks.js';
 import type { CompletionClient } from './completion.js';
@@ -18,6 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const config: ChatProjectConfig = {
   slug: 'fixture', usageProject: 'fixture_', app: 'talk', enableFollowups: true, logConversations: true,
   readingsIndexPath: null, readingsQueryLanguage: null, chatModel: 'gpt-4o-mini', groundingFile: null,
+  retrievalScope: 'corpus', searchFirst: false,
 };
 
 function setup() {
@@ -97,4 +102,46 @@ test('a turn: prompt, answer, usage under the usage project, logs under the bare
   assert.deepEqual(a.rows.usage.map(u => [u.project, u.endpoint, u.model]), [['fixture_', '/api/chat', 'gpt-4o-mini']]);
   assert.deepEqual(a.rows.sessions, [['fixture', 'fixture-session-0001', 'doc']]);
   assert.deepEqual(a.rows.qa, [['fixture', 'fixture-session-0001', 'doc', 'Swahili', 'Question?', 'A.']]);
+});
+
+test('a document-scoped, search-first project: hop 0 must search, and only the turn\'s document is searched', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-scope-'));
+  try {
+    const dest = buildFixtureIndex(path.join(tmp, 'index.db'), {
+      documents: [
+        { id: 'doc', authors: 'A', author_short: 'A', title: 'The document' },
+        { id: 'other', authors: 'B', author_short: 'B', title: 'Another document' },
+      ],
+      chunks: [
+        { doc_id: 'doc', header: 'A | Results', text: 'Enrollment reached 412 households.', page_start: 1, page_end: 1 },
+        { doc_id: 'other', header: 'B | Results', text: 'Enrollment reached 9000 households.', page_start: 1, page_end: 1 },
+      ],
+    });
+    process.env.READINGS_INDEX_PIPELINE_SCOPE = dest;
+    const index = openReadingsIndex(tmp, 'pipeline_scope', 'unused.db')!;
+    const a = setup();
+    a.deps.config = { ...config, readingsIndexPath: 'unused.db', retrievalScope: 'document', searchFirst: true };
+    a.deps.openIndex = () => index;
+    const replies: any[] = [
+      { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function',
+        function: { name: 'search_readings', arguments: JSON.stringify({ query: 'enrollment households' }) } }] } }],
+        usage: { prompt_tokens: 5, completion_tokens: 1 } },
+      { choices: [{ message: { content: JSON.stringify({ answer: '412.', followups: ['f?', 'g?'], beyondScope: false }) } }],
+        usage: { prompt_tokens: 7, completion_tokens: 1 } },
+    ];
+    const sent: any[] = [];
+    a.deps.client = async () => ({
+      chat: { completions: { async create(req: any) { sent.push(structuredClone(req)); return replies.shift(); } } },
+      embeddings: { async create() { return { data: [] }; } },
+    });
+    const r = await runChatTurn({ messages: user('How many households?'), documentKey: 'doc' }, a.deps);
+    assert.equal(r.message, '412.');
+    assert.deepEqual(sent.map(s => s.tool_choice), ['required', 'auto']);
+    const tool = sent[1].messages.at(-1);
+    assert.match(tool.content, /412 households/);
+    assert.doesNotMatch(tool.content, /9000/);
+    index.db.close();
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

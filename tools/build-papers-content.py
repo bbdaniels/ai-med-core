@@ -4,6 +4,7 @@
     python3 tools/build-papers-content.py                # build from the library
     python3 tools/build-papers-content.py --sync         # mirror the CV folder first
     python3 tools/build-papers-content.py --refresh-authors
+    python3 tools/build-papers-content.py --cards        # paper cards from the texts, only
 
 The single input is projects/papers/content/library/library.tsv, one row per
 file in the library folder beside it (the PDFs and PMC XML of Ben Daniels'
@@ -36,6 +37,14 @@ Everything the project serves about a paper is derived here, and nowhere else:
                               Build the index from it with
                                 python3 tools/build-readings-corpus.py \
                                   --manifest projects/papers/readings-manifest.json
+  cases/paper-card/<bibkey>.md
+                              --cards only, and nothing else: the paper's card
+                              (lib/paper_cards.py), its metadata, abstract and
+                              section headings without the text, derived from
+                              cases/paper/<bibkey>.md, for a project that
+                              grounds on cards and searches the text with
+                              retrievalScope "document". GITIGNORED like the
+                              texts (the abstract is the publisher's).
   content/library/authors.json
                               author lists by bibkey, from Crossref (or the PMC
                               XML, or the CV's .bib), cached so a rebuild needs
@@ -74,7 +83,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import paper_versions, pdf_text  # noqa: E402
+from lib import paper_cards, paper_versions, pdf_text  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT = REPO_ROOT / "projects" / "papers"
@@ -83,6 +92,7 @@ MANIFEST_TSV = LIBRARY / "library.tsv"
 AUTHORS_CACHE = LIBRARY / "authors.json"
 OCR_CACHE = LIBRARY / "text" / "ocr-cache"      # gitignored with library/text/
 CASES_DIR = PROJECT / "cases" / "paper"
+CARDS_DIR = PROJECT / "cases" / "paper-card"
 PROJECT_JSON = PROJECT / "project.json"
 TALK_MANIFEST = PROJECT / "manifest.json"
 GROUNDING = PROJECT / "content" / "readings" / "grounding.md"
@@ -613,6 +623,27 @@ def grounding(all_papers: list[dict], talkable: set[str],
     return "\n".join(lines) + "\n"
 
 
+def write_cards() -> int:
+    """A card per full text in cases/paper/, written to cases/paper-card/."""
+    texts = sorted(p for p in CASES_DIR.glob("*.md") if p.name != "README.md")
+    if not texts:
+        sys.exit(f"error: no paper texts in {REL(CASES_DIR)}; build them first")
+    wanted = set()
+    for path in texts:
+        card = paper_cards.paper_card(path.read_text())
+        out = CARDS_DIR / path.name
+        wanted.add(out.name)
+        changed = write_if_changed(out, card)
+        print(f"  {'wrote' if changed else 'same '} {out.name:34s} {len(card):>6d} chars "
+              f"(text {path.stat().st_size:>7d})")
+    for stale in CARDS_DIR.glob("*.md"):
+        if stale.name not in wanted:
+            stale.unlink()
+            print(f"  removed stale {stale.name}")
+    print(f"\n{len(wanted)} cards in {REL(CARDS_DIR)}.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -623,7 +654,13 @@ def main() -> int:
                          f"(default {paper_versions.VERSIONS_FILE})")
     ap.add_argument("--refresh-authors", action="store_true",
                     help="re-fetch every author list instead of using authors.json")
+    ap.add_argument("--cards", action="store_true",
+                    help="write a paper card for every text in cases/paper/ and stop "
+                         "(no library build)")
     args = ap.parse_args()
+
+    if args.cards:
+        return write_cards()
 
     if args.sync:
         sync_from_cv(Path(args.sync).expanduser())

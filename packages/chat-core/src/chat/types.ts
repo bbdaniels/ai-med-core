@@ -36,7 +36,17 @@ export interface ChatProjectConfig {
   chatModel: KnownChatModel;
   /** The declared grounding file, repo-relative; null looks in the legacy locations. */
   groundingFile: string | null;
+  /**
+   * What a search may return: the whole corpus ('corpus', the default), or
+   * only the passages of the document the turn is about ('document'). The
+   * scope is applied by the server; the model cannot widen it.
+   */
+  retrievalScope: RetrievalScope;
+  /** The first completion must search (tool_choice 'required' on hop 0 only). */
+  searchFirst: boolean;
 }
+
+export type RetrievalScope = 'corpus' | 'document';
 
 export interface StructuredAnswer { message: string; followups: string[]; beyondScope: boolean }
 

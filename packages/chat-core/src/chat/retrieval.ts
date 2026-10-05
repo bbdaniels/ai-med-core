@@ -99,6 +99,10 @@ export interface RetrievalLoopArgs {
   languageCode: string | null;
   restate: (q: string) => Promise<string>;
   embed: (q: string) => Promise<Float32Array | null>;
+  /** Search only these document ids (the project's retrievalScope 'document'). Null searches the corpus. */
+  docIds?: string[] | null;
+  /** Require a search on the first completion (tool_choice 'required' on hop 0 only). */
+  searchFirst?: boolean;
   log?: (line: string) => void;
 }
 
@@ -129,7 +133,9 @@ export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalL
   for (let hop = 0; ; hop++) {
     const offerTools = index && hop < maxHops
       ? [searchReadingsTool(index)] : null;
-    response = await issue(convo, offerTools);
+    response = offerTools && hop === 0 && a.searchFirst
+      ? await issue(convo, offerTools, { toolChoice: 'required' })
+      : await issue(convo, offerTools);
     if (response.usage) usages.push({ ...response.usage });
 
     const assistantMsg = response.choices?.[0]?.message;
@@ -160,7 +166,7 @@ export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalL
           const limit = Number.isInteger(args.limit)
             ? Math.min(READINGS_MAX_RESULTS, Math.max(1, args.limit)) : undefined;
           const results = searchReadings(index, searchQuery, queryVector,
-                                         { week, limit });
+                                         { week, limit, docIds: a.docIds ?? null });
           const asked = searchQuery === askedQuery ? '' : `"${askedQuery}" -> `;
           log(`[readings] ${asked}"${searchQuery}"${week ? ` week=${week}` : ''} -> ${results.length} passages`);
           searches.push({ asked: askedQuery, ran: searchQuery, week, results: results.length });

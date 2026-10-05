@@ -125,6 +125,8 @@ projects/papers/content/library/*.txt
 # built readings index is derived text too.
 projects/papers/cases/paper/*.md
 !projects/papers/cases/paper/README.md
+# Paper cards (build-papers-content.py --cards) carry each paper's abstract.
+projects/papers/cases/paper-card/*.md
 projects/papers/content/readings/readings.db*
 projects/papers/content/readings/ocr-cache/
 

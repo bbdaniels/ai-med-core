@@ -107,6 +107,10 @@ export async function runChatTurn(req: ChatTurnRequest, deps: ChatDeps): Promise
     languageCode: languageCode(language, languages),
     restate: makeRestater(client, config.readingsQueryLanguage, language, languages),
     embed: makeEmbedder(client),
+    // Document scope is the server's, never the model's: the tool takes no
+    // document argument, and the turn's own key is the only id searched.
+    docIds: config.retrievalScope === 'document' ? [documentKey] : null,
+    searchFirst: config.searchFirst,
   });
 
   // Log token usage for every hop.

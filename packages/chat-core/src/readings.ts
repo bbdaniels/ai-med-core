@@ -285,8 +285,13 @@ const chunkSelect = (index: OpenIndex) => `
 export interface SearchOptions {
   /** Restrict to readings assigned in a given week, as YYYY-MM-DD. */
   week?: string | null;
-  /** Restrict to one document id from the index. */
-  docId?: string | null;
+  /**
+   * Restrict to these document ids. Applied inside both rankers, so a
+   * document's own passages are ranked against each other rather than
+   * filtered out of a candidate pool the rest of the corpus already filled.
+   * An empty list matches nothing.
+   */
+  docIds?: string[] | null;
   limit?: number;
 }
 
@@ -302,6 +307,12 @@ export function searchReadings(index: OpenIndex, query: string,
   const ranks = new Map<number, number>();   // chunk id -> fused RRF score
   const rows = new Map<number, ChunkRow>();
 
+  // Document scope, as SQL over chunks c: a clause and its parameters.
+  const docIds = opts.docIds ? [...new Set(opts.docIds)] : null;
+  const scope = docIds
+    ? { sql: ` AND c.doc_id IN (${docIds.map(() => '?').join(',') || 'NULL'})`, params: docIds }
+    : { sql: '', params: [] as string[] };
+
   const addRanking = (ordered: ChunkRow[]) => {
     ordered.forEach((row, i) => {
       rows.set(row.id, row);
@@ -315,8 +326,8 @@ export function searchReadings(index: OpenIndex, query: string,
     try {
       const lexical = index.db.prepare(
         `${chunkSelect(index)} JOIN chunks_fts f ON f.rowid = c.id
-         WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts, 2.0, 1.0) LIMIT ?`,
-      ).all(fts, CANDIDATE_POOL) as ChunkRow[];
+         WHERE chunks_fts MATCH ?${scope.sql} ORDER BY bm25(chunks_fts, 2.0, 1.0) LIMIT ?`,
+      ).all(fts, ...scope.params, CANDIDATE_POOL) as ChunkRow[];
       addRanking(lexical);
     } catch (e) {
       console.warn('[readings] BM25 query failed:', e);
@@ -330,8 +341,10 @@ export function searchReadings(index: OpenIndex, query: string,
   if (queryVector && index.hasVectors) {
     try {
       const vectors = index.db.prepare(
-        'SELECT chunk_id, vec FROM embeddings',
-      ).all() as Array<{ chunk_id: number; vec: Buffer }>;
+        docIds
+          ? `SELECT e.chunk_id, e.vec FROM embeddings e JOIN chunks c ON c.id = e.chunk_id WHERE 1${scope.sql}`
+          : 'SELECT chunk_id, vec FROM embeddings',
+      ).all(...scope.params) as Array<{ chunk_id: number; vec: Buffer }>;
       const scored = vectors.map(({ chunk_id, vec }) => ({
         id: chunk_id,
         score: cosine(queryVector, new Float32Array(
@@ -354,9 +367,6 @@ export function searchReadings(index: OpenIndex, query: string,
     .map(([id, score]) => ({ row: rows.get(id)!, score }))
     .filter(r => !!r.row);
 
-  if (opts.docId) {
-    results = results.filter(r => r.row.doc_id === opts.docId);
-  }
   // A week filter against an unscheduled corpus can only empty the result set,
   // so it is ignored there rather than silently returning nothing. The tool
   // schema does not offer `week` for such an index either; this is the guard for

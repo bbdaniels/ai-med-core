@@ -14,19 +14,23 @@
  *   <slide-id>.md    one file per slide
  *
  * Each slide becomes one vignette, key `<deck>--<slide-id>`, whose content is
- * the deck pack followed by that slide's pack. /api/chat sends a vignette's
- * content to the model whole (system prompt, then the vignette), so putting the
- * deck pack inside every vignette is what scopes the deck-wide material to its
- * own deck: several decks can live in the project without a project-wide
- * grounding file that would be sent to all of them.
+ * that slide's pack and nothing else. The deck pack becomes the deck's
+ * grounding set: the file grounding/<deck>.md, with the deck listed in
+ * project.json `groundingSets`. /api/chat sends it once per turn, before the
+ * documents, on a turn whose current slide is of that deck. A turn of a project
+ * that follows a host page can send two vignettes (the current slide and the
+ * one asked about before it), and a deck pack copied into each vignette would
+ * be sent twice. Grounding is chosen by the key's prefix before `--`, so
+ * several decks can live in the project and none gets another's notes.
  *
  * What a sync writes, all under projects/decks/:
- *   cases/slide/<key>.md        the vignette files (gitignored: unpublished results)
- *   project.json                cases.vignettes, this deck's entries replaced
- *   languages.json              vignetteInfo, the slide title the chat header shows
+ *   cases/slide/<key>.md     the vignette files (gitignored: unpublished results)
+ *   grounding/<deck>.md      the deck notes (gitignored for the same reason)
+ *   project.json             cases.vignettes, this deck's entries replaced; groundingSets
+ *   languages.json           vignetteInfo, the slide title the chat header shows
  * Entries and files of OTHER decks are left alone; files of this deck whose
  * slide no longer exists are removed. Nothing here talks to a deployment:
- * tools/push-content.ts does that, as for every project.
+ * tools/push-content.ts uploads the vignettes and the grounding file.
  *
  * The model is gpt-4o-mini, which quotes well and reads table layouts badly, so
  * a pack must state each number in a sentence with its table, row and column.
@@ -45,7 +49,8 @@ const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_KEY = 100;
 
 /**
- * Size budget for one vignette (deck pack + slide pack), in characters.
+ * Size budget for the deck notes plus one slide pack, in characters (a turn
+ * sends the notes once and one or two slide packs).
  * gpt-4o-mini has a 128,000-token context and /api/chat caps the answer at
  * 1,000 tokens. At about 4 characters per token the hard cap is about 12,000
  * tokens: with the system prompt and the JSON instruction (about 1,500 tokens)
@@ -77,9 +82,14 @@ export interface DeckBuild {
   version: string;
   /** `fixture: true` in _deck.md: a test deck, which writeDeck refuses. */
   fixture: boolean;
+  /** The deck-wide notes, synced as the project's grounding file. */
+  notes: string;
   vignettes: DeckVignette[];
   warnings: string[];
 }
+
+/** The deck notes file of a deck, relative to the project folder: its grounding set's file. */
+export const deckNotesFile = (deck: string) => `grounding/${deck}.md`;
 
 /** Split `--- key: value ... ---` front matter from the body. */
 export function parsePack(raw: string, name: string): Pack {
@@ -114,6 +124,14 @@ export function buildDeckVignettes(packsDir: string, deck: string): DeckBuild {
   const deckPack = parsePack(fs.readFileSync(deckFile, 'utf8'), '_deck.md');
   const version = deckPack.meta.version || '';
   const warnings: string[] = [];
+  const notes = [
+    'DECK NOTES (true for every slide of this deck)',
+    `Deck: ${deckPack.meta.title} (id ${deck})`,
+    ...(version ? [`Deck version: ${version}`] : []),
+    '',
+    deckPack.body,
+    '',
+  ].join('\n');
 
   const slideFiles = fs.readdirSync(packsDir)
     .filter(f => f.endsWith('.md') && !f.startsWith('_') && !f.startsWith('.'))
@@ -132,26 +150,21 @@ export function buildDeckVignettes(packsDir: string, deck: string): DeckBuild {
     const number = pack.meta.slide || '';
     const title = number ? `Slide ${number}: ${pack.meta.title}` : pack.meta.title;
     const content = [
-      'SLIDE IN SCOPE',
-      `Deck: ${deckPack.meta.title} (id ${deck})`,
-      ...(version ? [`Deck version: ${version}`] : []),
+      'SLIDE PACK',
       `Slide id: ${slideId}`,
       ...(number ? [`Slide number: ${number}`] : []),
       `Slide title: ${pack.meta.title}`,
       '',
-      'DECK PACK (true for the whole deck)',
-      deckPack.body,
-      '',
-      'SLIDE PACK (this slide only)',
       pack.body,
       '',
     ].join('\n');
-    if (content.length > MAX_CHARS) {
-      throw new Error(`${file}: deck pack plus slide pack is ${content.length} characters, over the ` +
+    const size = notes.length + content.length;
+    if (size > MAX_CHARS) {
+      throw new Error(`${file}: deck notes plus slide pack is ${size} characters, over the ` +
                       `${MAX_CHARS} cap (about ${Math.round(MAX_CHARS / 4)} tokens). Shorten the pack.`);
     }
-    if (content.length > WARN_CHARS) {
-      warnings.push(`${file}: ${content.length} characters (about ${Math.round(content.length / 4)} tokens); ` +
+    if (size > WARN_CHARS) {
+      warnings.push(`${file}: ${size} characters with the deck notes (about ${Math.round(size / 4)} tokens); ` +
                     `a small model quotes more reliably under ${WARN_CHARS}.`);
     }
     const order = /^\d+(\.\d+)?$/.test(number) ? Number(number) : Number.MAX_SAFE_INTEGER;
@@ -163,6 +176,7 @@ export function buildDeckVignettes(packsDir: string, deck: string): DeckBuild {
     deckTitle: deckPack.meta.title,
     version,
     fixture: /^(true|yes)$/i.test(deckPack.meta.fixture || ''),
+    notes,
     vignettes: built.map(({ order: _order, ...v }) => v),
     warnings,
   };
@@ -182,6 +196,10 @@ export function writeDeck(build: DeckBuild, project = 'decks', repoRoot = REPO_R
   const log: string[] = [];
   fs.mkdirSync(casesDir, { recursive: true });
 
+  const projectFile = path.join(projectDir, 'project.json');
+  const config = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+  const notesRel = `projects/${project}/${deckNotesFile(build.deck)}`;
+
   const keep = new Set(build.vignettes.map(v => `${v.key}.md`));
   for (const f of fs.readdirSync(casesDir)) {
     if (f.startsWith(prefix) && f.endsWith('.md') && !keep.has(f)) {
@@ -193,9 +211,11 @@ export function writeDeck(build: DeckBuild, project = 'decks', repoRoot = REPO_R
     fs.writeFileSync(path.join(casesDir, `${v.key}.md`), v.content);
     log.push(`wrote ${casesRel}/${v.key}.md (${v.content.length} chars)`);
   }
+  fs.mkdirSync(path.dirname(path.join(repoRoot, notesRel)), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, notesRel), build.notes);
+  log.push(`wrote ${notesRel} (${build.notes.length} chars), the deck's grounding set`);
+  config.groundingSets = [...new Set([...(config.groundingSets ?? []), build.deck])].sort();
 
-  const projectFile = path.join(projectDir, 'project.json');
-  const config = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
   const others = (config.cases.vignettes as Array<{ key: string }>).filter(v => !v.key.startsWith(prefix));
   config.cases.vignettes = [
     ...others,
@@ -204,7 +224,7 @@ export function writeDeck(build: DeckBuild, project = 'decks', repoRoot = REPO_R
     })),
   ];
   fs.writeFileSync(projectFile, JSON.stringify(config, null, 2) + '\n');
-  log.push(`project.json: ${build.vignettes.length} vignette(s) for ${build.deck}, ${others.length} for other decks`);
+  log.push(`project.json: ${build.vignettes.length} vignette(s) for ${build.deck}, ${others.length} for other decks; groundingSets ${config.groundingSets.join(', ')}`);
 
   const langFile = path.join(projectDir, 'languages.json');
   const langs = JSON.parse(fs.readFileSync(langFile, 'utf8'));
@@ -236,7 +256,8 @@ function main(argv: string[]): number {
   try {
     const build = buildDeckVignettes(packsDir, deck);
     for (const w of build.warnings) console.warn(`WARNING ${w}`);
-    console.log(`${build.deckTitle}${build.version ? ` (version ${build.version})` : ''}: ${build.vignettes.length} slide(s)`);
+    console.log(`${build.deckTitle}${build.version ? ` (version ${build.version})` : ''}: ${build.vignettes.length} slide(s), ` +
+                `deck notes ${build.notes.length} chars (sent once per turn)`);
     for (const v of build.vignettes) console.log(`  ${v.key}  ${v.content.length} chars  ${v.title}`);
     if (argv.includes('--check')) {
       console.log('--check: nothing written');

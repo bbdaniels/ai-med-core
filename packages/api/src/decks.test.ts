@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildDeckVignettes, parsePack, writeDeck, MAX_CHARS } from '../../../tools/sync-deck-packs.js';
+import { buildDeckVignettes, deckNotesFile, parsePack, writeDeck, MAX_CHARS } from '../../../tools/sync-deck-packs.js';
 import { resolveProjectFlags } from '@ai-med/chat-core';
 import { startServer, type Harness } from '../test-support/server-harness.js';
 
@@ -33,7 +33,7 @@ const P = { 'X-Project': PROJECT, 'Content-Type': 'application/json' };
 // invented prompt that names its blocks the way a real one does.
 const SYSTEM_PROMPT = [
   'FIXTURE deck prompt. You answer questions about one slide of a research deck.',
-  'The vignette below holds three blocks: SLIDE IN SCOPE, then DECK PACK, then SLIDE PACK.',
+  'The DECK NOTES hold what is true for the whole deck, and the vignette is one SLIDE PACK.',
   'Quote each number with its table and cell. Never do arithmetic.',
   'If the reader asks for an analysis the deck does not hold, restate it as a specification',
   '(Outcome:, Sample:, Comparison:, Unit and weights:, Inference:), set beyondScope, and say',
@@ -44,6 +44,8 @@ const PROJECT_JSON = {
   displayName: 'Fixture deck',
   frontend: 'chat',
   cases: { systemPrompt: `projects/${PROJECT}/system-prompt.md`, vignettes: [] },
+  // The deck notes are the project's grounding file, as a sync writes it.
+  groundingFile: `projects/${PROJECT}/deck-notes.md`,
   languages: ['en'],
   chatModel: 'gpt-4o-mini',
   app: 'talk',
@@ -76,6 +78,7 @@ function writeFixtureCheckout(dir: string): void {
   fs.writeFileSync(path.join(deck, 'project.json'), JSON.stringify(PROJECT_JSON, null, 2));
   fs.writeFileSync(path.join(deck, 'system-prompt.md'), SYSTEM_PROMPT);
   fs.writeFileSync(path.join(deck, 'languages.json'), JSON.stringify(LANGUAGES, null, 2));
+  fs.writeFileSync(path.join(deck, 'deck-notes.md'), buildDeckVignettes(FIXTURES, DECK).notes);
   const open = path.join(dir, 'projects', OPEN);
   fs.mkdirSync(open, { recursive: true });
   fs.writeFileSync(path.join(open, 'project.json'), JSON.stringify({
@@ -127,9 +130,10 @@ test('the loader turns a packs folder into <deck>--<slide-id> vignettes', () => 
   assert.deepEqual(build.vignettes.map(v => v.key), [KEY_WHO, KEY_MAIN]);   // slide order
   const main = build.vignettes[1];
   assert.equal(main.title, 'Slide 2: FIXTURE main effect');
-  assert.ok(main.content.indexOf('SLIDE IN SCOPE') < main.content.indexOf('DECK PACK'));
-  assert.ok(main.content.indexOf('DECK PACK') < main.content.indexOf('SLIDE PACK'));
-  assert.match(main.content, /200 invented clinics/);                       // deck pack
+  assert.ok(main.content.startsWith('SLIDE PACK\nSlide id: main-effect'));
+  assert.doesNotMatch(main.content, /200 invented clinics/);                // the deck notes are not in a vignette
+  assert.ok(build.notes.startsWith('DECK NOTES (true for every slide of this deck)\nDeck: '));
+  assert.match(build.notes, /200 invented clinics/);                        // they are the grounding file, sent once
   assert.match(main.content, /the coefficient is 0\.111/);                  // its own slide
   assert.doesNotMatch(main.content, /0\.777/);                              // not the other slide
   for (const v of build.vignettes) assert.match(v.key, /^[A-Za-z0-9_-]{1,100}$/);
@@ -148,6 +152,32 @@ test('the loader refuses what a small model cannot read, and never writes a fixt
   // Refused even when pointed at the fixture checkout, and nothing is written there.
   assert.throws(() => writeDeck(buildDeckVignettes(FIXTURES, DECK), PROJECT, root), /fixture/);
   assert.equal(fs.existsSync(path.join(root, 'projects', PROJECT, 'cases')), false);
+});
+
+test('a sync writes each deck\'s notes as its grounding set, and a second deck keeps its own', () => {
+  const packs = fs.mkdtempSync(path.join(tmp, 'two-deck-packs-'));
+  fs.writeFileSync(path.join(packs, '_deck.md'), '---\ntitle: Invented deck\n---\nNotes for every slide.\n');
+  fs.writeFileSync(path.join(packs, 'first.md'), '---\ntitle: First\n---\nTable Z, row A, column 1: 0.5.\n');
+  const checkout = fs.mkdtempSync(path.join(tmp, 'two-deck-checkout-'));
+  const dir = path.join(checkout, 'projects', PROJECT);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify({ ...PROJECT_JSON, groundingFile: undefined }, null, 2));
+  fs.writeFileSync(path.join(dir, 'languages.json'), JSON.stringify(LANGUAGES, null, 2));
+  const config = () => JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
+
+  writeDeck(buildDeckVignettes(packs, 'deck-a'), PROJECT, checkout);
+  assert.equal(deckNotesFile('deck-a'), 'grounding/deck-a.md');              // the set's file, by the engine's convention
+  assert.deepEqual(config().groundingSets, ['deck-a']);
+  assert.equal(config().groundingFile, undefined);
+  assert.match(fs.readFileSync(path.join(dir, 'grounding', 'deck-a.md'), 'utf8'), /^DECK NOTES[\s\S]*Notes for every slide\./);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, 'cases', 'slide', 'deck-a--first.md'), 'utf8'), /Notes for every slide/);
+
+  // A second deck is its own set; the first deck's entries and notes stay.
+  writeDeck(buildDeckVignettes(packs, 'deck-b'), PROJECT, checkout);
+  writeDeck(buildDeckVignettes(packs, 'deck-a'), PROJECT, checkout);          // and a re-sync adds nothing twice
+  assert.deepEqual(config().groundingSets, ['deck-a', 'deck-b']);
+  assert.deepEqual(config().cases.vignettes.map((v: any) => v.key).sort(), ['deck-a--first', 'deck-b--first']);
+  assert.ok(fs.existsSync(path.join(dir, 'grounding', 'deck-b.md')));
 });
 
 test('the deck project shape is gated, logged, and on the small model', () => {
@@ -291,11 +321,11 @@ test('prompt assembly: system prompt, then the deck pack, then this slide only',
   const at = (s: string) => system.indexOf(s);
   assert.equal(at(SYSTEM_PROMPT.trim().slice(0, 200)), 0);
   // The prompt itself names the blocks, so match each block's own heading line.
-  for (const marker of ['SLIDE IN SCOPE\nDeck: ', 'DECK PACK (true for the whole deck)', 'SLIDE PACK (this slide only)']) {
+  for (const marker of ['DECK NOTES (true for every slide of this deck)\nDeck: ', 'SLIDE PACK\nSlide id: ']) {
     assert.ok(at(marker) > SYSTEM_PROMPT.trim().length - 1, `${marker} follows the system prompt`);
+    assert.ok(at(marker) < at('You will respond as a JSON object'));
+    assert.equal(system.split(marker).length, 2, `${marker} is sent once`);
   }
-  assert.ok(at('DECK PACK (true for the whole deck)') < at('SLIDE PACK (this slide only)'));
-  assert.ok(at('SLIDE PACK (this slide only)') < at('You will respond as a JSON object'));
   assert.match(system, /Slide id: main-effect/);
   assert.match(system, /200 invented clinics/);
   assert.match(system, /the coefficient is 0\.111/);

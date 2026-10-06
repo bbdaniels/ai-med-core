@@ -24,6 +24,11 @@
  *   that holds private paper texts is therefore the one CI expects, and two
  *   harnesses alive at once never see each other's first-turn prompt files.
  *
+ * - `built: true` runs the production start path instead: `sh start.sh`, which
+ *   execs node on dist/server.js (build it first, `node build.mjs`), with
+ *   NODE_ENV=production and the real clock. `signal()` and `exited()` then act
+ *   on that process, as Railway's SIGTERM does (src/graceful-stop.test.ts).
+ *
  * `chat()` keeps 1.2 s between turns, because /api/chat allows one request a
  * second per client. `stop()` removes the view, the database and with them
  * the first-turn prompt snapshots (transcripts/initial_*) this server wrote.
@@ -65,6 +70,8 @@ export interface StartOptions {
    * transcripts/ is created; the tree itself is the caller's to remove.
    */
   root?: string;
+  /** Run the built server through packages/api/start.sh instead of src/server.ts under tsx. */
+  built?: boolean;
 }
 
 export interface ChatResult {
@@ -111,6 +118,12 @@ export interface Harness {
   initialSnapshots(): string[];
   /** The server's combined stdout and stderr so far. */
   log(): string;
+  /** The server's stderr alone. */
+  stderr(): string;
+  /** Send the server process a signal. */
+  signal(signal: NodeJS.Signals): void;
+  /** Resolves when the server process has exited, with its exit code and the signal that killed it, if any. */
+  exited(): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
   stop(): Promise<void>;
 }
 
@@ -186,12 +199,17 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     ...(o.env ?? {}),
   };
 
-  const child: ChildProcess = spawn(process.execPath,
-    ['--import', FIXED_CLOCK_URL, '--import', 'tsx', 'src/server.ts'],
-    { cwd: API_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child: ChildProcess = o.built
+    ? spawn('sh', ['start.sh'], { cwd: API_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    : spawn(process.execPath,
+      ['--import', FIXED_CLOCK_URL, '--import', 'tsx', 'src/server.ts'],
+      { cwd: API_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let serverLog = '';
+  let serverErr = '';
   child.stdout!.on('data', d => { serverLog += d; });
-  child.stderr!.on('data', d => { serverLog += d; });
+  child.stderr!.on('data', d => { serverLog += d; serverErr += d; });
+  const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve =>
+    child.once('exit', (code, signal) => resolve({ code, signal })));
 
   let up = false;
   for (let i = 0; i < 150 && !up; i++) {
@@ -298,13 +316,27 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
       return serverLog;
     },
 
+    stderr() {
+      return serverErr;
+    },
+
+    signal(signal) {
+      child.kill(signal);
+    },
+
+    exited() {
+      return exit;
+    },
+
     async stop() {
-      child.kill();
-      await new Promise<void>(r => {
-        if (child.exitCode !== null) return r();
-        child.once('exit', () => r());
-        setTimeout(r, 3000);
-      });
+      // SIGTERM: the server stops gracefully (src/shutdown.ts). A server still
+      // there after 3 s is killed, so no test leaves a process behind.
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        const timer = setTimeout(() => child.kill('SIGKILL'), 3000);
+        await exit;
+        clearTimeout(timer);
+      }
       await fake.stop();
       fs.rmSync(tmp, { recursive: true, force: true });
     },

@@ -193,7 +193,9 @@ Other gotchas:
 ```bash
 npm run build    # build.mjs: esbuild → dist/server.js (ESM; @ai-med/* bundled from source, every other package external)
 npm run dev      # tsx watch
-npm start        # NODE_ENV=production node dist/server.js
+npm start        # sh start.sh: NODE_ENV=production, then exec node dist/server.js
 ```
+
+`start.sh` is the production start path. Railway runs it as `exec sh packages/api/start.sh`, so node is the container's main process and gets the SIGTERM a rollover sends; under `npm start` npm got it and reported a crash. `src/shutdown.ts` is the one place the stop is handled: no new connections, requests in flight finish within the grace period (`SHUTDOWN_GRACE_SECONDS`, else five seconds inside `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`, else 10), the database closes, exit 0. Anything new that holds the event loop open (a timer, a watcher, a second pool) is closed through the `close` passed to `installGracefulShutdown` in `server.ts`. Tests: `src/graceful-stop.test.ts`. Details: `docs/deployment.md` §4, "Stopping a deployment".
 
 It also serves the talk pages (`src/talk/pages.ts`): every project whose project.json resolves to app "talk", at `/<url-slug>/`, from the builds `tools/build-frontends.ts --app talk` writes to `packages/frontend-chat/dist-talk/` (`npm run build:railway` runs it at deploy). The pages call `/api` on their own origin. Hashed `assets/` are cached for a year, everything else (index.html first) is `no-cache`; a path with no file and no extension gets index.html, a missing file a 404. A project's `urlAliases` redirect (301) to its slug; a project with `embedOrigins` is sent `frame-ancestors 'self' <origins>`. With a canonical host (`TALK_CANONICAL_HOST`; unset or empty means none, in every environment, and the engine has no default) a talk path on any other host redirects there and `/` on it redirects to `TALK_HOME_URL` (likewise off unless set). The boot log says which is in force. Only talk paths and `/` are answered, so `/api`, `/t` and `/npj26` behave the same on every host. Simulator projects are never served here. Tests: `src/talk-pages.test.ts`.

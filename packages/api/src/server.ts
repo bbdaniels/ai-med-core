@@ -58,6 +58,7 @@ import {
   getSessionStats,
   getQaLog,
   QA_LOG_MAX_LIMIT,
+  closeDatabase,
 } from './database.js';
 import {
   ensureNpj26Tables,
@@ -72,12 +73,15 @@ import { PRIVATE_CONTENT_ROOT, REPO_ROOT } from './repo-root.js';
 import { talkRoutes } from './talk/routes.js';
 import { talkPagesRouter, talkPagesSettings } from './talk/pages.js';
 import { chatRouter } from './routes/chat.js';
+import { closeConnectionWhileStopping, installGracefulShutdown } from './shutdown.js';
 
 // Load .env from repo root
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Railway) so rate limiters see real client IPs
+// First in the chain: once a stop has begun, every response closes its connection.
+app.use(closeConnectionWhileStopping);
 const PORT = process.env.PORT || 3001;
 
 // Load valid project slugs from projects/ directory at startup
@@ -2670,10 +2674,13 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📝 API available at http://localhost:${PORT}/api`);
   
   // OPENAI_API_KEY is guaranteed here: openaiClients() throws at startup without it.
   console.log(`✅ OpenAI: chat/grading via ${openaiClients().usesGateway ? 'Harvard gateway (HARVARD_GATEWAY_URL)' : 'api.openai.com'}; direct key ${openaiDirect ? 'configured' : 'absent'}`);
 });
+
+// SIGTERM and SIGINT: finish the requests in flight, close the database, exit 0.
+installGracefulShutdown({ server, close: closeDatabase });

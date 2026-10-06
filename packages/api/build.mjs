@@ -1,4 +1,4 @@
-// Production build: one ESM file, dist/server.js, run by `npm start`.
+// Production build: one ESM file, dist/server.js, run by start.sh.
 //
 // Workspace packages (`@ai-med/*`) are bundled from their TypeScript source,
 // so tsx (dev and tests), Vite (frontend) and esbuild (here) all read the same

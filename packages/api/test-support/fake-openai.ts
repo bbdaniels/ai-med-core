@@ -31,6 +31,8 @@ export interface FakeReply {
   content?: string | object;
   toolCalls?: FakeToolCall[];
   usage?: { prompt_tokens: number; completion_tokens: number };
+  /** Hold the answer this long, to keep a request in flight (graceful-stop.test.ts). */
+  delayMs?: number;
 }
 
 export interface FakeRequest {
@@ -104,7 +106,10 @@ export class FakeOpenAI {
             res.end(JSON.stringify(next.body));
             return;
           }
-          res.end(JSON.stringify(this.completion(next?.reply ?? { content: DEFAULT_ANSWER }, body)));
+          const answer = JSON.stringify(this.completion(next?.reply ?? { content: DEFAULT_ANSWER }, body));
+          const delay = next?.reply.delayMs ?? 0;
+          if (delay > 0) setTimeout(() => res.end(answer), delay).unref();
+          else res.end(answer);
           return;
         }
         res.statusCode = 404;
@@ -120,6 +125,8 @@ export class FakeOpenAI {
     if (!this.server) return;
     const s = this.server;
     this.server = null;
+    // A held answer (delayMs) may still have its connection open.
+    s.closeAllConnections();
     await new Promise<void>(r => s.close(() => r()));
   }
 

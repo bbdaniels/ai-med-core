@@ -502,14 +502,17 @@ export function getDbHandles(): {
   return { dbType, sqlite: db, pg: pgPool };
 }
 
-// Close database connections
-export function closeDatabase() {
+// Close database connections. The Postgres pool ends once the queries already
+// issued have finished (the fire-and-forget ledger writes among them), so a
+// graceful stop (shutdown.ts) awaits this before it exits.
+export async function closeDatabase(): Promise<void> {
   if (db) {
     db.close();
     db = null;
   }
   if (pgPool) {
-    pgPool.end();
+    const pool = pgPool;
     pgPool = null;
+    await pool.end();
   }
 }

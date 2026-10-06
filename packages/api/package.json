@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "node build.mjs",
-    "start": "NODE_ENV=production node dist/server.js",
+    "start": "sh start.sh",
     "test": "tsx --test src/*.test.ts src/sim/*.test.ts",
     "test:chat": "tsx --test src/chat-characterization.test.ts",
     "type-check": "tsc --noEmit"

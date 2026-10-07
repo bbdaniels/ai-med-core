@@ -157,3 +157,11 @@ projects/haivn_eip/content/legal/legal-corpus.db.build-wal
 projects/haivn_eip/content/legal/legal-corpus.db.build-shm
 projects/haivn_eip/content/legal/legal-corpus.db.build.lock
 projects/haivn_eip/content/legal/registry.json.lock
+
+# LaTeX build artifacts of the Beamer talks
+talks/**/*.aux
+talks/**/*.nav
+talks/**/*.out
+talks/**/*.snm
+talks/**/*.toc
+talks/**/*.vrb

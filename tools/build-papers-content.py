@@ -9,7 +9,7 @@
 The single input is projects/papers/content/library/library.tsv, one row per
 file in the library folder beside it (the PDFs and PMC XML of Ben Daniels'
 publications, with a license and a servable flag per work). That folder mirrors
-~/Documents/Career/_CV/pdfs/, the canonical copy that also feeds his personal web
+the pdfs folder of his CV repository (CV_PDFS below), the canonical copy that also feeds his personal web
 page, where the same manifest is called _manifest.txt; --sync copies anything
 new or changed from there before building.
 
@@ -98,8 +98,8 @@ TALK_MANIFEST = PROJECT / "manifest.json"
 GROUNDING = PROJECT / "content" / "readings" / "grounding.md"
 READINGS_MANIFEST = PROJECT / "readings-manifest.json"
 
-CV_PDFS = Path.home() / "Documents" / "Career" / "_CV" / "pdfs"
-CV_BIB = Path.home() / "Documents" / "Career" / "_CV" / "daniels-publications.bib"
+CV_PDFS = Path.home() / "Projects" / "career" / "cv" / "pdfs"
+CV_BIB = Path.home() / "Projects" / "career" / "cv" / "daniels-publications.bib"
 
 REL = lambda p: p.relative_to(REPO_ROOT).as_posix()  # noqa: E731
 

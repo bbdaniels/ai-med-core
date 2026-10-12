@@ -3,7 +3,7 @@
 The pairing lives in one file, versions.json in Ben's site repo
 (~/Projects/bbdaniels.github.io/publications/versions.json). The same file
 pairs versions on his web page (orcid-display's applyVersions) and in his CV
-(~/Documents/Career/_CV/fetch-publications.py). This module applies that file
+(fetch-publications.py in his CV repository). This module applies that file
 to the papers library with the same matching rule those two use:
 
   * a paper or version is found by DOI, compared case-insensitively;

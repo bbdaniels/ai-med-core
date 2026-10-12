@@ -110,7 +110,8 @@ projects/ppol5013/content/readings/text/
 projects/ppol5013/content/readings/ocr-cache/
 
 # Papers library: Ben's own publications, mirrored from
-# ~/Documents/Career/_CV/pdfs/ (the canonical copy, which also feeds his
+# the pdfs folder of his CV repository (CV_PDFS in
+# tools/build-papers-content.py; the canonical copy, which also feeds his
 # personal web page). Many are publisher-copyright PDFs that may be indexed by
 # the backend but never redistributed, so the PDFs, the PMC XML, and any text
 # extracted from them are never committed and never reach the public mirror.

@@ -16,7 +16,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AdminApiClient } from '../../../tools/lib/api-client.js';
 import { fetchWithRetry, isTransientNetworkError } from '../../../tools/lib/retry-fetch.js';
-import { sameCommit, unverifiedWarning, waitForDeploy } from '../../../tools/lib/deploy-ready.js';
+import { sameCommit, unverifiedWarning, waitForContentPush, waitForDeploy, type ContentRun, type ContentStep } from '../../../tools/lib/deploy-ready.js';
 
 interface Seen { method: string; path: string; body: string }
 type Answer = (seen: Seen, nth: number) => { status: number; json?: unknown };
@@ -217,4 +217,51 @@ test('commits match by prefix of seven or more characters', () => {
   assert.equal(sameCommit(NEW, OLD), false);
   assert.equal(sameCommit(NEW, 'bbb'), false);
   assert.equal(sameCommit('', ''), false);
+});
+
+// The content push: a release is the commit plus the deploy-pages.yml step that
+// pushes its prompts and grounding, which finishes minutes after the restart.
+const runOf = (id: number, headSha: string, status = 'completed', conclusion: string | null = 'success'): ContentRun =>
+  ({ id, headSha, status, conclusion, url: `https://example/runs/${id}` });
+const pushWait = (runs: (n: number) => ContentRun[], steps: (id: number, n: number) => ContentStep | null, extra: object = {}) => {
+  let n = 0;
+  return waitForContentPush({
+    commit: NEW, timeoutMs: 400, startTimeoutMs: 100, intervalMs: 10, log: () => {},
+    isDescendant: () => false,
+    listRuns: () => runs(++n),
+    pushStep: id => steps(id, n),
+    ...extra,
+  });
+};
+
+test('content push: ready only once the push step of its own run has succeeded', async () => {
+  const pushed = await pushWait(
+    () => [runOf(7, NEW, 'in_progress', null)],
+    (_id, n) => n < 3 ? (n === 1 ? null : { status: 'in_progress', conclusion: null }) : { status: 'completed', conclusion: 'success' });
+  assert.deepEqual(pushed, { commit: NEW, runId: 7, later: false, attempts: 3 });
+});
+
+test('content push: a failed or skipped push step fails at once, with the run', async () => {
+  for (const conclusion of ['failure', 'skipped']) {
+    await assert.rejects(pushWait(() => [runOf(7, NEW, 'in_progress', null)], () => ({ status: 'completed', conclusion })),
+      new RegExp(`content push for bbbbbbb did not succeed: step "Push content to Railway" ${conclusion} \\(https://example/runs/7\\)`));
+  }
+});
+
+test('content push: a Pages failure after a successful push step is still ready', async () => {
+  const pushed = await pushWait(() => [runOf(7, NEW, 'completed', 'failure')], () => ({ status: 'completed', conclusion: 'success' }));
+  assert.equal(pushed.runId, 7);
+});
+
+test('content push: a cancelled run is covered by a later run that contains the commit', async () => {
+  const pushed = await pushWait(
+    n => n === 1 ? [runOf(7, NEW, 'completed', 'cancelled')] : [runOf(8, LATER, 'in_progress', null), runOf(7, NEW, 'completed', 'cancelled')],
+    (id, n) => id === 8 && n >= 3 ? { status: 'completed', conclusion: 'success' } : null,
+    { isDescendant: (d: string) => d === LATER });
+  assert.deepEqual(pushed, { commit: LATER, runId: 8, later: true, attempts: 3 });
+});
+
+test('content push: no run for the commit or a later one fails after the start timeout', async () => {
+  await assert.rejects(pushWait(() => [runOf(5, OLD)], () => ({ status: 'completed', conclusion: 'success' })),
+    /no deploy-pages.yml run for bbbbbbb or a later commit after 0s/);
 });

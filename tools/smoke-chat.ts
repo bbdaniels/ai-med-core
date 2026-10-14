@@ -15,9 +15,12 @@
  *   npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>] [--commit <sha>]
  *
  * `--commit <sha>` waits first, up to 10 minutes, until the deployment serves
- * that commit (tools/lib/deploy-ready.ts). A merge to main restarts the API, so
- * a smoke run right after one would otherwise test the old container, or fail
- * on the 502s of the restart. Pass the merged commit.
+ * that commit, and then until that commit's content push (the deploy-pages.yml
+ * step "Push content to Railway") has succeeded (tools/lib/deploy-ready.ts). A
+ * merge to main restarts the API and only later pushes prompts and grounding,
+ * so a smoke run right after one would otherwise test the old container, the
+ * 502s of the restart, or the new code with the old content. Pass the merged
+ * commit.
  *
  * The question asked of each project comes from its private
  * projects/<slug>/tests/smoke.json: { "vignetteKey": "...", "question": "...",
@@ -34,7 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AdminApiClient } from './lib/api-client.js';
-import { unverifiedWarning, waitForDeploy } from './lib/deploy-ready.js';
+import { unverifiedWarning, waitForContentPush, waitForDeploy } from './lib/deploy-ready.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -152,6 +155,8 @@ async function main() {
     try {
       const ready = await waitForDeploy({ baseUrl: base, commit });
       console.log(unverifiedWarning(ready, commit)?.replace('::warning::', 'WARNING: ') ?? `  Serving ${ready.commit!.slice(0, 7)}.`);
+      const pushed = await waitForContentPush({ commit });
+      console.log(`  Content pushed (run ${pushed.runId}${pushed.later ? `, for later commit ${pushed.commit.slice(0, 7)}` : ''}).`);
     } catch (e) {
       console.error(`FAIL: ${e instanceof Error ? e.message : e}`);
       process.exit(1);

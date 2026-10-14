@@ -77,7 +77,11 @@ Tests: `packages/api/src/talk-redirects.test.ts` (fixture projects; runs the stu
 
 ## wait-for-deploy.ts
 
-Waits until a deployment serves a commit, read from the `commit` field of `GET /api/health` (Railway's `RAILWAY_GIT_COMMIT_SHA`; always sent, `null` when unset). `--commit`, or a later commit that contains it, is ready. Another commit, or no `commit` key at all (the old container), keeps it waiting, and it exits 1 with what it last saw when `--timeout` seconds (default 600) pass. `commit: null` (the deployment does not report one, as after `railway up`) and `--any-commit` (no check asked for) both wait for four healthy answers five seconds apart, exit 0 and print a `::warning::` line. `deploy-pages.yml` runs it before the content push, because the merge that starts the push also restarts the API; a manual run from a branch other than main uses `--any-commit`.
+Waits until a deployment serves a commit, read from the `commit` field of `GET /api/health` (Railway's `RAILWAY_GIT_COMMIT_SHA`; always sent, `null` when unset). `--commit`, or a later commit that contains it, is ready. Another commit, or no `commit` key at all (the old container), keeps it waiting, and it exits 1 with what it last saw when `--timeout` seconds (default 600) pass. `commit: null` (the deployment does not report one, as after `railway up`) and `--any-commit` (no check asked for) both wait for four healthy answers five seconds apart, exit 0 and print a `::warning::` line.
+
+With `--commit` it then waits, through `gh api`, until the "Push content to Railway" step of the `deploy-pages.yml` run for that commit, or of a later run that contains it, has succeeded. System prompts, grounding and case content reach the API only through that push, which finishes minutes after Railway serves the commit, so a test run after the first wait alone talks to the new code with the old content. It exits 1 at once if that step fails or is skipped, and after 3 minutes if no run for the commit or a later one exists (a commit pushed with a workflow token, or `[skip ci]`, starts none). When this exits 0 the release is live; no manual wait on the workflow is needed.
+
+`deploy-pages.yml` runs it before its own content push with `--no-content-push` (it would otherwise wait for itself), because the merge that starts the push also restarts the API; a manual run from a branch other than main uses `--any-commit`.
 
 ```bash
 npx tsx tools/wait-for-deploy.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
@@ -93,7 +97,7 @@ The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a m
 ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
 ```
 
-`--commit` waits, up to 10 minutes, until the deployment serves that commit (`lib/deploy-ready.ts`). Without it a run right after a merge tests the old container, or fails on the 502s of the restart.
+`--commit` waits, up to 10 minutes, until the deployment serves that commit and then until that commit's content push has succeeded (`lib/deploy-ready.ts`, the same two waits as `wait-for-deploy.ts`). Without it a run right after a merge tests the old container, fails on the 502s of the restart, or tests the new code with the old prompts.
 
 For each project with a private `projects/<slug>/tests/smoke.json` (`{"vignetteKey", "question", "language"?}`), or each one named with `--projects a,b`, it checks that `/api/config` answers, that `/api/vignettes` refuses without a token when the project is gated (codes from `ACCESS_CODE_<SLUG>`) and answers with one, that one `/api/chat` turn returns a message, followups when the project is structured, and usage, and that a talk-manifest project lists papers. With `ADMIN_PASSPHRASE` set, each turn's cost is the deployment's own `token_usage` estimate; without it only token counts print. A run costs about a cent. Turns carry a `smoke-chat-<timestamp>` session token, so they can be told apart in `qa_log` exports. Exits 1 on any failure. Test: `packages/api/src/smoke-chat.test.ts`.
 

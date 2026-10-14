@@ -165,3 +165,129 @@ export function unverifiedWarning(ready: Ready, expected: string | null): string
     `is not set in the running container. Could not confirm it serves ${expected.slice(0, 7)}; went ahead on a service ` +
     'that stayed healthy. Check the variable (Railway provides it for deployments triggered from GitHub).';
 }
+
+/**
+ * Has the content of a commit reached the deployment?
+ *
+ * A healthy service on the right commit is only half of a release. Prompts,
+ * grounding and case content reach the API through the content push, the
+ * CONTENT_STEP of the CONTENT_WORKFLOW run for the commit, which finishes
+ * minutes after Railway starts serving it. A check that stops at the commit
+ * tests the new code with the previous content (on 2026-10-14 four rounds of
+ * live answers were credited to the wrong system prompt that way). So a wait
+ * for a release waits for this step too.
+ *
+ * What the recent runs on main mean, for the commit asked about:
+ *
+ *   its run's push step succeeded            ready.
+ *   a later run that contains it succeeded   ready too (`later`): a queued run
+ *                                            is cancelled when a newer one
+ *                                            queues, and the newer run pushes
+ *                                            the same content and more.
+ *   its push step failed or was skipped      fail at once, with the run's URL.
+ *   its run was cancelled                    wait for a later run.
+ *   no run for it or a later commit          fail after `startTimeoutMs`: a
+ *                                            commit pushed with a workflow
+ *                                            token, or [skip ci], starts none.
+ *
+ * The workflow's own wait must not call this (it would wait for itself):
+ * wait-for-deploy.ts takes --no-content-push there.
+ */
+export const CONTENT_WORKFLOW = 'deploy-pages.yml';
+export const CONTENT_STEP = 'Push content to Railway';
+
+export interface ContentRun { id: number; headSha: string; status: string; conclusion: string | null; url: string }
+export interface ContentStep { status: string; conclusion: string | null }
+
+export interface ContentPushOptions {
+  commit: string;
+  timeoutMs?: number;
+  /** How long a run for the commit (or a later one) may take to appear. Default 3 minutes. */
+  startTimeoutMs?: number;
+  intervalMs?: number;
+  /** Recent runs of CONTENT_WORKFLOW on main, newest first. Default: `gh api`. */
+  listRuns?: () => ContentRun[] | Promise<ContentRun[]>;
+  /** The CONTENT_STEP of a run; null while the run has no such step yet. Default: `gh api`. */
+  pushStep?: (runId: number) => ContentStep | null | Promise<ContentStep | null>;
+  isDescendant?: (later: string, expected: string) => boolean | Promise<boolean>;
+  log?: (message: string) => void;
+}
+
+export interface ContentPushed { commit: string; runId: number; later: boolean; attempts: number }
+
+function ghJson(path: string): any {
+  return JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+
+export function ghListRuns(): ContentRun[] {
+  const data = ghJson(`repos/{owner}/{repo}/actions/workflows/${CONTENT_WORKFLOW}/runs?branch=main&per_page=30`);
+  return (data.workflow_runs ?? []).map((r: any) => ({
+    id: r.id, headSha: r.head_sha, status: r.status, conclusion: r.conclusion, url: r.html_url,
+  }));
+}
+
+export function ghPushStep(runId: number): ContentStep | null {
+  const data = ghJson(`repos/{owner}/{repo}/actions/runs/${runId}/jobs?per_page=100`);
+  for (const job of data.jobs ?? []) {
+    const step = (job.steps ?? []).find((s: any) => s.name === CONTENT_STEP);
+    if (step) return { status: step.status, conclusion: step.conclusion };
+  }
+  return null;
+}
+
+export async function waitForContentPush(o: ContentPushOptions): Promise<ContentPushed> {
+  if (!SHA.test(o.commit)) throw new Error(`"${o.commit}" is not a commit SHA`);
+  const timeoutMs = o.timeoutMs ?? 900_000;
+  const startTimeoutMs = o.startTimeoutMs ?? 180_000;
+  const intervalMs = o.intervalMs ?? 15_000;
+  const listRuns = o.listRuns ?? ghListRuns;
+  const pushStep = o.pushStep ?? ghPushStep;
+  const isDescendant = o.isDescendant ?? ((d, e) => gitIsDescendant(d, e));
+  const log = o.log ?? (m => console.log(m));
+  const start = Date.now();
+  const deadline = start + timeoutMs;
+  const want = o.commit.slice(0, 7);
+  const related = new Map<string, boolean>();
+  let state = 'no run listed yet';
+  for (let attempts = 1; ; attempts++) {
+    const runs = await listRuns();
+    const own = runs.filter(r => sameCommit(r.headSha, o.commit));
+    const later: ContentRun[] = [];
+    for (const r of runs) {
+      if (sameCommit(r.headSha, o.commit)) continue;
+      if (!related.has(r.headSha)) related.set(r.headSha, await isDescendant(r.headSha, o.commit));
+      if (related.get(r.headSha)) later.push(r);
+    }
+    for (const r of [...own, ...later]) {
+      const step = await pushStep(r.id);
+      if (step?.conclusion === 'success') {
+        return { commit: r.headSha, runId: r.id, later: !own.includes(r), attempts };
+      }
+    }
+    const mine = own[0];
+    if (mine) {
+      const step = await pushStep(mine.id);
+      if (step && step.status === 'completed' && step.conclusion !== 'success') {
+        throw new Error(`the content push for ${want} did not succeed: step "${CONTENT_STEP}" ${step.conclusion} (${mine.url})`);
+      }
+      if (mine.status === 'completed' && mine.conclusion !== 'cancelled') {
+        throw new Error(`the content push for ${want} never ran: run ${mine.conclusion} before step "${CONTENT_STEP}" (${mine.url})`);
+      }
+      state = mine.status === 'completed'
+        ? `run for ${want} was cancelled; waiting for a later run that contains it`
+        : `run for ${want} is ${mine.status}${step ? `, step "${CONTENT_STEP}" ${step.status}` : ''}`;
+    } else if (later.length) {
+      state = `no run for ${want}; ${later.length} later run(s) that contain it, none pushed yet`;
+    } else {
+      state = `no ${CONTENT_WORKFLOW} run for ${want} or a later commit`;
+      if (Date.now() - start >= startTimeoutMs) {
+        throw new Error(`${state} after ${Math.round(startTimeoutMs / 1000)}s (a commit pushed with a workflow token, or [skip ci], starts none)`);
+      }
+    }
+    if (Date.now() + intervalMs > deadline) {
+      throw new Error(`the content of ${want} was not pushed after ${Math.round(timeoutMs / 1000)}s: ${state}`);
+    }
+    log(`  Content attempt ${attempts}: ${state}. Waiting ${Math.round(intervalMs / 1000)}s...`);
+    await sleep(intervalMs);
+  }
+}

@@ -1,11 +1,11 @@
 # Evaluation Pipeline
 
-Daily automated evaluation: fetch Kobo submissions, grade with GPT-4o against project-specific rubrics, publish dashboard.
+Daily automated evaluation: fetch Kobo submissions, grade with Claude (Opus 5.5, thinking on, the Messages API) against project-specific rubrics, publish dashboard.
 
 ## Pipeline Flow
 
 1. **Fetch**: `scripts/fetch_transcripts.py` downloads submissions from Kobo API
-2. **Grade**: `scripts/grade.py` discovers rubrics, groups by data source, calls GPT-4o
+2. **Grade**: `scripts/grade.py` discovers rubrics, groups by data source, makes one Messages API call per rubric (`ANTHROPIC_API_KEY`); each graded file records `harness` and `grader_model` (grades before 2026-10-20 came from the Claude CLI and have no `harness`)
 3. **Commit**: GitHub Actions commits results back to repo
 4. **Dashboard**: Static HTML/JS at `dashboard/` deployed to GitHub Pages
 

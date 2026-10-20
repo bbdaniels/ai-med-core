@@ -4,11 +4,23 @@ AI-MED Unified Grader
 Dynamically discovers rubric/checklist files and grades submissions
 against the appropriate data source for each rubric.
 
-Uses Claude Opus with extended thinking for deep, accurate grading.
+Uses Claude Opus with extended thinking for deep, accurate grading: one
+Messages API call per rubric (the `anthropic` package, ANTHROPIC_API_KEY).
+
+Until 2026-10-20 each call was `claude -p --model opus --thinking enabled` on
+the Max subscription's OAuth token. Ben moved it to the API that day: a
+prompt-in, JSON-out call with no tools belongs on the Messages API. The prompt
+is the same text (the system line and the rubric prompt, sent as one user
+message, as the CLI received it), the model is the one the CLI's `opus`
+resolved to (claude-opus-5-5), and thinking is on (adaptive, the only mode
+Opus 5.5 has) at the model's default effort, which is what the CLI used. Each
+graded file records `harness` and `grader_model`, so grades from this path
+can be told from the earlier CLI grades, which have no `harness` field.
 
 Requirements:
-    - Claude CLI installed: npm install -g @anthropic-ai/claude-code
-    - CLAUDE_CODE_OAUTH_TOKEN environment variable (from Max subscription or API key)
+    - pip install -r eval/scripts/requirements.txt (includes anthropic)
+    - ANTHROPIC_API_KEY in the environment (the Console key gh-ai-med-grader
+      in the Actions secret of the same name)
 
 Usage:
     python grade.py --project demo
@@ -18,12 +30,16 @@ import os
 import json
 import argparse
 import pandas as pd
-import subprocess
 from pathlib import Path
 from datetime import datetime
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent.parent  # ai-med/
+
+# Who grades: recorded in every graded file (see the module docstring).
+GRADER_MODEL = "claude-opus-5-5"
+HARNESS = "messages-api"
+GRADER_MAX_TOKENS = 32000   # thinking counts against it; streamed, so no HTTP timeout
 
 
 # ── Project & rubric loading ────────────────────────────────────────
@@ -221,55 +237,45 @@ Return a JSON object:
 Return ONLY valid JSON."""
 
 
-def call_claude(prompt, system_msg="You are an expert medical education evaluator. Return only valid JSON.", max_tokens=8000):
-    """
-    Call Claude via CLI with extended thinking (Max subscription).
-    Uses CLAUDE_CODE_OAUTH_TOKEN from environment.
-    """
+def call_claude(prompt, system_msg="You are an expert medical education evaluator. Return only valid JSON."):
+    """One Messages API call with thinking on. Returns the JSON object the
+    reply holds, or None (the rubric then stays ungraded and is retried on
+    the next run)."""
     full_prompt = f"{system_msg}\n\n{prompt}"
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        print("    ERROR: ANTHROPIC_API_KEY is not set")
+        return None
     try:
-        result = subprocess.run(
-            [
-                "claude", "-p",
-                "--model", "opus",
-                "--thinking", "enabled",  # Enable extended thinking for deeper analysis
-                "--output-format", "text",
-                "--no-session-persistence",
-            ],
-            input=full_prompt,
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minutes for extended thinking
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            # Parse JSON from output
-            output = result.stdout.strip()
-            # Handle <think> tags if present - extract JSON after thinking
-            if "<think>" in output and "</think>" in output:
-                # Extract content after </think> tag
-                json_start = output.find("</think>") + len("</think>")
-                output = output[json_start:].strip()
-            # Find JSON object in output
-            json_start = output.find("{")
-            json_end = output.rfind("}") + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = output[json_start:json_end]
-                return json.loads(json_str)
-            return None
-        else:
-            print(f"    Claude CLI failed (rc={result.returncode}): {result.stderr[:200]}")
-            return None
-    except FileNotFoundError:
-        print("    ERROR: Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code")
+        import anthropic
+    except ImportError:
+        print("    ERROR: the anthropic package is not installed: pip install -r eval/scripts/requirements.txt")
         return None
-    except subprocess.TimeoutExpired:
-        print("    Claude CLI timed out after 600s")
+    client = anthropic.Anthropic(api_key=key, timeout=600)
+    try:
+        with client.messages.stream(
+            model=GRADER_MODEL,
+            max_tokens=GRADER_MAX_TOKENS,
+            thinking={"type": "adaptive"},
+            messages=[{"role": "user", "content": full_prompt}],
+        ) as stream:
+            response = stream.get_final_message()
+    except anthropic.APIError as e:
+        print(f"    Claude API error ({type(e).__name__}): {getattr(e, 'message', e)}")
         return None
+    if response.stop_reason in ("refusal", "max_tokens"):
+        print(f"    Claude API stopped without a usable reply (stop_reason={response.stop_reason})")
+        return None
+    output = "".join(block.text for block in response.content if block.type == "text").strip()
+    json_start = output.find("{")
+    json_end = output.rfind("}") + 1
+    if json_start < 0 or json_end <= json_start:
+        print("    No JSON object in the reply")
+        return None
+    try:
+        return json.loads(output[json_start:json_end])
     except json.JSONDecodeError as e:
         print(f"    JSON parse error: {e}")
-        return None
-    except Exception as e:
-        print(f"    Claude error: {e}")
         return None
 
 
@@ -389,6 +395,8 @@ def grade_submission(transcript_path, metadata, rubrics, vignette_map, profiles)
         "field_data": field_data,
         "results": {},
         "graded_at": datetime.now().isoformat(),
+        "harness": HARNESS,
+        "grader_model": GRADER_MODEL,
     }
 
     # Grade each rubric
@@ -445,6 +453,7 @@ def build_index(project_name, rubrics, profiles, submissions_dir, output_path):
                 "submission_time": detail.get("submission_time"),
                 "duration_minutes": detail.get("duration_minutes"),
                 "profile_id": detail.get("profile_id"),
+                "harness": detail.get("harness"),     # None: graded by the Claude CLI, before 2026-10-20
                 "results": {},
             }
 

@@ -66,6 +66,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`ABORT: ${err instanceof Error ? err.message : err}. Check the API host (the Pi's rebuild timer and its container: https://api.ai-med.live/api/health names the commit it serves) and the deploy-pages.yml run.`);
+  console.error(`ABORT: ${err instanceof Error ? err.message : err}. Check the API host (the Pi's deployer, runner job hosting-deploy, whose logs are ~/runner/state/logs/hosting-deploy/ on the Pi, and its container: https://api.ai-med.live/api/health names the commit it serves) and the deploy-pages.yml run.`);
   process.exit(1);
 });

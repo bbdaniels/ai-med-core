@@ -2,7 +2,8 @@
  * Is the deployment serving the commit this run was started from?
  *
  * A merge to main starts two things at once: the API host (the Raspberry Pi,
- * whose timer pulls main) rebuilds and restarts the API, and the Pages
+ * whose deployer, the runner job hosting-deploy, pulls main every five
+ * minutes) rebuilds and restarts the API, and the Pages
  * workflow pushes that commit's content to the API. A push that begins before
  * the restart talks to the old container, then to nothing (502 while the new
  * one takes over). So the workflow waits here first, on GET /api/health and
@@ -46,7 +47,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
  * The image commit for `ref`: the newest commit at or before it that changed
  * the Docker build context, which is the commit the host builds and its
  * /api/health reports (tools/deploy-commit.sh, the one implementation of the
- * rule; the Pi's rebuild timer runs the same script). Read from the
+ * rule here; the Pi's deployer runs the same script beside its own copy,
+ * pi/hosting/bin/image-commit.sh, and deploys nothing when they disagree). Read from the
  * repository at `cwd` (default: this checkout), which needs the history back
  * to that commit: a CI checkout needs `fetch-depth: 0`, and the script fails,
  * saying so, when the history is too shallow to tell.

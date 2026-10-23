@@ -3,7 +3,7 @@
 // tools/deploy-commit.sh names the commit whose image should be serving a ref:
 // the newest commit at or before it, along the first parent, that changed a
 // path in the Docker build context (tracked files less .dockerignore), with
-// Dockerfile and .dockerignore always counting. The Pi's rebuild timer builds
+// Dockerfile and .dockerignore always counting. The Pi's deployer builds
 // that commit and deploy-pages.yml waits for /api/health to report it.
 //
 // Each test builds a throwaway repository and runs the real script in it. The

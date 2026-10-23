@@ -355,7 +355,7 @@ git push
 On push to main:
 - **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://ai-med.live/<url-slug>/` (a talk project's page is built and served by the API server instead, at `/<url-slug>/` on the talk host)
 - **GitHub Actions** runs `push-content.ts` for each project, pushing vignettes, system prompt, Kobo config, and languages to the API, once the API serves the commit
-- **The Pi** rebuilds the API from main on its timer (its own `projects/` directory is part of the image, so a new project is always a rebuild)
+- **The Pi** rebuilds the API from main within five minutes (the runner job `hosting-deploy`) (its own `projects/` directory is part of the image, so a new project is always a rebuild)
 
 ### 12. Verify the deployment
 

@@ -21,7 +21,9 @@
 # excluded from it). Its context is byte for byte the context of <ref>. It
 # prints that commit's full SHA. This is the contract with the hosts:
 #
-#   - the Pi's rebuild timer builds `git archive <image commit>`, unpacked
+#   - the Pi's deployer (the runner job hosting-deploy, every five minutes,
+#     running pi/hosting/bin/auto-deploy.sh from raspberry-pi) builds
+#     `git archive <image commit>`, unpacked
 #     into a directory (Docker applies .dockerignore to a directory context,
 #     never to a tar on stdin), with --build-arg GIT_COMMIT_SHA=<image commit>
 #     (any prefix of 7 or more characters), and rebuilds only when the image
@@ -29,6 +31,11 @@
 #   - deploy-pages.yml (through tools/wait-for-deploy.ts, tools/lib/deploy-ready.ts)
 #     waits until /api/health reports the image commit of the pushed commit,
 #     or a later commit that contains it.
+#
+# The deployer keeps its own copy of this rule, pi/hosting/bin/image-commit.sh
+# in raspberry-pi (this script with the build context as a parameter). On
+# every ai-med check it runs both and deploys nothing when they disagree, so a
+# change here must be mirrored there (docs/deployment.md, section 4).
 #
 # The path filter is .dockerignore itself, read from <ref> (the rules that
 # build <ref>'s image), and matched with Docker's rules: comments and blank

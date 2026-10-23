@@ -21,10 +21,11 @@
 # excluded from it). Its context is byte for byte the context of <ref>. It
 # prints that commit's full SHA. This is the contract with the hosts:
 #
-#   - the Pi's rebuild timer builds `git archive <image commit>` with
-#     --build-arg GIT_COMMIT_SHA=<image commit> (any prefix of 7 or more
-#     characters), and rebuilds only when the image commit of origin/main
-#     changes;
+#   - the Pi's rebuild timer builds `git archive <image commit>`, unpacked
+#     into a directory (Docker applies .dockerignore to a directory context,
+#     never to a tar on stdin), with --build-arg GIT_COMMIT_SHA=<image commit>
+#     (any prefix of 7 or more characters), and rebuilds only when the image
+#     commit of origin/main changes;
 #   - deploy-pages.yml (through tools/wait-for-deploy.ts, tools/lib/deploy-ready.ts)
 #     waits until /api/health reports the image commit of the pushed commit,
 #     or a later commit that contains it.

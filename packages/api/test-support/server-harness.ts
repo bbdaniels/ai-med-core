@@ -27,7 +27,7 @@
  * - `built: true` runs the production start path instead: `sh start.sh`, which
  *   execs node on dist/server.js (build it first, `node build.mjs`), with
  *   NODE_ENV=production and the real clock. `signal()` and `exited()` then act
- *   on that process, as Railway's SIGTERM does (src/graceful-stop.test.ts).
+ *   on that process, as a host's SIGTERM does (src/graceful-stop.test.ts).
  *
  * `chat()` keeps 1.2 s between turns, because /api/chat allows one request a
  * second per client. `stop()` removes the view, the database and with them

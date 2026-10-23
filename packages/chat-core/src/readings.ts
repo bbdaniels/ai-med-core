@@ -14,8 +14,8 @@
  * Whether the index file is committed is the project's call, and projects
  * answer it differently. A course reading index is a derived copy of copyrighted
  * course PDFs and is gitignored. A legal library built from published government
- * instruments can be committed deliberately, because Railway deploys from git
- * and the API needs the file present at runtime. No project's index reaches the
+ * instruments can be committed deliberately, because the API image is built
+ * from git and the API needs the file present at runtime. No project's index reaches the
  * public mirror, which publishes only projects/demo. Nothing here serves chunk text to
  * a browser -- text goes to the model, inside the chat request, and reaches the
  * reader only as whatever the model quotes back under the system prompt's
@@ -129,7 +129,7 @@ export function openReadingsIndex(repoRoot: string, projectSlug: string,
 
   // A deployment keeps the index outside the repo: it is 20+ MB of copyrighted
   // derived text, it is never committed, and the container filesystem is wiped on
-  // every redeploy — so on Railway it lives on a mounted volume and this env var
+  // every redeploy, so in production it lives on a mounted volume and this env var
   // points at it. The name is the project slug upper-cased, with any other
   // character written `_`, e.g. READINGS_INDEX_MY_COURSE=/data/my-course-readings.db.
   const envKey = `READINGS_INDEX_${projectSlug.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;

@@ -1,6 +1,7 @@
 // Run: npm -w @ai-med/api test   (node:test under tsx)
 //
-// Railway replaces a deployment by sending the old container SIGTERM. These
+// A host replaces a deployment by sending the old container SIGTERM (Docker's
+// `docker stop`, as the Pi's compose stack does on a rebuild). These
 // tests run the production start path (`sh start.sh`, which execs node on the
 // built dist/server.js) and send it the signal while a chat turn is waiting on
 // the model:

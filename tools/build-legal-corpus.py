@@ -23,8 +23,8 @@ and declared as `readingsIndex` in projects/haivn_eip/project.json. Unlike the
 PPOL index -- a derived copy of copyrighted PDFs, and gitignored for it -- these
 are Vietnamese government legal instruments published in the official gazette,
 and the repository already ships their full text and their PDFs. There is
-nothing here to withhold, and committing the index is what lets Railway serve it
-without an upload step after every redeploy.
+nothing here to withhold, and committing the index is what lets the API image
+serve it without an upload step after every redeploy.
 
 MIRROR NOTE. This script is deliberately publishable, and ships to
 bbdaniels/ai-med-core with the rest of tools/. The four excluded Python tools

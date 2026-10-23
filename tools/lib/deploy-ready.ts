@@ -1,13 +1,19 @@
 /**
  * Is the deployment serving the commit this run was started from?
  *
- * A merge to main starts two things at once: Railway rebuilds and restarts the
- * API from the commit, and the Pages workflow pushes that commit's content to
- * the API. A push that begins before the restart talks to the old container,
- * then to nothing (502 while the new one takes over). So the workflow waits
- * here first, on GET /api/health and its `commit` field, which the server
- * always sends: GIT_COMMIT_SHA, or null when that is unset (the host sets it
- * from the build; the Pi image takes it as a build argument, see Dockerfile).
+ * A merge to main starts two things at once: the API host (the Raspberry Pi,
+ * whose timer pulls main) rebuilds and restarts the API, and the Pages
+ * workflow pushes that commit's content to the API. A push that begins before
+ * the restart talks to the old container, then to nothing (502 while the new
+ * one takes over). So the workflow waits here first, on GET /api/health and
+ * its `commit` field, which the server always sends: GIT_COMMIT_SHA, or null
+ * when that is unset (the image takes it as a build argument, see Dockerfile).
+ *
+ * The host builds an image only for a commit that changed the image's build
+ * context, and labels it with that commit (tools/deploy-commit.sh). A commit
+ * that changed only documentation or workflows is served by the image of an
+ * earlier commit, forever. So the commit a caller waits for is the image
+ * commit of the one it has (`imageCommit`), never the pushed commit itself.
  *
  * What a healthy answer means, by its `commit`:
  *
@@ -21,10 +27,8 @@
  *                            container: keep waiting.
  *   null                     this deployment does not report its commit
  *                            (GIT_COMMIT_SHA is unset: an image built without
- *                            the build argument, or a Railway deployment, which
- *                            sets only its own RAILWAY_GIT_COMMIT_SHA). Nothing
- *                            can be compared, so the wait is for a service
- *                            that stays healthy
+ *                            the build argument). Nothing can be compared, so
+ *                            the wait is for a service that stays healthy
  *                            (`stableAnswers` answers running), and the result
  *                            says `verified: false` so the caller can warn.
  *
@@ -33,13 +37,36 @@
  * It fails, with the reason, when the deadline passes first.
  */
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/**
+ * The image commit for `ref`: the newest commit at or before it that changed
+ * the Docker build context, which is the commit the host builds and its
+ * /api/health reports (tools/deploy-commit.sh, the one implementation of the
+ * rule; the Pi's rebuild timer runs the same script). Read from the
+ * repository at `cwd` (default: this checkout), which needs the history back
+ * to that commit: a CI checkout needs `fetch-depth: 0`, and the script fails,
+ * saying so, when the history is too shallow to tell.
+ */
+export function imageCommit(ref: string, cwd = REPO_ROOT): string {
+  try {
+    return execFileSync('sh', [path.join(REPO_ROOT, 'tools/deploy-commit.sh'), ref], {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (e: any) {
+    throw new Error(String(e?.stderr ?? e?.message ?? e).trim() || `tools/deploy-commit.sh ${ref} failed`);
+  }
+}
 
 export interface WaitOptions {
   baseUrl: string;
   /**
-   * The commit that must be serving: a full SHA, or a prefix of 7 or more
-   * characters. Null skips the commit check: the wait is then for a service
-   * that stays healthy (a manual run from a branch Railway does not deploy).
+   * The commit that must be serving, an image commit (`imageCommit`): a full
+   * SHA, or a prefix of 7 or more characters. Null skips the commit check: the wait is then for a service
+   * that stays healthy (a manual run from a branch the host does not deploy).
    */
   commit: string | null;
   timeoutMs?: number;
@@ -173,7 +200,7 @@ export function unverifiedWarning(ready: Ready, expected: string | null): string
  * A healthy service on the right commit is only half of a release. Prompts,
  * grounding and case content reach the API through the content push, the
  * CONTENT_STEP of the CONTENT_WORKFLOW run for the commit, which finishes
- * minutes after Railway starts serving it. A check that stops at the commit
+ * minutes after the API starts serving it. A check that stops at the commit
  * tests the new code with the previous content (on 2026-10-14 four rounds of
  * live answers were credited to the wrong system prompt that way). So a wait
  * for a release waits for this step too.

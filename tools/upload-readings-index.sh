@@ -79,8 +79,9 @@ TOKEN=$(curl -fsS -X POST "$BASE_URL/api/admin/login" \
 
 # Sent gzipped: the route's express.raw() inflates Content-Encoding: gzip by
 # default, and an index compresses to about 40% of its size. Uncompressed, a
-# 26 MB index over a slow uplink outlived Railway's request timeout and came
-# back 502 (2026-09-22).
+# 26 MB index over a slow uplink outlived the host's request timeout and came
+# back 502 (on Railway, 2026-09-22; Cloudflare's proxy now caps a request at
+# 100 MB and 100 s without a byte).
 GZ="$(mktemp -t readings-index.XXXXXX)"
 trap 'rm -f "$GZ"' EXIT
 gzip -6 -c "$INDEX" > "$GZ"

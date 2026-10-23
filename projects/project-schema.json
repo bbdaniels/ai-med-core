@@ -218,7 +218,7 @@
     },
     "readingsIndex": {
       "type": "string",
-      "description": "Repo-relative path to a SQLite readings corpus (FTS5 + optional embeddings) built by tools/build-*-corpus.py; in production the READINGS_INDEX_<SLUG> env var points at the uploaded copy on the Railway volume"
+      "description": "Repo-relative path to a SQLite readings corpus (FTS5 + optional embeddings) built by tools/build-*-corpus.py; in production the READINGS_INDEX_<SLUG> env var points at the uploaded copy on the deployment's volume"
     },
     "readingsQueryLanguage": {
       "type": "string",

@@ -132,7 +132,7 @@ async function main() {
     ? `${project.deployment.tablePrefix.replace(/_+$/, '')}_`
     : '';
   console.log(`Checking deployment at ${baseUrl}...`);
-  // A failed request (502 while Railway restarts, connection refused, timeout) is
+  // A failed request (502 while the API restarts, connection refused, timeout) is
   // "not ready" too, not a fatal error: the push runs on the same trigger as the
   // backend redeploy and routinely lands inside the restart window.
   const readinessDeadline = Date.now() + 180_000; // 3 min
@@ -156,15 +156,15 @@ async function main() {
     health = await probe();
   }
   if (health.error) {
-    console.error(`ABORT: backend unreachable after 3 minutes (${health.error}). Re-run the workflow once Railway's deploy is green.`);
+    console.error(`ABORT: backend unreachable after 3 minutes (${health.error}). Re-run the workflow once the API answers (https://api.ai-med.live/api/health).`);
     process.exit(1);
   }
   if (expectedPrefix && health.tablePrefix !== expectedPrefix) {
     console.error(
       `ABORT: backend rejected X-Project "${project.deployment.tablePrefix}" after ${Math.round((Date.now() - (readinessDeadline - 180_000)) / 1000)}s. ` +
       `Expected tablePrefix "${expectedPrefix}", got "${health.tablePrefix || '(not set)'}". ` +
-      `This usually means the backend (Railway) has not redeployed the new projects/ directory yet. ` +
-      `Re-run the workflow once Railway's deploy is green.`
+      `This usually means the backend has not been rebuilt with the new projects/ directory yet. ` +
+      `Re-run the workflow once /api/health reports the commit that added the project.`
     );
     process.exit(1);
   }

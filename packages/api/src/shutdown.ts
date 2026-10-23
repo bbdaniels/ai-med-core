@@ -2,8 +2,7 @@
  * Graceful stop, in one place.
  *
  * A host replaces a deployment by sending the old container SIGTERM and, after
- * its stop timeout, SIGKILL (Docker's stop_grace_period; Railway's draining
- * time). A process that dies of the signal exits non-zero, which the host
+ * its stop timeout, SIGKILL (Docker's stop_grace_period). A process that dies of the signal exits non-zero, which the host
  * reports as a crash; requests in flight are reset. So on SIGTERM or SIGINT the server:
  *
  * 1. stops accepting connections and closes the idle keep-alive ones;

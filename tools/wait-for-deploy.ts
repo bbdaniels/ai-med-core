@@ -5,8 +5,13 @@
  *   npx tsx tools/wait-for-deploy.ts --url <api-base-url> --commit <sha> [--timeout <seconds>] [--no-content-push]
  *   npx tsx tools/wait-for-deploy.ts --url <api-base-url> --any-commit   [--timeout <seconds>]
  *
- * Polls GET /api/health until it answers 200 and reports `--commit` (or a
- * later commit that contains it) in its `commit` field. Then, with `--commit`,
+ * Polls GET /api/health until it answers 200 and reports the image commit of
+ * `--commit` (or a later commit that contains it) in its `commit` field. The
+ * image commit is the newest commit at or before `--commit` that changed the
+ * Docker build context (tools/deploy-commit.sh): the host builds only those,
+ * so a commit that changed only documentation is served by an earlier image,
+ * and waiting for the commit itself would never end. The checkout needs the
+ * history back to that commit (in CI, `fetch-depth: 0`). Then, with `--commit`,
  * waits until the "Push content to the API" step of the deploy-pages.yml run
  * for that commit (or a later run that contains it) has succeeded, through
  * `gh api`, because prompts and grounding reach the API only through that
@@ -21,13 +26,13 @@
  * that stays healthy (four answers, five seconds apart), exit 0 and a
  * `::warning::` line that GitHub Actions shows on the run: a deployment whose
  * /api/health says `commit: null` (GIT_COMMIT_SHA is unset), and
- * `--any-commit`, for a run from a commit Railway does not deploy.
+ * `--any-commit`, for a run from a commit the host does not deploy.
  *
  * The Pages workflow runs it before the content push, and the post-deploy
  * smoke (tools/smoke-chat.ts --commit) runs the same wait, because a merge to
  * main restarts the API while both are starting.
  */
-import { CONTENT_STEP, unverifiedWarning, waitForContentPush, waitForDeploy } from './lib/deploy-ready.js';
+import { CONTENT_STEP, imageCommit, unverifiedWarning, waitForContentPush, waitForDeploy } from './lib/deploy-ready.js';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -43,10 +48,13 @@ async function main() {
     console.error('Usage: npx tsx tools/wait-for-deploy.ts --url <api-base-url> (--commit <sha> | --any-commit) [--timeout <seconds>]');
     process.exit(2);
   }
-  console.log(`Waiting for ${url} to serve ${commit ? commit.slice(0, 7) : 'a stable healthy answer (no commit check)'}...`);
-  const ready = await waitForDeploy({ baseUrl: url, commit, timeoutMs: timeout * 1000 });
-  console.log(unverifiedWarning(ready, commit) ?? (ready.later
-    ? `  Serving ${ready.commit!.slice(0, 7)}, a later commit that contains ${commit!.slice(0, 7)}.`
+  const image = commit ? imageCommit(commit) : null;
+  console.log(`Waiting for ${url} to serve ${image
+    ? `${image.slice(0, 7)}, the image commit for ${commit}`
+    : 'a stable healthy answer (no commit check)'}...`);
+  const ready = await waitForDeploy({ baseUrl: url, commit: image, timeoutMs: timeout * 1000 });
+  console.log(unverifiedWarning(ready, image) ?? (ready.later
+    ? `  Serving ${ready.commit!.slice(0, 7)}, a later commit that contains ${image!.slice(0, 7)}.`
     : `  Serving ${ready.commit!.slice(0, 7)}.`));
   if (commit && !process.argv.includes('--no-content-push')) {
     console.log(`Waiting for the content of ${commit.slice(0, 7)} to be pushed ("${CONTENT_STEP}")...`);
@@ -58,6 +66,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`ABORT: ${err instanceof Error ? err.message : err}. Check the Railway deployment and the deploy-pages.yml run.`);
+  console.error(`ABORT: ${err instanceof Error ? err.message : err}. Check the API host (the Pi's rebuild timer and its container: https://api.ai-med.live/api/health names the commit it serves) and the deploy-pages.yml run.`);
   process.exit(1);
 });

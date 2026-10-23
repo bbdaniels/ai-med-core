@@ -81,7 +81,7 @@ function pathFields(p: any, slug: string): string[] {
   if (p.talkManifest) out.push(p.talkManifest);
   if (p.groundingFile) out.push(p.groundingFile);
   out.push(...groundingSetFiles(slug, p));
-  // readingsIndex is deliberately excluded: gitignored, uploaded to Railway out of band.
+  // readingsIndex is deliberately excluded: gitignored, uploaded to the deployment's volume out of band.
   return out.filter(Boolean);
 }
 

@@ -1,8 +1,8 @@
 /**
  * fetch, retried while the deployment is restarting.
  *
- * A merge to main makes Railway rebuild and restart the API from the same
- * commit the content push runs on. While the new container takes over, the
+ * A merge to main makes the API host rebuild and restart the API from the
+ * same commit the content push runs on. While the new container takes over, the
  * edge answers 502 (or 503, 504) and open connections are reset. Those are the
  * only failures retried here: the request never reached a healthy server, or
  * may not have. Every other status is the server's own answer and is returned

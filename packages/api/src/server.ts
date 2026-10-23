@@ -82,7 +82,7 @@ import { answeredDeadline, requestDeadline } from './request-deadline.js';
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
 
 const app = express();
-app.set('trust proxy', 1); // Trust first proxy (Railway) so rate limiters see real client IPs
+app.set('trust proxy', 1); // Trust the first proxy (cloudflared, the Cloudflare Tunnel) so rate limiters see real client IPs
 // First in the chain: once a stop has begun, every response closes its connection.
 app.use(closeConnectionWhileStopping);
 const PORT = process.env.PORT || 3001;
@@ -532,8 +532,8 @@ const requireAccessCode = async (req: express.Request, res: express.Response,
 // Some files a project serves are deliberately not in the repository: the
 // papers project's PDFs are gitignored (several are publisher-copyright, and none
 // belong in git history), and a project's grounding set files may hold
-// unpublished results. A Railway deploy is built from git, so those files are
-// never on its disk. They live instead in a private store on the mounted volume,
+// unpublished results. The image is built from git (`git archive`), so those
+// files are never on its disk. They live instead in a private store on the mounted volume,
 // PRIVATE_CONTENT_ROOT (repo-root.ts), at the SAME repo-relative path they have
 // in a checkout. Every reader resolves a content path through chat-core's
 // resolveProjectContentFile (content-files.ts), which tries the checkout first
@@ -1593,7 +1593,7 @@ app.post('/api/admin/content', authenticateAdmin, requireContentWrite, async (re
 // ── Reading index upload ─────────────────────────────────────────────
 //
 // The index is a derived copy of copyrighted PDFs. It is never committed, so it
-// cannot arrive with a deploy, and Railway's container filesystem is wiped on
+// cannot arrive with a deploy, and the container's filesystem is replaced on
 // every redeploy, so it cannot simply be uploaded once to disk either. It lives
 // on a mounted volume, and this is how it gets there.
 //

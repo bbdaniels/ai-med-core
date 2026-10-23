@@ -15,8 +15,10 @@
  *   npx tsx tools/smoke-chat.ts --url <api-base-url> [--projects a,b,c] [--repo <checkout>] [--commit <sha>]
  *
  * `--commit <sha>` waits first, up to 10 minutes, until the deployment serves
- * that commit, and then until that commit's content push (the deploy-pages.yml
- * step "Push content to the API") has succeeded (tools/lib/deploy-ready.ts). A
+ * that commit's image commit (the newest commit at or before it that changed
+ * the image, tools/deploy-commit.sh), and then until that commit's content push
+ * (the deploy-pages.yml step "Push content to the API") has succeeded
+ * (tools/lib/deploy-ready.ts). A
  * merge to main restarts the API and only later pushes prompts and grounding,
  * so a smoke run right after one would otherwise test the old container, the
  * 502s of the restart, or the new code with the old content. Pass the merged
@@ -37,7 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AdminApiClient } from './lib/api-client.js';
-import { unverifiedWarning, waitForContentPush, waitForDeploy } from './lib/deploy-ready.js';
+import { imageCommit, unverifiedWarning, waitForContentPush, waitForDeploy } from './lib/deploy-ready.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -151,10 +153,11 @@ async function main() {
   const base = url.replace(/\/$/, '');
   const commit = arg('--commit');
   if (commit) {
-    console.log(`Waiting for ${base} to serve ${commit.slice(0, 7)}...`);
     try {
-      const ready = await waitForDeploy({ baseUrl: base, commit });
-      console.log(unverifiedWarning(ready, commit)?.replace('::warning::', 'WARNING: ') ?? `  Serving ${ready.commit!.slice(0, 7)}.`);
+      const image = imageCommit(commit);
+      console.log(`Waiting for ${base} to serve ${image.slice(0, 7)}, the image commit for ${commit.slice(0, 7)}...`);
+      const ready = await waitForDeploy({ baseUrl: base, commit: image });
+      console.log(unverifiedWarning(ready, image)?.replace('::warning::', 'WARNING: ') ?? `  Serving ${ready.commit!.slice(0, 7)}.`);
       const pushed = await waitForContentPush({ commit });
       console.log(`  Content pushed (run ${pushed.runId}${pushed.later ? `, for later commit ${pushed.commit.slice(0, 7)}` : ''}).`);
     } catch (e) {

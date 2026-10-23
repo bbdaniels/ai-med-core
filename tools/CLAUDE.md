@@ -12,8 +12,8 @@ passphrase into a tracked file, a command example, a log, or a commit message** 
 passphrase committed once is compromised for good, and this repo syncs to a public
 mirror.
 
-The production passphrase lives in exactly three places: Railway's `ADMIN_PASSPHRASE`
-service variable, the `ADMIN_PASSPHRASE_PROD` key in the untracked root `.env`, and the
+The production passphrase lives in exactly three places: `ADMIN_PASSPHRASE` in the
+API host's secrets file (on the Pi, `~/hosting/secrets/ai-med.env`), the `ADMIN_PASSPHRASE_PROD` key in the untracked root `.env`, and the
 `ADMIN_PASSPHRASE` GitHub Actions secret. Reference it, never transcribe it.
 
 ```bash
@@ -59,7 +59,7 @@ Projects without an `assignments.json` file skip this step silently — the tool
 The one build of the per-project frontends, driven by `projects/*/project.json`:
 
 ```bash
-npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # npm run build:railway: talk pages, same origin
+npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # npm run build:server (the API image): talk pages, same origin
 npx tsx tools/build-frontends.ts --app sim --out _site --api-base https://api.ai-med.live    # deploy-pages.yml: simulators
 ```
 
@@ -75,13 +75,26 @@ npx tsx tools/build-talk-redirects.ts --out _site --to https://chat.example.com 
 
 Tests: `packages/api/src/talk-redirects.test.ts` (fixture projects; runs the stub's and the 404 page's scripts against a fake location).
 
+## deploy-commit.sh
+
+The image commit for a ref: which commit's image should be serving it.
+
+```bash
+tools/deploy-commit.sh origin/main          # the commit the API host should build and run
+tools/deploy-commit.sh --list origin/main   # the files of that ref's Docker build context
+```
+
+Run it inside the repository (it reads the repository of the current directory, as git does). It prints the full SHA of the newest commit at or before the ref, along the first parent, that changed a path in the Docker build context: the files tracked at the ref less what `.dockerignore` excludes, with `Dockerfile` and `.dockerignore` always counting. That commit's context is the ref's context exactly, so it builds the same image, and a documentation-only commit maps back to the image already built. The path filter is `.dockerignore` itself, read from the ref and matched with Docker's rules (comments and blank lines skipped, patterns anchored at the root, `*` and `?` within a segment, `**` across segments, `!` re-includes, the last match wins, a pattern matching a directory matches everything under it), so what reaches the image and what triggers a rebuild have one source of truth. Evaluation results (`projects/*/eval/`) are in the context, since the API serves them from disk; documentation, workflows, the Pages site, tests and every tool but `build-frontends.ts` are not.
+
+It is the contract between this repository and the API host. The Pi's rebuild timer runs it on `origin/main` after each fetch and builds `git archive <commit> | docker build --build-arg GIT_COMMIT_SHA=<commit>` only when the answer changes; `wait-for-deploy.ts` and `smoke-chat.ts` run it (`imageCommit` in `lib/deploy-ready.ts`) to know which commit `/api/health` must report. It needs the history back to the image commit and exits 1, saying so, when the history is shallow there (CI checks out with `fetch-depth: 0`); also for an unknown ref, a path git would quote, or a `.gitattributes` that declares `export-ignore` (which `git archive` honors and the script does not). `test.yml` builds the image and checks its files against `--list`, so Docker and the script cannot read `.dockerignore` differently unnoticed. POSIX `sh` and `awk`, for the Pi. Tests: `packages/api/src/deploy-commit.test.ts`.
+
 ## wait-for-deploy.ts
 
-Waits until a deployment serves a commit, read from the `commit` field of `GET /api/health` (`GIT_COMMIT_SHA`, which the host sets from the build; always sent, `null` when unset). `--commit`, or a later commit that contains it, is ready. Another commit, or no `commit` key at all (the old container), keeps it waiting, and it exits 1 with what it last saw when `--timeout` seconds (default 600) pass. `commit: null` (the deployment does not report one: an image built without the `GIT_COMMIT_SHA` build argument, or a Railway deployment, which sets only its own `RAILWAY_GIT_COMMIT_SHA`) and `--any-commit` (no check asked for) both wait for four healthy answers five seconds apart, exit 0 and print a `::warning::` line.
+Waits until a deployment serves a commit's image, read from the `commit` field of `GET /api/health` (`GIT_COMMIT_SHA`, which the image takes as a build argument; always sent, `null` when unset). It first maps `--commit` to its image commit (`deploy-commit.sh`), since the host builds only commits that changed the image and a documentation-only commit is served by an earlier one. The image commit, or a later commit that contains it, is ready. Another commit, or no `commit` key at all (the old container), keeps it waiting, and it exits 1 with what it last saw when `--timeout` seconds (default 600) pass. `commit: null` (the deployment does not report one: an image built without the `GIT_COMMIT_SHA` build argument) and `--any-commit` (no check asked for) both wait for four healthy answers five seconds apart, exit 0 and print a `::warning::` line.
 
-With `--commit` it then waits, through `gh api`, until the "Push content to the API" step of the `deploy-pages.yml` run for that commit, or of a later run that contains it, has succeeded. System prompts, grounding and case content reach the API only through that push, which finishes minutes after Railway serves the commit, so a test run after the first wait alone talks to the new code with the old content. It exits 1 at once if that step fails or is skipped, and after 3 minutes if no run for the commit or a later one exists (a commit pushed with a workflow token, or `[skip ci]`, starts none). When this exits 0 the release is live; no manual wait on the workflow is needed.
+With `--commit` it then waits, through `gh api`, until the "Push content to the API" step of the `deploy-pages.yml` run for that commit, or of a later run that contains it, has succeeded. System prompts, grounding and case content reach the API only through that push, which finishes minutes after the API serves the image, so a test run after the first wait alone talks to the new code with the old content. It exits 1 at once if that step fails or is skipped, and after 3 minutes if no run for the commit or a later one exists (a commit pushed with a workflow token, or `[skip ci]`, starts none). When this exits 0 the release is live; no manual wait on the workflow is needed.
 
-`deploy-pages.yml` runs it before its own content push with `--no-content-push` (it would otherwise wait for itself), because the merge that starts the push also restarts the API; a manual run from a branch other than main uses `--any-commit`.
+`deploy-pages.yml` runs it before its own content push with `--no-content-push` (it would otherwise wait for itself) and `--timeout 900`, because the merge that starts the push also starts the Pi's rebuild; a manual run from a branch other than main uses `--any-commit`. On a timeout it names the API host's health URL and the workflow run to check.
 
 ```bash
 npx tsx tools/wait-for-deploy.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
@@ -97,7 +110,7 @@ The post-deploy chat smoke. Run it within 15 minutes of every merge to main (a m
 ADMIN_PASSPHRASE="$ADMIN_PASSPHRASE_PROD" npx tsx tools/smoke-chat.ts --url https://api.ai-med.live --commit "$(git rev-parse origin/main)"
 ```
 
-`--commit` waits, up to 10 minutes, until the deployment serves that commit and then until that commit's content push has succeeded (`lib/deploy-ready.ts`, the same two waits as `wait-for-deploy.ts`). Without it a run right after a merge tests the old container, fails on the 502s of the restart, or tests the new code with the old prompts.
+`--commit` waits, up to 10 minutes, until the deployment serves that commit's image commit (`deploy-commit.sh`) and then until that commit's content push has succeeded (`lib/deploy-ready.ts`, the same two waits as `wait-for-deploy.ts`). Without it a run right after a merge tests the old container, fails on the 502s of the restart, or tests the new code with the old prompts.
 
 For each project with a private `projects/<slug>/tests/smoke.json` (`{"vignetteKey", "question", "language"?}`), or each one named with `--projects a,b`, it checks that `/api/config` answers, that `/api/vignettes` refuses without a token when the project is gated (codes from `ACCESS_CODE_<SLUG>`) and answers with one, that one `/api/chat` turn returns a message, followups when the project is structured, and usage, and that a talk-manifest project lists papers. With `ADMIN_PASSPHRASE` set, each turn's cost is the deployment's own `token_usage` estimate; without it only token counts print. A run costs about a cent. Turns carry a `smoke-chat-<timestamp>` session token, so they can be told apart in `qa_log` exports. Exits 1 on any failure. Test: `packages/api/src/smoke-chat.test.ts`.
 
@@ -131,9 +144,10 @@ npx tsx tools/ab-grounding.ts report --dir exports/ab-<date> [--questions SUBSET
 Pull a project's **durable conversation log** down for review. Formless advisors like
 `haivn_eip` have no Kobo form, so their conversations live only in the global `qa_log` table
 (written by `/api/chat` for projects with `logConversations: true`). This is the read path:
-`GET /api/admin/qa-log` behind the same admin auth as every other admin route. Railway's
-Postgres has no public URL, so the API is the only way in -- and a container shell would
-only ever show you the ephemeral `transcripts/` directory, which is not the store.
+`GET /api/admin/qa-log` behind the same admin auth as every other admin route. Production's
+Postgres listens only on the API host's private network, so the API is the way in that needs
+no shell on the host, and the API container's own filesystem holds only the ephemeral
+`transcripts/` directory, which is not the store.
 
 ```bash
 # Last two weeks from a deployment (URL from DEPLOY_URL in .env, or pass --url)
@@ -316,7 +330,7 @@ before. The table shape lives in `lib/readings_schema.py`, shared with
 ```bash
 python3 tools/build-papers-content.py        # regenerates the papers manifest
 python3 tools/build-readings-corpus.py --manifest projects/papers/readings-manifest.json
-bash tools/upload-readings-index.sh papers --url "$DEPLOY_URL"   # READINGS_INDEX_PAPERS on Railway
+bash tools/upload-readings-index.sh papers --url "$DEPLOY_URL"   # READINGS_INDEX_PAPERS on the deployment's volume
 ```
 
 ```bash

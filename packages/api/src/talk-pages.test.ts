@@ -6,7 +6,7 @@
 // listed host, one with a URL alias), a simulator project, and a talk build
 // for each of them, the simulator's included, to show it is never served.
 // Requests go out with an explicit Host header, the way a custom domain
-// reaches the server behind Railway's proxy.
+// reaches the server behind the Cloudflare Tunnel.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

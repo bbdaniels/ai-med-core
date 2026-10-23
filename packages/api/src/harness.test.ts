@@ -71,7 +71,7 @@ test('a fixture index opens through readings.ts and searches by BM25 alone', () 
 test('the server boots and the fake gateway receives the fixed date', async () => {
   const health = await fetch(`${h.base}/api/health`);
   assert.equal(health.status, 200);
-  // The key is always there, null without Railway's variable: the wait reads
+  // The key is always there, null without GIT_COMMIT_SHA: the wait reads
   // an absent key as an older build, and null as "reports no commit".
   const body = (await health.json()) as Record<string, unknown>;
   assert.ok('commit' in body);

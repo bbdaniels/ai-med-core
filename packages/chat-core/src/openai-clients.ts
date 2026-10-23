@@ -20,12 +20,27 @@
  * The variable names, the default host and the embedding model are the gateway
  * contract (gateway.ts), shared with the Python corpus builders.
  *
+ * Every client is bounded (deadline.ts): each attempt times out after
+ * OPENAI_TIMEOUT_MS, the SDK retries a failed attempt at most OPENAI_MAX_RETRIES
+ * times, and every request goes through deadlineFetch, so the whole call, retries
+ * included, stops at the current request's deadline.
+ *
  * This is the only file in any package source or in tools that may call `new OpenAI(`;
  * openai-clients.test.ts enforces that.
  */
 
 import { OpenAI } from 'openai';
 import { API_KEY_ENV, GATEWAY_URL_ENV, OPENAI_DIRECT_URL } from './gateway.js';
+import { deadlineFetch } from './deadline.js';
+
+/**
+ * One attempt's limit. Long enough for the slowest call we have seen succeed
+ * (text-to-speech, 47 s for 76 characters with gpt-4o-mini-tts), short enough
+ * to leave a retry some of the request deadline (REQUEST_DEADLINE_MS, 85 s).
+ */
+export const OPENAI_TIMEOUT_MS = 60_000;
+/** Retries the SDK makes after a failed attempt (connection error, 408, 409, 429, 5xx). The SDK default is 2. */
+export const OPENAI_MAX_RETRIES = 1;
 
 type Env = Record<string, string | undefined>;
 
@@ -54,7 +69,10 @@ export class DirectKeyMissingError extends Error {
 function makeClient(apiKey: string, baseURL: string, defaultHeaders?: Record<string, string>): OpenAI {
   // organization and project pinned to null for the same reason as baseURL:
   // left undefined, the SDK fills them from OPENAI_ORG_ID / OPENAI_PROJECT_ID.
-  return new OpenAI({ apiKey, baseURL, organization: null, project: null, defaultHeaders });
+  return new OpenAI({
+    apiKey, baseURL, organization: null, project: null, defaultHeaders,
+    timeout: OPENAI_TIMEOUT_MS, maxRetries: OPENAI_MAX_RETRIES, fetch: deadlineFetch,
+  });
 }
 
 export function buildOpenAIClients(env: Env = process.env): OpenAIClients {

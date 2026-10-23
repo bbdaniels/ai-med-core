@@ -5,7 +5,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { OpenAI } from 'openai';
-import { buildOpenAIClients, clientForPaymentSource, DirectKeyMissingError } from './openai-clients.js';
+import { buildOpenAIClients, clientForPaymentSource, DirectKeyMissingError, OPENAI_MAX_RETRIES, OPENAI_TIMEOUT_MS } from './openai-clients.js';
+import { deadlineFetch } from './deadline.js';
 import { OPENAI_DIRECT_URL } from './gateway.js';
 
 const GATEWAY = 'https://gateway.example.test/v1';
@@ -91,4 +92,13 @@ test('openai-clients.ts is the only place `new OpenAI(` appears', () => {
   };
   roots.forEach(walk);
   assert.deepEqual(offenders, []);
+});
+
+test('every client is bounded: its own timeout and retry count, and the deadline-aware fetch', () => {
+  const c = buildOpenAIClients({ OPENAI_API_KEY: 'k-gateway', OPENAI_TTS_KEY: 'k-direct', HARVARD_GATEWAY_URL: GATEWAY });
+  for (const client of [c.gateway, c.direct!]) {
+    assert.equal(client.timeout, OPENAI_TIMEOUT_MS);
+    assert.equal(client.maxRetries, OPENAI_MAX_RETRIES);
+    assert.equal((client as any).fetch, deadlineFetch);
+  }
 });

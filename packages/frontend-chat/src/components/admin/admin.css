@@ -49,6 +49,13 @@
     padding-bottom: 20px;
 }
 
+/* A link beside Logout (the evaluation dashboard), kept to the right with it. */
+.admin-header-link {
+    margin-left: auto;
+    margin-right: 12px;
+    text-decoration: none;
+}
+
 .admin-header h1 {
     font-size: 2em;
     color: var(--text-heading);

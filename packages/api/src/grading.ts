@@ -7,7 +7,7 @@ import type { OpenAI } from 'openai';
 import path from 'path';
 import fs from 'fs/promises';
 import { logTokenUsage, activeProjectPrefix, getProjectSetting } from './database.js';
-import { clientForPaymentSource } from '@ai-med/chat-core';
+import { clientForPaymentSource, throwIfDeadlineExceeded } from '@ai-med/chat-core';
 import { REPO_ROOT } from './repo-root.js';
 import { cachedTokens, DEFAULT_CHAT_MODEL, estimateCost } from '@ai-med/chat-core';
 
@@ -259,7 +259,8 @@ Return ONLY valid JSON.`;
 
 /**
  * Call OpenAI GPT-4o with language-specific system message.
- * Includes retry logic with exponential backoff for rate limiting.
+ * Includes retry logic with exponential backoff for rate limiting, inside the
+ * request's deadline (chat-core deadline.ts).
  * Port of call_openai from grade.py (lines 221-236)
  */
 async function callOpenAI(
@@ -301,6 +302,8 @@ CRITICAL: ALL text in your response MUST be written in the language with ISO 639
 
       return JSON.parse(response.choices[0].message.content || '{}');
     } catch (error: any) {
+      // Past the request's deadline nothing is retried or swallowed: the route has answered 504.
+      throwIfDeadlineExceeded();
       const isRateLimit = error?.status === 429;
       const isLastAttempt = attempt === retries - 1;
 

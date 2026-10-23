@@ -221,7 +221,23 @@ export default function AdminDashboard({ token, onLogout, readOnly = false }: Ad
     loadContent();
     loadLanguages();
     loadAssignments();
+    loadEvalDashboard();
   }, []);
+
+  // The evaluation dashboard, when the project has graded results. The API
+  // serves it on its own origin behind this same login (packages/api/src/sim/eval.ts);
+  // an API without the route answers 404 and the link stays hidden.
+  const [evalDashboardUrl, setEvalDashboardUrl] = useState<string | null>(null);
+  const loadEvalDashboard = async () => {
+    try {
+      const response = await apiFetch(api('/api/admin/eval'), { credentials: 'include' });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.available && typeof data.dashboardPath === 'string') setEvalDashboardUrl(api(data.dashboardPath));
+    } catch (err) {
+      console.error('Error checking for evaluation results:', err);
+    }
+  };
 
   const resetEditingState = () => {
     setEditingVignetteIndex(null);
@@ -1111,6 +1127,16 @@ export default function AdminDashboard({ token, onLogout, readOnly = false }: Ad
       <div className="admin-card admin-card-lg">
         <div className="admin-header">
           <h1>Admin Dashboard{PROJECT ? ` — ${PROJECT.replace(/[-_]/g, ' ')}` : ''}</h1>
+          {evalDashboardUrl && (
+            <a
+              href={evalDashboardUrl}
+              target="_blank"
+              rel="noopener"
+              className="admin-btn admin-btn-secondary admin-header-link"
+            >
+              Evaluation Dashboard
+            </a>
+          )}
           <button
             onClick={handleLogoutClick}
             disabled={hasUnsavedChanges}

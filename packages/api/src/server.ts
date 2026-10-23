@@ -5,6 +5,7 @@ import {
   openaiClients, DirectKeyMissingError, OPENAI_DIRECT_URL, resolveProjectFlags, estimateCost, type ResolvedFlags,
   privateStoreFiles, projectContentRelPath, privateContentPath as privateContentPathIn,
   resolveProjectContentFile as resolveContentFile,
+  deadlineFetch, requestDeadlineMs, throwIfDeadlineExceeded, untilDeadline,
 } from '@ai-med/chat-core';
 import path from 'path';
 import fs from 'fs/promises';
@@ -69,11 +70,13 @@ import {
   exportNpj26Csv,
   TOKEN_RE as NPJ26_TOKEN_RE,
 } from './npj26.js';
-import { PRIVATE_CONTENT_ROOT, REPO_ROOT } from './repo-root.js';
+import { EVAL_DASHBOARD_DIR, PRIVATE_CONTENT_ROOT, REPO_ROOT } from './repo-root.js';
+import { evalRoutes } from './sim/eval.js';
 import { talkRoutes } from './talk/routes.js';
 import { talkPagesRouter, talkPagesSettings } from './talk/pages.js';
 import { chatRouter } from './routes/chat.js';
 import { closeConnectionWhileStopping, installGracefulShutdown } from './shutdown.js';
+import { answeredDeadline, requestDeadline } from './request-deadline.js';
 
 // Load .env from repo root
 dotenv.config({ path: path.join(REPO_ROOT, '.env') });
@@ -235,11 +238,21 @@ app.options('/npj26/*', cors(corsOptions));
 // 100kb default push-content.ts got a 413 for every one of them.
 const jsonBody = express.json();
 const adminJsonBody = express.json({ limit: '5mb' });
+// Admin file uploads (a readings index, a private content file). Under
+// Cloudflare Free's 100 MB request limit, which rejects a larger body before it
+// reaches the server; the largest index today is 26 MB.
+const ADMIN_UPLOAD_LIMIT_BYTES = 90 * 1024 * 1024;
 app.use((req, res, next) => {
   if (req.path === '/npj26/load') return next();
   return (req.path.startsWith('/api/admin/') ? adminJsonBody : jsonBody)(req, res, next);
 });
 app.use(cookieParser());
+
+// One deadline per request (chat-core deadline.ts): every outbound call a
+// request makes stops at it, and the route answers 504 before Cloudflare's 524.
+const REQUEST_DEADLINE_MS = requestDeadlineMs();
+console.log(`⏱️ Request deadline: ${REQUEST_DEADLINE_MS / 1000}s`);
+app.use(requestDeadline(REQUEST_DEADLINE_MS));
 
 // Multi-tenant project routing via X-Project header
 // When a frontend sends X-Project: <slug>, all database operations use that project's table prefix
@@ -702,6 +715,17 @@ app.use(talkPagesRouter({
   ...talkPagesSettings(process.env),
 }));
 
+// The evaluation dashboards (sim/eval.ts): the page at /eval/<url-slug>/ and
+// its data under /api/admin/eval, for an admin of that project only. The
+// grader's results hold participant transcripts, so no static site carries them.
+app.use(evalRoutes({
+  projectsDir: path.join(REPO_ROOT, 'projects'),
+  projects: validProjectSlugs,
+  dashboardDir: EVAL_DASHBOARD_DIR,
+  authenticateAdmin,
+  activeProject: () => (activeProjectPrefix() || '').replace(/_+$/, ''),
+}));
+
 // API Routes
 
 // The chat pipeline's route (routes/chat.ts), behind the same guards in the same order.
@@ -728,11 +752,11 @@ app.post('/api/tts', ttsLimiter, requirePublicChatIfDeclared, async (req, res) =
       : 'nova';
 
     const ttsModel = 'gpt-4o-mini-tts';
-    const mp3 = await openaiDirect.audio.speech.create({
+    const audio = await untilDeadline(openaiDirect.audio.speech.create({
       model: ttsModel,
       voice: selectedVoice,
       input: text,
-    });
+    }).then(mp3 => mp3.arrayBuffer()));
 
     // Log TTS usage (billed per character, no token counts returned)
     const charCount = text.length;
@@ -745,11 +769,12 @@ app.post('/api/tts', ttsLimiter, requirePublicChatIfDeclared, async (req, res) =
       estimated_cost: estimateCost(ttsModel, charCount, 0),
     });
 
-    const buffer = Buffer.from(await mp3.arrayBuffer());
+    const buffer = Buffer.from(audio);
     res.set('Content-Type', 'audio/mpeg');
     res.set('Content-Length', String(buffer.length));
     res.send(buffer);
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('TTS API error:', error);
     res.status(500).json({
       error: 'Failed to generate speech',
@@ -822,7 +847,7 @@ app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, 
     // `audio.input` / `audio.output`. Instructions are baked into the ephemeral
     // token here — the frontend must NOT resend `instructions` (it would replace,
     // not append, wiping the vignette + language pin).
-    const resp = await fetch(`${OPENAI_DIRECT_URL}/realtime/client_secrets`, {
+    const resp = await deadlineFetch(`${OPENAI_DIRECT_URL}/realtime/client_secrets`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENAI_REALTIME_KEY}`,
@@ -902,6 +927,7 @@ app.post('/api/realtime/session', realtimeLimiter, requirePublicChatIfDeclared, 
       caseTemplate: templateName,
     });
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('Realtime session error:', error);
     return res.status(500).json({ error: 'Failed to create realtime session' });
   }
@@ -1071,7 +1097,7 @@ app.post('/api/kobo-transcript', async (req, res) => {
 
     // Find the submission by matching the token in transcriptToken (or chat_transcript fallback)
     let searchUrl = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/data/?query=${encodeURIComponent(JSON.stringify({ transcriptToken: token }))}&limit=1`;
-    let searchResp = await fetch(searchUrl, {
+    let searchResp = await deadlineFetch(searchUrl, {
       headers: { Authorization: `Token ${koboToken}` },
     });
     if (!searchResp.ok) {
@@ -1083,7 +1109,7 @@ app.post('/api/kobo-transcript', async (req, res) => {
     // Fallback to chat_transcript for backward compatibility with old submissions
     if (searchData.count === 0) {
       searchUrl = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/data/?query=${encodeURIComponent(JSON.stringify({ chat_transcript: token }))}&limit=1`;
-      searchResp = await fetch(searchUrl, {
+      searchResp = await deadlineFetch(searchUrl, {
         headers: { Authorization: `Token ${koboToken}` },
       });
       if (!searchResp.ok) {
@@ -1101,7 +1127,7 @@ app.post('/api/kobo-transcript', async (req, res) => {
 
     // Use bulk update endpoint to replace token with full transcript
     const bulkUrl = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/data/bulk/`;
-    const bulkResp = await fetch(bulkUrl, {
+    const bulkResp = await deadlineFetch(bulkUrl, {
       method: 'PATCH',
       headers: {
         Authorization: `Token ${koboToken}`,
@@ -1137,6 +1163,7 @@ app.post('/api/kobo-transcript', async (req, res) => {
 
     return res.json({ ok: true, submissionId });
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('Error writing transcript to Kobo:', error);
     return res.status(500).json({ error: 'Failed to write transcript to Kobo' });
   }
@@ -1199,7 +1226,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
       let searchUrl = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/data/?query=${encodeURIComponent(
         JSON.stringify({ transcriptToken: token })
       )}&limit=1`;
-      let searchResp = await fetch(searchUrl, {
+      let searchResp = await deadlineFetch(searchUrl, {
         headers: { Authorization: `Token ${koboToken}` },
       });
       let searchData = await searchResp.json() as {
@@ -1217,7 +1244,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
         searchUrl = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/data/?query=${encodeURIComponent(
           JSON.stringify({ chat_transcript: token })
         )}&limit=1`;
-        searchResp = await fetch(searchUrl, {
+        searchResp = await deadlineFetch(searchUrl, {
           headers: { Authorization: `Token ${koboToken}` },
         });
         searchData = await searchResp.json() as typeof searchData;
@@ -1280,7 +1307,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
 
     // Grade all submissions in parallel
     const { gradeSession } = await import('./grading.js');
-    const results = await gradeSession(submissions, projectSlug);
+    const results = await untilDeadline(gradeSession(submissions, projectSlug));
 
     // Extract opening statements from transcripts
     const openingStatements: Record<string, string> = {};
@@ -1309,12 +1336,14 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
 
     for (const [token, gradingResults] of results.entries()) {
       try {
-        const feedback = await synthesizeFeedback(gradingResults, languageCode, projectSlug);
+        const feedback = await untilDeadline(synthesizeFeedback(gradingResults, languageCode, projectSlug));
         synthesizedFeedback[token] = {
           ...feedback,
           openingStatement: openingStatements[token] || '',
         };
       } catch (error) {
+        // Out of time is not a failed synthesis: the whole request ends (504).
+        throwIfDeadlineExceeded();
         console.error(`Failed to synthesize feedback for token ${token}:`, error);
         // Fallback to empty feedback if synthesis fails
         synthesizedFeedback[token] = {
@@ -1337,6 +1366,7 @@ app.post('/api/grade-session', requirePublicChatIfDeclared, async (req, res) => 
       synthesized: synthesizedFeedback
     });
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('Error grading session:', error);
     if (error instanceof DirectKeyMissingError) return res.status(503).json({ error: error.message });
     return res.status(500).json({ error: 'Failed to grade session' });
@@ -1580,7 +1610,7 @@ app.post('/api/admin/content', authenticateAdmin, requireContentWrite, async (re
 // See tools/upload-readings-index.sh, which wraps the login and this call.
 app.post('/api/admin/readings-index',
   authenticateAdmin, requireContentWrite,
-  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  express.raw({ type: 'application/octet-stream', limit: ADMIN_UPLOAD_LIMIT_BYTES }),
   async (req, res) => {
     try {
       const slug = requestProjectSlug(req);
@@ -1677,7 +1707,7 @@ app.get('/api/admin/private-content', authenticateAdmin, requireContentWrite, as
 
 app.put('/api/admin/private-content/*',
   authenticateAdmin, requireContentWrite,
-  express.raw({ type: 'application/octet-stream', limit: '100mb' }),
+  express.raw({ type: 'application/octet-stream', limit: ADMIN_UPLOAD_LIMIT_BYTES }),
   async (req, res) => {
     try {
       const target = await privateContentTarget(req);
@@ -1969,7 +1999,7 @@ async function getDeploymentUuid(formUid: string, koboToken: string): Promise<st
   const cached = deploymentUuidCache.get(formUid);
   if (cached && Date.now() - cached.ts < XFORM_CACHE_TTL) return cached.uuid;
 
-  const resp = await fetch(`${KOBO_KF_BASE}/api/v2/assets/${formUid}/`, {
+  const resp = await deadlineFetch(`${KOBO_KF_BASE}/api/v2/assets/${formUid}/`, {
     headers: { Authorization: `Token ${koboToken}` },
   });
   if (!resp.ok) return null;
@@ -2022,7 +2052,7 @@ app.get('/api/enketo-xform', async (_req, res) => {
     }
 
     const url = `${KOBO_KF_BASE}/api/v2/assets/${formUid}/?format=xml`;
-    const resp = await fetch(url, {
+    const resp = await deadlineFetch(url, {
       headers: { Authorization: `Token ${koboToken}` },
     });
     if (!resp.ok) {
@@ -2033,6 +2063,7 @@ app.get('/api/enketo-xform', async (_req, res) => {
     xformCache.set(formUid, { xml, ts: Date.now() });
     res.type('application/xml').send(xml);
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('Error fetching XForm:', error);
     res.status(500).json({ error: 'Failed to fetch XForm' });
   }
@@ -2069,7 +2100,7 @@ app.post('/api/enketo-submit', async (req, res) => {
       'submission.xml'
     );
 
-    const submitResp = await fetch(submitUrl, {
+    const submitResp = await deadlineFetch(submitUrl, {
       method: 'POST',
       headers: {
         Authorization: `Token ${koboToken}`,
@@ -2098,6 +2129,7 @@ app.post('/api/enketo-submit', async (req, res) => {
     }
     res.json({ ok: true, submissionId });
   } catch (error) {
+    if (answeredDeadline(res, error)) return;
     console.error('Error submitting to Kobo:', error);
     res.status(500).json({ error: 'Failed to submit' });
   }
@@ -2661,9 +2693,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    // The commit this deployment was built from (Railway sets the variable);
-    // null anywhere else. tools/lib/deploy-ready.ts waits on it.
-    commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+    // The commit this deployment was built from (GIT_COMMIT_SHA, which the
+    // image sets from its build argument; see Dockerfile); null when unset.
+    // tools/lib/deploy-ready.ts waits on it.
+    commit: process.env.GIT_COMMIT_SHA || null,
     hasOpenAIKey: !!openai.apiKey,
     // Booleans only: the gateway host is never exposed.
     usesHarvardGateway: openaiClients().usesGateway,

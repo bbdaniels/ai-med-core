@@ -165,7 +165,7 @@ test('(c) commit null falls back to a stable healthy service, unverified, with a
   assert.deepEqual(ready, { commit: null, later: false, verified: false, attempts: 3 });
   const warning = unverifiedWarning(ready, NEW)!;
   assert.match(warning, /^::warning::/);
-  assert.match(warning, /RAILWAY_GIT_COMMIT_SHA/);
+  assert.match(warning, /GIT_COMMIT_SHA/);
   assert.match(warning, /bbbbbbb/);
   assert.equal(unverifiedWarning({ commit: NEW, later: false, verified: true, attempts: 1 }, NEW), null);
 });
@@ -244,7 +244,7 @@ test('content push: ready only once the push step of its own run has succeeded',
 test('content push: a failed or skipped push step fails at once, with the run', async () => {
   for (const conclusion of ['failure', 'skipped']) {
     await assert.rejects(pushWait(() => [runOf(7, NEW, 'in_progress', null)], () => ({ status: 'completed', conclusion })),
-      new RegExp(`content push for bbbbbbb did not succeed: step "Push content to Railway" ${conclusion} \\(https://example/runs/7\\)`));
+      new RegExp(`content push for bbbbbbb did not succeed: step "Push content to the API" ${conclusion} \\(https://example/runs/7\\)`));
   }
 });
 

@@ -45,3 +45,12 @@ export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');
  * so a test's fixture checkout never hides it; TALK_DIST_DIR overrides it.
  */
 export const DEFAULT_TALK_DIST_DIR = path.resolve(here, '../../frontend-chat/dist-talk');
+
+/**
+ * eval/dashboard: the evaluation dashboard's page (HTML, JS, CSS; no data),
+ * served behind the admin login by sim/eval.ts. Code, not checkout content, so
+ * like DEFAULT_TALK_DIST_DIR it is found from this package and a test's
+ * fixture checkout never hides it. Each project's results are read from
+ * REPO_ROOT/projects/<slug>/eval/.
+ */
+export const EVAL_DASHBOARD_DIR = path.resolve(here, '../../../eval/dashboard');

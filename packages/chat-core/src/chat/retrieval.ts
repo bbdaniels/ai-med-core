@@ -10,6 +10,7 @@ import {
   type OpenIndex,
 } from '../readings.js';
 import { EMBEDDING_MODEL } from '../gateway.js';
+import { throwIfDeadlineExceeded } from '../deadline.js';
 import type { CompletionClient, Issue } from './completion.js';
 import { sameLanguage, type LanguageEntry } from './language.js';
 import type { TokenUsage } from './types.js';
@@ -23,7 +24,8 @@ import type { TokenUsage } from './types.js';
  * six real articles of the right instrument and none of them the one asked
  * about. Normalizing here means the model's own language discipline stops
  * mattering. Cheap model, deterministic temperature, and a failure just
- * searches the query as written — degraded, never broken.
+ * searches the query as written — degraded, never broken (except at the
+ * request's deadline, which ends the turn).
  *
  * Deliberately not logged to token_usage: like the query embedding beside
  * it, it is a fixed sub-cent overhead on a search, and logging it under the
@@ -61,6 +63,7 @@ export function makeRestater(client: CompletionClient, corpusLanguage: string | 
       const out = (restated.choices?.[0]?.message?.content || '').trim();
       return out ? out.slice(0, 500) : raw;
     } catch (e) {
+      throwIfDeadlineExceeded();
       console.warn('[readings] query restatement failed; searching as written:',
                    e instanceof Error ? e.message : e);
       return raw;
@@ -70,7 +73,8 @@ export function makeRestater(client: CompletionClient, corpusLanguage: string | 
 
 /**
  * Embed a query with the same model the index was built with. A failure is
- * not fatal: search falls back to BM25 alone.
+ * not fatal: search falls back to BM25 alone, unless it is the request's
+ * deadline, which ends the turn.
  */
 export function makeEmbedder(client: CompletionClient): (q: string) => Promise<Float32Array | null> {
   return async (q: string) => {
@@ -82,6 +86,7 @@ export function makeEmbedder(client: CompletionClient): (q: string) => Promise<F
       const vec = embedding.data?.[0]?.embedding;
       if (Array.isArray(vec)) return Float32Array.from(vec);
     } catch (e) {
+      throwIfDeadlineExceeded();
       console.warn('[readings] query embedding failed; BM25 only:', e instanceof Error ? e.message : e);
     }
     return null;
@@ -184,6 +189,7 @@ export async function runRetrievalLoop(a: RetrievalLoopArgs): Promise<RetrievalL
                                         { languageCode, scheduled: index.hasWeeks });
         }
       } catch (e) {
+        throwIfDeadlineExceeded();
         console.error('[readings] tool call failed:', e);
         content = 'The reading search failed. Tell the student the search is ' +
                   'unavailable right now rather than answering from memory.';

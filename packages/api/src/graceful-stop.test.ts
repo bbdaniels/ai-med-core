@@ -120,10 +120,9 @@ test('a second signal exits 1 at once', async () => {
   }
 });
 
-test('the grace period: its own variable, else five seconds inside Railway\'s draining time, else the default', () => {
+test('the grace period: SHUTDOWN_GRACE_SECONDS, else the default', () => {
   assert.equal(shutdownGraceSeconds({}), DEFAULT_GRACE_SECONDS);
-  assert.equal(shutdownGraceSeconds({ RAILWAY_DEPLOYMENT_DRAINING_SECONDS: '30' }), 25);
-  assert.equal(shutdownGraceSeconds({ RAILWAY_DEPLOYMENT_DRAINING_SECONDS: '3' }), 1);
-  assert.equal(shutdownGraceSeconds({ RAILWAY_DEPLOYMENT_DRAINING_SECONDS: '30', SHUTDOWN_GRACE_SECONDS: '12' }), 12);
-  assert.equal(shutdownGraceSeconds({ RAILWAY_DEPLOYMENT_DRAINING_SECONDS: 'soon', SHUTDOWN_GRACE_SECONDS: '0' }), DEFAULT_GRACE_SECONDS);
+  assert.equal(shutdownGraceSeconds({ SHUTDOWN_GRACE_SECONDS: '25' }), 25);
+  assert.equal(shutdownGraceSeconds({ SHUTDOWN_GRACE_SECONDS: '0' }), DEFAULT_GRACE_SECONDS);
+  assert.equal(shutdownGraceSeconds({ SHUTDOWN_GRACE_SECONDS: 'soon' }), DEFAULT_GRACE_SECONDS);
 });

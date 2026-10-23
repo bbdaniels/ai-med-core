@@ -4,8 +4,8 @@
  *
  * - the chat pipeline (chat/): runChatTurn and the contracts an app supplies
  *   to it, ChatStore (the database) and AppHooks (what differs per app);
- * - readings search (readings.ts) and the one OpenAI client module
- *   (openai-clients.ts);
+ * - readings search (readings.ts), the one OpenAI client module
+ *   (openai-clients.ts) and the one request deadline (deadline.ts);
  * - project.json flag resolution (project-config.ts), the document set of a
  *   key (document-set.ts), and where a content file is on disk (content-files.ts).
  *
@@ -15,6 +15,7 @@
  */
 export * from './talk-url.js';
 export * from './gateway.js';
+export * from './deadline.js';
 export * from './openai-clients.js';
 export * from './readings.js';
 export * from './project-config.js';

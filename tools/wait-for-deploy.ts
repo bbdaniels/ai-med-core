@@ -7,7 +7,7 @@
  *
  * Polls GET /api/health until it answers 200 and reports `--commit` (or a
  * later commit that contains it) in its `commit` field. Then, with `--commit`,
- * waits until the "Push content to Railway" step of the deploy-pages.yml run
+ * waits until the "Push content to the API" step of the deploy-pages.yml run
  * for that commit (or a later run that contains it) has succeeded, through
  * `gh api`, because prompts and grounding reach the API only through that
  * push. Exits 0 when both hold; exits 1, saying what it last saw, when the
@@ -20,7 +20,7 @@
  * Two cases cannot be checked by commit, and both end in a wait for a service
  * that stays healthy (four answers, five seconds apart), exit 0 and a
  * `::warning::` line that GitHub Actions shows on the run: a deployment whose
- * /api/health says `commit: null` (RAILWAY_GIT_COMMIT_SHA is unset), and
+ * /api/health says `commit: null` (GIT_COMMIT_SHA is unset), and
  * `--any-commit`, for a run from a commit Railway does not deploy.
  *
  * The Pages workflow runs it before the content push, and the post-deploy

@@ -40,7 +40,8 @@ export interface FakeRequest {
   body: any;
 }
 
-type Queued = { kind: 'reply'; reply: FakeReply } | { kind: 'reject'; status: number; body: object };
+type Queued = { kind: 'reply'; reply: FakeReply }
+  | { kind: 'reject'; status: number; body: object; headers: Record<string, string> };
 
 export const FAKE_EMBEDDING: readonly number[] = [0.5, 0.25, 0.125, 0.0625, -0.5, -0.25, -0.125, -0.0625];
 
@@ -63,11 +64,13 @@ export class FakeOpenAI {
     this.queue.push({ kind: 'reply', reply: r });
   }
 
-  rejectNext(status: number, body?: object): void {
+  /** `headers` go out with the rejection, e.g. a Retry-After the SDK sleeps on before its retry. */
+  rejectNext(status: number, body?: object, headers: Record<string, string> = {}): void {
     this.queue.push({
       kind: 'reject',
       status,
       body: body ?? { error: { message: `rejected by the fake gateway (${status})`, type: 'invalid_request_error' } },
+      headers,
     });
   }
 
@@ -103,6 +106,7 @@ export class FakeOpenAI {
           const next = this.queue.shift();
           if (next?.kind === 'reject') {
             res.statusCode = next.status;
+            for (const [k, v] of Object.entries(next.headers)) res.setHeader(k, v);
             res.end(JSON.stringify(next.body));
             return;
           }

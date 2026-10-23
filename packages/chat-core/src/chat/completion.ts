@@ -5,6 +5,7 @@
  * never builds or fetches one itself.
  */
 import type { KnownChatModel } from './usage.js';
+import { throwIfDeadlineExceeded } from '../deadline.js';
 
 /** The strict json_schema a structured project asks for. */
 export const CHAT_RESPONSE_SCHEMA = {
@@ -54,7 +55,8 @@ export type Issue = (convo: unknown[], tools: unknown[] | null,
  * An Issue for this model. A structured project asks for the json_schema; a
  * gateway that rejects it drops to json_object, and one that rejects that drops
  * to plain text. `tools` is omitted entirely when there are none, so a project
- * without a corpus sends exactly what it always sent.
+ * without a corpus sends exactly what it always sent. A failure at the
+ * request's deadline is not a rejection of the format, so it ends the ladder.
  */
 export function makeIssuer(client: CompletionClient, o: { model: KnownChatModel; structured: boolean }): Issue {
   const baseChatRequest = {
@@ -75,6 +77,7 @@ export function makeIssuer(client: CompletionClient, o: { model: KnownChatModel;
       return await client.chat.completions.create(
         withTools({ ...schemaRequest, messages: convo }) as any);
     } catch (e) {
+      throwIfDeadlineExceeded();
       console.warn('json_schema rejected, retrying with json_object fallback:', e instanceof Error ? e.message : e);
       try {
         return await client.chat.completions.create(withTools({
@@ -82,6 +85,7 @@ export function makeIssuer(client: CompletionClient, o: { model: KnownChatModel;
           response_format: { type: 'json_object' as const },
         }) as any);
       } catch (e2) {
+        throwIfDeadlineExceeded();
         console.warn('json_object also rejected, retrying without response_format:', e2 instanceof Error ? e2.message : e2);
         return client.chat.completions.create(withTools(request) as any);
       }

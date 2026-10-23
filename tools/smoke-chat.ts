@@ -16,7 +16,7 @@
  *
  * `--commit <sha>` waits first, up to 10 minutes, until the deployment serves
  * that commit, and then until that commit's content push (the deploy-pages.yml
- * step "Push content to Railway") has succeeded (tools/lib/deploy-ready.ts). A
+ * step "Push content to the API") has succeeded (tools/lib/deploy-ready.ts). A
  * merge to main restarts the API and only later pushes prompts and grounding,
  * so a smoke run right after one would otherwise test the old container, the
  * 502s of the restart, or the new code with the old content. Pass the merged

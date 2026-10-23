@@ -3,8 +3,9 @@
  * project's chat config, picks the app's hooks (document chat or the
  * simulator), and hands the pipeline the engine store and a client chosen by
  * the project's payment source. Every error string and status is the
- * pipeline's or the route's as before; the guards (rate limits, access code,
- * public-chat switch) are the server's and run in the order it passes them.
+ * pipeline's or the route's as before, plus 504 when the turn outlives the
+ * request deadline; the guards (rate limits, access code, public-chat switch)
+ * are the server's and run in the order it passes them.
  */
 import express from 'express';
 import path from 'path';
@@ -17,11 +18,13 @@ import {
   runChatTurn,
   ChatInputError,
   resolveDocumentKey,
+  untilDeadline,
   type ChatRequestBody,
 } from '@ai-med/chat-core';
 import { activeProjectPrefix, engineStore, getCaseTemplate, getProjectSetting } from '../database.js';
 import { PRIVATE_CONTENT_ROOT, REPO_ROOT } from '../repo-root.js';
 import { simulationHooks } from '../sim/hooks.js';
+import { answeredDeadline } from '../request-deadline.js';
 
 export function chatRouter(guards: express.RequestHandler[]): express.Router {
   const router = express.Router();
@@ -36,7 +39,8 @@ export function chatRouter(guards: express.RequestHandler[]): express.Router {
       const slug = (usageProject || '').replace(/_+$/, '');
       const config = await loadChatProjectConfig(REPO_ROOT, slug || 'demo', usageProject);
 
-      const turn = await runChatTurn({ messages, documentKey, language, sessionToken }, {
+      // The turn ends at the request's deadline (chat-core deadline.ts), retries included.
+      const turn = await untilDeadline(runChatTurn({ messages, documentKey, language, sessionToken }, {
         repoRoot: REPO_ROOT,
         config,
         store: engineStore,
@@ -49,7 +53,7 @@ export function chatRouter(guards: express.RequestHandler[]): express.Router {
         openIndex: cfg => (cfg.readingsIndexPath ? openReadingsIndex(REPO_ROOT, cfg.slug, cfg.readingsIndexPath) : null),
         // A grounding set's file may be private, delivered to the store by push-content.
         privateContentRoot: PRIVATE_CONTENT_ROOT,
-      });
+      }));
 
       res.json({
         message: turn.message,
@@ -59,6 +63,7 @@ export function chatRouter(guards: express.RequestHandler[]): express.Router {
         caseTemplate: turn.caseTemplate,
       });
     } catch (error) {
+      if (answeredDeadline(res, error)) return;
       if (error instanceof ChatInputError) return res.status(error.status).json({ error: error.message });
       if (error instanceof DirectKeyMissingError) return res.status(503).json({ error: error.message });
       console.error('OpenAI API error:', error);

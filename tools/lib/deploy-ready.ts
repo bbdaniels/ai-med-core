@@ -6,9 +6,8 @@
  * the API. A push that begins before the restart talks to the old container,
  * then to nothing (502 while the new one takes over). So the workflow waits
  * here first, on GET /api/health and its `commit` field, which the server
- * always sends: RAILWAY_GIT_COMMIT_SHA, or null when that is unset (Railway
- * provides it "if the deploy originated from a GitHub trigger",
- * https://docs.railway.com/reference/variables).
+ * always sends: GIT_COMMIT_SHA, or null when that is unset (the host sets it
+ * from the build; the Pi image takes it as a build argument, see Dockerfile).
  *
  * What a healthy answer means, by its `commit`:
  *
@@ -20,10 +19,12 @@
  *                            waiting, and fail at the deadline.
  *   no `commit` key          a build from before the key existed, so the old
  *                            container: keep waiting.
- *   null                     this deployment does not report its commit (the
- *                            variable is unset: `railway up`, or Railway did
- *                            not provide it). Nothing can be compared, so the
- *                            wait is for a service that stays healthy
+ *   null                     this deployment does not report its commit
+ *                            (GIT_COMMIT_SHA is unset: an image built without
+ *                            the build argument, or a Railway deployment, which
+ *                            sets only its own RAILWAY_GIT_COMMIT_SHA). Nothing
+ *                            can be compared, so the wait is for a service
+ *                            that stays healthy
  *                            (`stableAnswers` answers running), and the result
  *                            says `verified: false` so the caller can warn.
  *
@@ -60,7 +61,7 @@ export interface Ready {
   /**
    * True when the commit was checked. False when the wait fell back to a
    * stable healthy service: no commit was asked for, or the deployment
-   * reports none (`commit: null`, RAILWAY_GIT_COMMIT_SHA unset).
+   * reports none (`commit: null`, GIT_COMMIT_SHA unset).
    */
   verified: boolean;
   attempts: number;
@@ -161,9 +162,9 @@ export function unverifiedWarning(ready: Ready, expected: string | null): string
     return '::warning::The deployment was not checked against a commit (this run is not a push to main); ' +
       `it is healthy and serving ${ready.commit ? ready.commit.slice(0, 7) : 'an unreported commit'}. Content is pushed to it as it is.`;
   }
-  return '::warning::The deployment does not report its commit: /api/health says commit null, so RAILWAY_GIT_COMMIT_SHA ' +
+  return '::warning::The deployment does not report its commit: /api/health says commit null, so GIT_COMMIT_SHA ' +
     `is not set in the running container. Could not confirm it serves ${expected.slice(0, 7)}; went ahead on a service ` +
-    'that stayed healthy. Check the variable (Railway provides it for deployments triggered from GitHub).';
+    'that stayed healthy. Check the variable (the image sets it from its GIT_COMMIT_SHA build argument).';
 }
 
 /**
@@ -194,7 +195,7 @@ export function unverifiedWarning(ready: Ready, expected: string | null): string
  * wait-for-deploy.ts takes --no-content-push there.
  */
 export const CONTENT_WORKFLOW = 'deploy-pages.yml';
-export const CONTENT_STEP = 'Push content to Railway';
+export const CONTENT_STEP = 'Push content to the API';
 
 export interface ContentRun { id: number; headSha: string; status: string; conclusion: string | null; url: string }
 export interface ContentStep { status: string; conclusion: string | null }

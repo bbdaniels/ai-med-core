@@ -68,6 +68,31 @@ export async function createProjectSchema(): Promise<void> {
 }
 
 /**
+ * TLS to Postgres is what DATABASE_URL's `sslmode` says, read by node-postgres
+ * with libpq's meanings (`uselibpqcompat=true`, added here unless the URL sets
+ * it): no sslmode, or `disable`, is no TLS (the Pi's Postgres, on the compose
+ * network); `require` is TLS without verifying the certificate (with
+ * `sslrootcert`, verified against that CA but not the host name); `verify-ca`
+ * verifies against `sslrootcert`, which it requires; `verify-full` verifies the
+ * certificate and the host name. One difference from libpq: node-postgres
+ * cannot fall back, so `prefer` (and `allow`) is TLS without verification, and
+ * fails against a server without TLS. PGSSLMODE applies when the URL has no
+ * sslmode, as in libpq.
+ */
+export function postgresConnectionString(dbUrl: string): string {
+  const url = new URL(dbUrl);
+  if (!url.searchParams.has('uselibpqcompat')) url.searchParams.set('uselibpqcompat', 'true');
+  return url.toString();
+}
+
+/** For the boot log: the sslmode in force, never the URL (it holds the password). */
+function postgresTlsDescription(dbUrl: string): string {
+  const mode = new URL(dbUrl).searchParams.get('sslmode');
+  if (mode) return `sslmode=${mode}`;
+  return process.env.PGSSLMODE ? `PGSSLMODE=${process.env.PGSSLMODE}` : 'no sslmode: no TLS';
+}
+
+/**
  * Open the connection DATABASE_URL names and create the startup project's
  * tables. Seeding is not done here: it writes both owners' rows, so it lives
  * above both stores, in init.ts (initDatabase).
@@ -86,22 +111,11 @@ export async function connectDatabase(): Promise<void> {
   }
   
   if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
-    // PostgreSQL (Production - Digital Ocean)
     console.log('🐘 Initializing PostgreSQL connection...');
     dbType = 'postgres';
     
-    // Note: Digital Ocean provides ?sslmode=require in DATABASE_URL
-    // The sslmode parameter in the connection string can conflict with our SSL config
-    // So we remove it and handle SSL ourselves
-    const cleanUrl = dbUrl.replace(/[?&]sslmode=\w+/, '');
-    
-    pgPool = new Pool({
-      connectionString: cleanUrl,
-      ssl: {
-        rejectUnauthorized: false  // Accept Digital Ocean's self-signed certificates
-      },
-    });
-    console.log('✅ PostgreSQL pool created');
+    pgPool = new Pool({ connectionString: postgresConnectionString(dbUrl) });
+    console.log(`✅ PostgreSQL pool created (${postgresTlsDescription(dbUrl)})`);
     
     console.log('📋 Creating database schema...');
     await initPostgresSchema();

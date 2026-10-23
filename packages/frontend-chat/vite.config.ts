@@ -67,6 +67,11 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      // The evaluation dashboard page, served by the API (packages/api/src/sim/eval.ts).
+      '/eval': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
   build: {

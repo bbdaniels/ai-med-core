@@ -12,11 +12,12 @@ The API is one of two applications' homes on the chat engine, `@ai-med/chat-core
 - `src/sim/hooks.ts`: `simulationHooks()`. The simulator's prompt preamble, the case template a response names, and the first turn's raw prompt written to `transcripts/initial_*.txt` (a talk prompt holds its documents, which never go to disk).
 - `src/db/`: the database, split by owner (below). `src/database.ts` re-exports it, so import sites import from there.
 - `src/grading.ts`, `src/npj26.ts`: real-time feedback grading, and the npj26 review tool's global tables.
+- `src/request-deadline.ts`: the request deadline on the HTTP side. Every request runs under one deadline (chat-core's `deadline.ts`, `REQUEST_DEADLINE_MS`, 85 s, under Cloudflare's 524 at 100 s); every outbound call (the OpenAI clients, every Kobo and realtime fetch, through `deadlineFetch`) stops at it, and a route that calls out answers 504 `{error}` when it passes (`answeredDeadline` first in its catch; work with an OpenAI SDK call is awaited through `untilDeadline`, since the SDK's retry sleep cannot be aborted). A new outbound call uses `deadlineFetch`, never bare `fetch`. Tests: `src/request-deadline.test.ts` (the real server with a 1.5 s deadline and a slow gateway and Kobo).
 
 ## Database
 
 - **Dev**: SQLite via `better-sqlite3` (path from `DATABASE_URL=sqlite://./local-dev.db`)
-- **Prod**: PostgreSQL via `pg` (standard connection string)
+- **Prod**: PostgreSQL via `pg` (standard connection string). TLS follows the URL's `sslmode` with libpq's meanings, read by node-postgres itself (`postgresConnectionString` in `db/connection.ts`): none or `disable` is no TLS, `require` is TLS without verification, `verify-full` verifies. Tests: `src/postgres-tls.test.ts`
 - **Multi-tenancy**: `X-Project` header triggers `runWithProject()` which sets the table prefix in `AsyncLocalStorage`. Project-scoped queries resolve their table through `activeAdminTable()` / `activeAssignmentsTable()` (e.g., `demo_admin_content`, `cbs_admin_content`).
 - **Schema**: Single `admin_content` table with `content_type` discriminator (`system_prompt`, `vignette`, `kobo_form_url`, `kobo_form_uid`, `languages`, `case_template`). Separate `vignette_assignments` table for user-to-vignette mapping. Global tables (no prefix): `token_usage`, `qa_log`, `session_log`, `project_settings`.
 - **Split by owner** (`src/db/`). One connection and one tenancy context serve both apps, and `admin_content` is one physical table holding both apps' rows, so the SQL stays here rather than in chat-core; chat-core owns the contract (`ChatStore`), this package the implementation.
@@ -45,6 +46,7 @@ The API is one of two applications' homes on the chat engine, `@ai-med/chat-core
 - `GET/POST /api/admin/content` -- Get/save all content
 - `POST/DELETE /api/admin/vignette` -- Manage vignettes
 - `POST /api/admin/vignette-assignments` -- Assign vignettes to users
+- `GET /api/admin/eval`, `GET /api/admin/eval/index.json`, `GET /api/admin/eval/submissions/<file>.json` -- the daily grader's results for the project in `X-Project` (`src/sim/eval.ts`): whether it has any and the dashboard's path, the index, one submission (full transcript, notes, scores). 401 without a login, 403 for a token scoped to another project, 400 when `X-Project` names no project; every answer `no-store`. The dashboard page itself (`eval/dashboard`, code only) is served at `GET /eval/<url-slug>/` for a project with results, so its requests are same-origin and carry the admin cookie. These results never go to Pages. Tests: `src/eval-dashboard.test.ts`.
 - `GET /api/admin/qa-log` -- Read back the durable conversation log for the active project. Params: `days` (relative, default 30) **or** `since=YYYY-MM-DD` (plus optional `until=YYYY-MM-DD`, inclusive of that whole day, UTC); `limit` (default 500, cap 2000) and `offset` for pagination. Returns `{project, days, since, until, limit, offset, total, returned, hasMore, rows[]}` with rows oldest-first. CLI wrapper: `tools/export-conversations.ts`.
 
 ## Inline Follow-up Suggestions (enableFollowups)
@@ -132,7 +134,7 @@ Useful for eyeballing a transcript during local development; worthless as a reco
 
 **Two-Tier System:**
 1. **Real-time feedback** (student-facing): the platform model (`DEFAULT_CHAT_MODEL` in chat-core's `chat/usage.ts`, `gpt-4.1-mini`) via `POST /api/grade-session`
-2. **Batch evaluation** (instructor-facing): `claude-opus-4` via GitHub Actions cron
+2. **Batch evaluation** (instructor-facing): Claude (Opus 5.5) via the Messages API in a GitHub Actions cron (`eval/CLAUDE.md`); its results are read through the admin eval routes above
 
 ### Real-Time Grading Flow (`/api/grade-session`)
 
@@ -196,6 +198,6 @@ npm run dev      # tsx watch
 npm start        # sh start.sh: NODE_ENV=production, then exec node dist/server.js
 ```
 
-`start.sh` is the production start path. Railway runs it as `exec sh packages/api/start.sh`, so node is the container's main process and gets the SIGTERM a rollover sends; under `npm start` npm got it and reported a crash. `src/shutdown.ts` is the one place the stop is handled: no new connections, requests in flight finish within the grace period (`SHUTDOWN_GRACE_SECONDS`, else five seconds inside `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`, else 10), the database closes, exit 0. Anything new that holds the event loop open (a timer, a watcher, a second pool) is closed through the `close` passed to `installGracefulShutdown` in `server.ts`. Tests: `src/graceful-stop.test.ts`. Details: `docs/deployment.md` §4, "Stopping a deployment".
+`start.sh` is the production start path. Railway runs it as `exec sh packages/api/start.sh`, so node is the container's main process and gets the SIGTERM a rollover sends; under `npm start` npm got it and reported a crash. `src/shutdown.ts` is the one place the stop is handled: no new connections, requests in flight finish within the grace period (`SHUTDOWN_GRACE_SECONDS`, else 10; set it a few seconds under the host's stop timeout), the database closes, exit 0. Anything new that holds the event loop open (a timer, a watcher, a second pool) is closed through the `close` passed to `installGracefulShutdown` in `server.ts`. Tests: `src/graceful-stop.test.ts`. Details: `docs/deployment.md` §4, "Stopping a deployment".
 
 It also serves the talk pages (`src/talk/pages.ts`): every project whose project.json resolves to app "talk", at `/<url-slug>/`, from the builds `tools/build-frontends.ts --app talk` writes to `packages/frontend-chat/dist-talk/` (`npm run build:railway` runs it at deploy). The pages call `/api` on their own origin. Hashed `assets/` are cached for a year, everything else (index.html first) is `no-cache`; a path with no file and no extension gets index.html, a missing file a 404. A project's `urlAliases` redirect (301) to its slug; a project with `embedOrigins` is sent `frame-ancestors 'self' <origins>`. With a canonical host (`TALK_CANONICAL_HOST`; unset or empty means none, in every environment, and the engine has no default) a talk path on any other host redirects there and `/` on it redirects to `TALK_HOME_URL` (likewise off unless set). The boot log says which is in force. Only talk paths and `/` are answered, so `/api`, `/t` and `/npj26` behave the same on every host. Simulator projects are never served here. Tests: `src/talk-pages.test.ts`.

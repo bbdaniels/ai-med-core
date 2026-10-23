@@ -84,10 +84,27 @@ function toTitleCase(key) {
 
 // ============ Data Loading ============
 
+// The API serves this page at /eval/<url-slug>/ and its data at /api/admin/eval
+// on the same origin, behind the project admin login (packages/api/src/sim/eval.ts).
+// The admin cookie rides along on these same-origin requests; X-Project names
+// the project, and a token scoped to another project is refused.
+const EVAL_PROJECT = document.querySelector('meta[name="ai-med-project"]')?.content || '';
+
+class EvalAuthError extends Error {}
+
+async function fetchEvalData(path) {
+    const response = await fetch(`/api/admin/eval/${path}`, {
+        credentials: 'same-origin',
+        headers: { 'X-Project': EVAL_PROJECT },
+    });
+    if (response.status === 401 || response.status === 403) throw new EvalAuthError(String(response.status));
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${path}`);
+    return response.json();
+}
+
 async function loadData() {
     try {
-        const response = await fetch('data/index.json');
-        data = await response.json();
+        data = await fetchEvalData('index.json');
 
         // Set page title
         document.getElementById('dashboard-title').textContent =
@@ -127,8 +144,9 @@ async function loadData() {
 
     } catch (error) {
         console.error('Error loading data:', error);
-        document.getElementById('summary-stats').innerHTML =
-            '<p style="color: red;">Error loading data. Make sure data/index.json exists.</p>';
+        document.getElementById('summary-stats').innerHTML = error instanceof EvalAuthError
+            ? '<p style="color: red;">Sign in on this project\'s admin page, then reload. Evaluation results are shown only to its admins.</p>'
+            : '<p style="color: red;">Error loading the evaluation results.</p>';
     }
 }
 
@@ -140,8 +158,7 @@ async function loadSubmissionDetail(uid, scenario) {
     if (submissionCache[filename]) return submissionCache[filename];
 
     try {
-        const response = await fetch(`data/submissions/${filename}.json`);
-        const detail = await response.json();
+        const detail = await fetchEvalData(`submissions/${encodeURIComponent(filename)}.json`);
         submissionCache[filename] = detail;
         return detail;
     } catch (error) {

@@ -154,7 +154,7 @@ test('the server admits exactly the projects of the checkout it reads', async ()
     cases: { systemPrompt: '', vignettes: [] }, languages: ['en'],
     deployment: { tablePrefix: 'fixture_only' },
   }));
-  const own = await startServer({ root, env: { RAILWAY_GIT_COMMIT_SHA: 'c0ffee1234567890c0ffee1234567890c0ffee12' } });
+  const own = await startServer({ root, env: { GIT_COMMIT_SHA: 'c0ffee1234567890c0ffee1234567890c0ffee12' } });
   try {
     // /api/health names the commit the deployment was built from, and
     // tools/lib/deploy-ready.ts accepts it as the commit being waited for.

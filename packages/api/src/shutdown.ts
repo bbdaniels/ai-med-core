@@ -1,10 +1,10 @@
 /**
  * Graceful stop, in one place.
  *
- * Railway replaces a deployment by sending the old container SIGTERM and,
- * after the service's draining time, SIGKILL. A process that dies of the
- * signal exits non-zero, which Railway reports as a crash; requests in flight
- * are reset. So on SIGTERM or SIGINT the server:
+ * A host replaces a deployment by sending the old container SIGTERM and, after
+ * its stop timeout, SIGKILL (Docker's stop_grace_period; Railway's draining
+ * time). A process that dies of the signal exits non-zero, which the host
+ * reports as a crash; requests in flight are reset. So on SIGTERM or SIGINT the server:
  *
  * 1. stops accepting connections and closes the idle keep-alive ones;
  * 2. lets requests in flight finish, each answered with `Connection: close`
@@ -17,17 +17,15 @@
  * stop was asked for and is done, and the line says how many
  * requests were cut. A second signal exits 1 at once.
  *
- * The grace period must be shorter than the platform's draining time, or the
- * SIGKILL arrives first. It is SHUTDOWN_GRACE_SECONDS when set; otherwise five
- * seconds less than RAILWAY_DEPLOYMENT_DRAINING_SECONDS (the service variable
- * that sets Railway's draining time) when that is set; otherwise 10 seconds.
+ * The grace period must be shorter than the time the platform allows between
+ * SIGTERM and SIGKILL, or the SIGKILL arrives first. It is
+ * SHUTDOWN_GRACE_SECONDS when set, otherwise 10 seconds. The host sets it with
+ * its stop timeout: the Pi's compose file sets 25 with stop_grace_period 30s.
  */
 import type { Server } from 'node:http';
 import type { RequestHandler } from 'express';
 
 export const DEFAULT_GRACE_SECONDS = 10;
-/** Kept between the grace period and the platform's SIGKILL. */
-export const DRAINING_MARGIN_SECONDS = 5;
 
 const positive = (raw: string | undefined): number | null => {
   const n = Number((raw ?? '').trim());
@@ -35,11 +33,7 @@ const positive = (raw: string | undefined): number | null => {
 };
 
 export function shutdownGraceSeconds(env: NodeJS.ProcessEnv = process.env): number {
-  const own = positive(env.SHUTDOWN_GRACE_SECONDS);
-  if (own !== null) return own;
-  const draining = positive(env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS);
-  if (draining !== null) return Math.max(1, draining - DRAINING_MARGIN_SECONDS);
-  return DEFAULT_GRACE_SECONDS;
+  return positive(env.SHUTDOWN_GRACE_SECONDS) ?? DEFAULT_GRACE_SECONDS;
 }
 
 let stopping = false;

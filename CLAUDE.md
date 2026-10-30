@@ -48,7 +48,7 @@ PORT=3001
 
 ## Deployment
 
-- **Backend + DB**: Any Node.js host with PostgreSQL (Railway, Render, Fly.io, etc.)
+- **Backend + DB**: Any Node.js host with PostgreSQL (a Docker host, Render, Fly.io, etc.)
 - **Frontend**: Any static host (GitHub Pages, Netlify, Vercel, etc.)
 
 Push project content to a deployed backend:

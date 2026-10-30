@@ -76,7 +76,7 @@ See [`CREATING-A-PROJECT.md`](CREATING-A-PROJECT.md) for step-by-step instructio
 ## Deployment
 
 The platform is designed for:
-- **Backend**: Any Node.js host (Railway, Render, Fly.io, etc.) with PostgreSQL
+- **Backend**: Any Node.js host (a Docker host, Render, Fly.io, etc.) with PostgreSQL
 - **Frontend**: Static hosting (GitHub Pages, Netlify, Vercel, etc.)
 
 ```bash

@@ -29,6 +29,10 @@ export interface LanguageUISection {
     accessHint?: string
     getStarted: string
     languageLabel: string
+    /** Heading above consentParagraphs; empty string hides it. */
+    consentHeading?: string
+    /** Label of the voice-conversation button on the welcome screen. */
+    voiceEntry?: string
   }
   chat: {
     /** Optional starter questions shown on an untouched conversation. */

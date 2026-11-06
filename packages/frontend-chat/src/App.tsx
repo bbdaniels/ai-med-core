@@ -639,7 +639,7 @@ function ChatInterface() {
           boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
         }}
       >
-        🎙 Prefer to talk? Start a voice conversation
+        🎙 {t('welcome', 'voiceEntry') || 'Prefer to talk? Start a voice conversation'}
       </button>
     )}
 

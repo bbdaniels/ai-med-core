@@ -76,7 +76,8 @@ before(async () => {
   for (const slug of ['fixture-talk', 'fixture-deck', 'fixture-sim']) writeBuild(dist, slug);
   h = await startServer({
     root,
-    env: { TALK_DIST_DIR: dist, TALK_CANONICAL_HOST: CANONICAL, TALK_HOME_URL: HOME },
+    // The platform site on a host of its own, with no build: tested in site.test.ts.
+    env: { TALK_DIST_DIR: dist, TALK_CANONICAL_HOST: CANONICAL, TALK_HOME_URL: HOME, SITE_HOST: 'site.example.test' },
   });
 });
 

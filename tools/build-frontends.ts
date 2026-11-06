@@ -2,7 +2,7 @@
  * Build the per-project frontends, one Vite build per project, from project.json.
  *
  *   npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk
- *   npx tsx tools/build-frontends.ts --app sim  --out _site --api-base https://api.example.com
+ *   npx tsx tools/build-frontends.ts --app sim  --out packages/frontend-chat/dist-site
  *
  * `--app` picks the projects: `talk` builds every project whose project.json
  * resolves to app "talk" (the talk page, src/talk-main.tsx); `sim` builds every
@@ -11,9 +11,9 @@
  * with `_` written `-` (projectUrlSlug in @ai-med/chat-core).
  *
  * `--api-base` sets VITE_API_BASE_URL, for a page served from a host other than
- * the API's (GitHub Pages). Without it the variable is unset and the page calls
- * `/api` on its own origin, which is how the API server serves the talk pages
- * (`npm run build:server` builds them with no `--api-base`).
+ * the API's. Without it the variable is unset and the page calls `/api` on its
+ * own origin, which is how the API server serves every page (`npm run
+ * build:server` builds them all with no `--api-base`).
  *
  * A project's own static files ride along: `projects/<dir>/static/*` is copied
  * to the build's root and `projects/<dir>/images/*.png` to its `images/`.
@@ -22,9 +22,9 @@
  * to the chosen app). AI_MED_REPO_ROOT, when set, names the checkout whose
  * projects/ are read, as in validate-projects.ts.
  *
- * This is the one build path for project frontends: the Pages workflow
- * (.github/workflows/deploy-pages.yml) and the API image's build
- * (`npm run build:server`, Dockerfile) both call it, so the two cannot drift.
+ * This is the one build path for project frontends: the API image's build
+ * (`npm run build:server`, Dockerfile) calls it for the talk pages and, through
+ * tools/build-site.ts, for the simulators.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

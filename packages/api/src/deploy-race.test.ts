@@ -1,6 +1,6 @@
 // Run: npm -w @ai-med/api test   (node:test under tsx)
 //
-// A merge to main restarts the API on its host while the Pages workflow pushes
+// A merge to main restarts the API on its host while the content workflow pushes
 // content to it, so for a while the edge answers 502. Two rules cover that,
 // both tested here against a fake server that plays the restart:
 //
@@ -248,7 +248,7 @@ test('content push: a failed or skipped push step fails at once, with the run', 
   }
 });
 
-test('content push: a Pages failure after a successful push step is still ready', async () => {
+test('content push: a failure after a successful push step is still ready', async () => {
   const pushed = await pushWait(() => [runOf(7, NEW, 'completed', 'failure')], () => ({ status: 'completed', conclusion: 'success' }));
   assert.equal(pushed.runId, 7);
 });

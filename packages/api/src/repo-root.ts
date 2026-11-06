@@ -47,6 +47,14 @@ export const PACKAGE_DEFAULTS_DIR = path.resolve(here, '../defaults');
 export const DEFAULT_TALK_DIST_DIR = path.resolve(here, '../../frontend-chat/dist-talk');
 
 /**
+ * packages/frontend-chat/dist-site: the platform site the server serves
+ * (sim/site.ts): the landing files at its root and one `<url-slug>/` per
+ * simulator (tools/build-site.ts, run by npm run build:server). Found from this
+ * package like DEFAULT_TALK_DIST_DIR; SITE_DIST_DIR overrides it.
+ */
+export const DEFAULT_SITE_DIST_DIR = path.resolve(here, '../../frontend-chat/dist-site');
+
+/**
  * eval/dashboard: the evaluation dashboard's page (HTML, JS, CSS; no data),
  * served behind the admin login by sim/eval.ts. Code, not checkout content, so
  * like DEFAULT_TALK_DIST_DIR it is found from this package and a test's

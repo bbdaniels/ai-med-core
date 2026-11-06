@@ -133,12 +133,12 @@ Reference: `projects/haivn_eip/` is the canonical formless example (EIP Q&A advi
 
 ### Where a talk page is served
 
-The API server serves every talk project's page itself, at `https://chat.benjaminbdaniels.com/<url-slug>/`, on one origin with `/api` (`packages/api/src/talk/pages.ts`). The URL slug is the directory name with `_` written `-`. The API image builds the pages (`npm run build:server` runs `tools/build-frontends.ts --app talk`), so a new talk project needs nothing beyond its `projects/<dir>/`. Simulator projects stay static sites on GitHub Pages at `https://ai-med.live/<url-slug>/`, calling the API at `https://api.ai-med.live`.
+The API server serves every talk project's page itself, at `https://chat.benjaminbdaniels.com/<url-slug>/`, on one origin with `/api` (`packages/api/src/talk/pages.ts`). The URL slug is the directory name with `_` written `-`. The API image builds the pages (`npm run build:server` runs `tools/build-frontends.ts --app talk`), so a new talk project needs nothing beyond its `projects/<dir>/`. Simulator projects are served by the same server at `https://ai-med.live/<url-slug>/`, calling `/api` on that origin (`packages/api/src/sim/site.ts`).
 
 - A talk path asked of any other host the server answers on (`api.ai-med.live`) redirects (301) to the same path on the chat host; `/` on the chat host redirects to the author's site. `/api` answers on every host.
 - `urlAliases` keeps an old link working: `/stitch/...` answers 301 to `/haivn-eip/...`. `tools/validate-projects.ts` refuses an alias on a project that is not talk, and an alias another project claims as its slug or alias.
 - A project that lists `embedOrigins` (decks) may be framed only by those origins and its own: the page is sent with `Content-Security-Policy: frame-ancestors 'self' <origins>`. A project without them (ppol5013 inside Canvas, the papers popout) sends no frame-ancestors.
-- On `ai-med.live` a talk project's path is a redirect stub to the same path, query and fragment on the chat host, and `404.html` sends deeper paths and aliases there too, from a map generated from `project.json` (`tools/build-talk-redirects.ts`, run by `deploy-pages.yml`). A new talk project or alias needs no edit there. decks is the one exception for now: Pages still builds it, because the published deck frames `ai-med.live/decks/`.
+- On `ai-med.live` a talk project's path, and any alias of it, redirects (301) to the same path and query on the chat host. A new talk project or alias needs no edit there. decks is the one exception for now: `ai-med.live` serves it too (`SITE_TALK_PAGES`), because the published deck frames `ai-med.live/decks/`.
 
 ### talkManifest — externally embedded advisors and the public-chat kill switch
 

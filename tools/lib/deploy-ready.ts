@@ -3,7 +3,7 @@
  *
  * A merge to main starts two things at once: the API host (the Raspberry Pi,
  * whose deployer, the runner job hosting-deploy, pulls main every five
- * minutes) rebuilds and restarts the API, and the Pages
+ * minutes) rebuilds and restarts the API, and the content
  * workflow pushes that commit's content to the API. A push that begins before
  * the restart talks to the old container, then to nothing (502 while the new
  * one takes over). So the workflow waits here first, on GET /api/health and

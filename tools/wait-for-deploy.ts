@@ -28,7 +28,7 @@
  * /api/health says `commit: null` (GIT_COMMIT_SHA is unset), and
  * `--any-commit`, for a run from a commit the host does not deploy.
  *
- * The Pages workflow runs it before the content push, and the post-deploy
+ * The content workflow (deploy-pages.yml) runs it before the content push, and the post-deploy
  * smoke (tools/smoke-chat.ts --commit) runs the same wait, because a merge to
  * main restarts the API while both are starting.
  */

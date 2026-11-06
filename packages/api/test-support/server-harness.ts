@@ -195,6 +195,8 @@ export async function startServer(o: StartOptions = {}): Promise<Harness> {
     PRIVATE_CONTENT_ROOT: '', ALLOWED_ORIGINS: '',
     // No talk pages unless a test supplies builds; no canonical-host redirect.
     TALK_DIST_DIR: path.join(tmp, 'no-talk-dist'), TALK_CANONICAL_HOST: '', TALK_HOME_URL: '',
+    // No site build unless a test supplies one; the site on every host.
+    SITE_DIST_DIR: path.join(tmp, 'no-site-dist'), SITE_HOST: '',
     ...pinned,
     ...(o.env ?? {}),
   };

@@ -72,6 +72,7 @@ import {
 } from './npj26.js';
 import { EVAL_DASHBOARD_DIR, PRIVATE_CONTENT_ROOT, REPO_ROOT } from './repo-root.js';
 import { evalRoutes } from './sim/eval.js';
+import { SITE_TALK_PAGES, siteRouter, siteSettings } from './sim/site.js';
 import { talkRoutes } from './talk/routes.js';
 import { talkPagesRouter, talkPagesSettings } from './talk/pages.js';
 import { chatRouter } from './routes/chat.js';
@@ -224,7 +225,7 @@ app.use('/api', cors(corsOptions));
 app.options('/api/*', cors(corsOptions));
 app.use('/t', cors(corsOptions));
 app.options('/t/*', cors(corsOptions));
-// npj26 review tool. Its page is served from GitHub Pages (ai-med.live) and
+// npj26 review tool. Its page is served by the platform site (sim/site.ts, ai-med.live) and
 // calls this API cross-origin, so it needs the same allowlist the /api routes
 // get -- it is deliberately NOT under /api, which would put it behind the
 // X-Project middleware for tables that are global by design.
@@ -707,12 +708,16 @@ app.post('/npj26/:token/:cellId', npj26Limiter, async (req, res) => {
 
 // The talk pages, served here on one origin with /api (talk/pages.ts): every
 // talk project at /<url-slug>/ on the canonical host, redirected there from any
-// other host. It answers only talk paths and /, so the routes below are untouched.
-// Simulator pages are static sites on their own host and are never served here.
+// other host but SITE_TALK_PAGES on the site host. It answers only talk paths
+// and /, so the routes below are untouched. Simulator pages are the platform
+// site's (sim/site.ts), mounted after every route.
+const site = siteSettings(process.env);
 app.use(talkPagesRouter({
   projectsDir: path.join(REPO_ROOT, 'projects'),
   projects: validProjectSlugs,
   ...talkPagesSettings(process.env),
+  siteHost: site.host,
+  sitePages: SITE_TALK_PAGES,
 }));
 
 // The evaluation dashboards (sim/eval.ts): the page at /eval/<url-slug>/ and
@@ -2706,6 +2711,15 @@ app.get('/api/health', (_req, res) => {
     tablePrefix: activeProjectPrefix() || 'not set',
   });
 });
+
+// The platform site (sim/site.ts): the simulator pages, the landing, the
+// global admin and the npj26 page, on SITE_HOST. Mounted after every route,
+// because on the site host a path nothing else answered redirects to /.
+app.use(siteRouter({
+  projectsDir: path.join(REPO_ROOT, 'projects'),
+  projects: validProjectSlugs,
+  ...site,
+}));
 
 const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

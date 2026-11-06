@@ -39,7 +39,7 @@ function appEntry(): Plugin {
 
 export default defineConfig({
   plugins: [react(), appEntry()],
-  // For GitHub Pages: set VITE_BASE_PATH at build time (e.g. "/ai-med/demo/")
+  // The page's base path, set at build time by tools/build-frontends.ts (e.g. "/demo/")
   base: process.env.VITE_BASE_PATH || '/',
   resolve: {
     alias: {

@@ -342,7 +342,7 @@ Also update `kobo/registry.json` to keep the cross-project registry current.
 
 ### 10. No build step to add
 
-The deploy builds every project from its `project.json` with `tools/build-frontends.ts`: a simulator onto GitHub Pages at `ai-med.live/<url-slug>/`, a talk project (`"app": "talk"`) into the API server's deploy, served at `/<url-slug>/` on the deployment's talk host (`TALK_CANONICAL_HOST`) (the URL slug is the directory name with `_` written `-`). `static/*` and `images/*.png` are copied when the project has them. The content push step and eval dashboard copy step already loop over all projects automatically.
+The deploy builds every project from its `project.json` with `tools/build-frontends.ts`: a simulator into the API server's image, served at `/<url-slug>/` on the deployment's site host (`SITE_HOST`), a talk project (`"app": "talk"`) likewise, served at `/<url-slug>/` on the deployment's talk host (`TALK_CANONICAL_HOST`) (the URL slug is the directory name with `_` written `-`). `static/*` and `images/*.png` are copied when the project has them. The content push step already loops over all projects automatically.
 
 ### 11. Push to main and verify
 
@@ -353,9 +353,8 @@ git push
 ```
 
 On push to main:
-- **GitHub Actions** builds the frontend and deploys to GitHub Pages at `https://ai-med.live/<url-slug>/` (a talk project's page is built and served by the API server instead, at `/<url-slug>/` on the talk host)
 - **GitHub Actions** runs `push-content.ts` for each project, pushing vignettes, system prompt, Kobo config, and languages to the API, once the API serves the commit
-- **The Pi** rebuilds the API from main within five minutes (the runner job `hosting-deploy`) (its own `projects/` directory is part of the image, so a new project is always a rebuild)
+- **The Pi** rebuilds the API from main within five minutes (the runner job `hosting-deploy`), and the image serves the new project's page at `https://ai-med.live/<url-slug>/` (its own `projects/` directory is part of the image, so a new project is always a rebuild)
 
 ### 12. Verify the deployment
 

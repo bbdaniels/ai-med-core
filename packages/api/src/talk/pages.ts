@@ -6,15 +6,13 @@
  * its Vite build in TALK_DIST_DIR/<url-slug>/, which `tools/build-frontends.ts
  * --app talk` writes (npm run build:server runs it at build time). A simulator project is
  * never served here, even if a build of it sits in that directory: simulators
- * are static sites with their own host.
+ * are served by the platform site on its own host (../sim/site.ts).
  *
  * - `GET /<slug>` answers 301 to `/<slug>/`; a project's `urlAliases` answer 301
  *   to the same path under its slug.
- * - Vite's content-hashed files under `assets/` are cached for a year,
- *   immutable; everything else, index.html first, is `no-cache` (revalidated by
- *   ETag every load), so a deploy shows up on the next page load.
- * - A path with no file and no extension is the page's own route: it gets
- *   index.html. A missing file with an extension is a 404, never HTML.
+ * - Each page is served by the rule in ../static-pages.ts (hashed assets cached
+ *   for a year, everything else revalidated; a route inside the page gets
+ *   index.html; a missing file is a 404).
  * - A project that declares `embedOrigins` may be framed only by its own origin
  *   and those: `Content-Security-Policy: frame-ancestors 'self' <origins>`. A
  *   project that declares none sends no frame-ancestors (an LMS, for one, frames
@@ -22,7 +20,8 @@
  * - With a canonical host set, a talk path asked of any other host (the API's
  *   own domains, the platform domain) answers 301 to the same path and query on
  *   the canonical host, and `/` on the canonical host answers 302 to the home
- *   URL. Nothing outside the talk paths and `/` is touched, so `/api`, `/t` and
+ *   URL. The exception is `sitePages` on `siteHost`, served there too.
+ *   Nothing outside the talk paths and `/` is touched, so `/api`, `/t` and
  *   `/npj26` answer on every host exactly as before.
  *
  * The router reads every project.json once, at startup, as the slug allowlist
@@ -31,6 +30,7 @@
  */
 import express from 'express';
 import { existsSync, readFileSync } from 'fs';
+import { spaPage, queryOf, type PageHandler } from '../static-pages.js';
 import path from 'path';
 import { projectUrlSlug, resolveProjectFlags, urlAliases } from '@ai-med/chat-core';
 import { DEFAULT_TALK_DIST_DIR } from '../repo-root.js';
@@ -74,6 +74,14 @@ export interface TalkPagesOptions {
   canonicalHost: string;
   /** Where `/` on the canonical host goes; '' leaves `/` alone. */
   homeUrl: string;
+  /**
+   * The platform site's host (sim/site.ts, SITE_HOST) and the talk pages
+   * served there as well as on the canonical host (url slugs): a page framed
+   * at a site address that cannot change yet. Every other talk path on the
+   * site host redirects to the canonical host as on any other host.
+   */
+  siteHost?: string;
+  sitePages?: Iterable<string>;
 }
 
 interface TalkPage {
@@ -83,9 +91,6 @@ interface TalkPage {
   built: boolean;
   frameAncestors: string | null;
 }
-
-const ASSET_CACHE = 'public, max-age=31536000, immutable';
-const PAGE_CACHE = 'no-cache';
 
 /** The talk projects and the aliases that point at them, read from project.json. */
 export function talkPages(o: Pick<TalkPagesOptions, 'projectsDir' | 'projects' | 'distDir'>): {
@@ -138,25 +143,14 @@ export function talkPagesRouter(o: TalkPagesOptions): express.Router {
     console.log(`💬 Talk pages${canonical ? ` on ${canonical}` : ''}: ${listed.join(', ')}`);
   }
 
-  // One static handler per page, built once. index.html is never served by it
-  // (index: false): the page route below serves it with its own headers.
-  const statics = new Map<string, express.Handler>();
-  for (const page of pages.values()) {
-    statics.set(page.slug, express.static(page.root, {
-      index: false,
-      redirect: false,
-      fallthrough: true,
-      setHeaders(res, file) {
-        const rel = path.relative(page.root, file).split(path.sep);
-        res.setHeader('Cache-Control', rel[0] === 'assets' ? ASSET_CACHE : PAGE_CACHE);
-      },
-    }));
-  }
+  const handlers = new Map<string, PageHandler>();
+  for (const page of pages.values()) handlers.set(page.slug, spaPage(page.root, page.frameAncestors));
+  const siteHost = (o.siteHost ?? '').trim().toLowerCase();
+  const sitePages = new Set(o.sitePages ?? []);
 
   router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     const host = (req.hostname || '').toLowerCase();
-    const onCanonical = !canonical || host === canonical;
 
     if (req.path === '/') {
       if (canonical && host === canonical && homeUrl) return res.redirect(302, homeUrl);
@@ -167,35 +161,16 @@ export function talkPagesRouter(o: TalkPagesOptions): express.Router {
     const slug = pages.has(first) ? first : aliases.get(first);
     if (!slug) return next();
     const page = pages.get(slug)!;
+    const onCanonical = !canonical || host === canonical
+      || (siteHost !== '' && host === siteHost && sitePages.has(slug));
 
-    const query = req.originalUrl.slice(req.originalUrl.split('?')[0].length);
+    const query = queryOf(req);
     const restPath = rest.length > 0 ? `/${rest.join('/')}` : '/';
     const wanted = `/${slug}${restPath}`;
     if (!onCanonical) return res.redirect(301, `https://${canonical}${wanted}${query}`);
     if (first !== slug || req.path === `/${slug}`) return res.redirect(301, `${wanted}${query}`);
     if (!page.built) return next();
-
-    if (page.frameAncestors) res.setHeader('Content-Security-Policy', page.frameAncestors);
-
-    const sendIndex = () => {
-      res.setHeader('Cache-Control', PAGE_CACHE);
-      res.sendFile(path.join(page.root, 'index.html'));
-    };
-    if (restPath === '/' || restPath === '/index.html') return sendIndex();
-
-    // The static handler sees the path inside the page's root.
-    const url = req.url;
-    req.url = `${restPath}${query}`;
-    statics.get(slug)!(req, res, (err?: unknown) => {
-      req.url = url;
-      if (err) return next(err);
-      const last = rest[rest.length - 1] ?? '';
-      if (last.includes('.')) {
-        res.removeHeader('Content-Security-Policy');
-        return res.status(404).type('text/plain').send('Not found');
-      }
-      sendIndex();
-    });
+    handlers.get(slug)!(req, res, next, rest, query);
   });
 
   return router;

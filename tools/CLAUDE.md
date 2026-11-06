@@ -60,20 +60,22 @@ The one build of the per-project frontends, driven by `projects/*/project.json`:
 
 ```bash
 npx tsx tools/build-frontends.ts --app talk --out packages/frontend-chat/dist-talk          # npm run build:server (the API image): talk pages, same origin
-npx tsx tools/build-frontends.ts --app sim --out _site --api-base https://api.ai-med.live    # deploy-pages.yml: simulators
+npx tsx tools/build-frontends.ts --app sim --out packages/frontend-chat/dist-site            # tools/build-site.ts runs this: simulators, same origin
 ```
 
 `--app talk` builds every project whose flags resolve to app "talk" (`VITE_APP=talk`), `--app sim` every other one, each into `<out>/<url-slug>/` with `VITE_BASE_PATH=/<url-slug>/` (`projectUrlSlug`, chat-core). `--api-base` sets `VITE_API_BASE_URL`; without it the variable is cleared and the page calls `/api` on its own origin. A project's `static/*` and `images/*.png` are copied into its build. `--only a,b` limits the run. The talk pages the API server serves (`packages/api/src/talk/pages.ts`) are read from `packages/frontend-chat/dist-talk/` (gitignored).
 
-## build-talk-redirects.ts
+Every page is now served by the API on its own origin, so no deploy passes `--api-base`; the option stays for a build meant for another host.
 
-For a static site that used to carry copies of the talk pages: a stub at `<out>/<url-slug>/index.html` for every talk project that sends the reader to the same path, query and fragment on `--to` (with a noscript link), and `<out>/404.html` written from the `--page-404` template with the map of talk slugs and `urlAliases` (alias to its project's slug) at its `/*TALK_REDIRECTS*/` marker, so deeper paths and aliases go the same way. `--keep a,b` names talk projects the site still builds itself (no stub, not in the map; each must already be built in `<out>`). `--to` is required: the tool names no host.
+## build-site.ts
+
+The site the API server serves on `ai-med.live` (`packages/api/src/sim/site.ts`), written into `--out` (emptied first): every simulator at `<url-slug>/` (`build-frontends.ts --app sim`, no `--api-base`), the landing files from `landing/` (`index.html`, `admin.html` as `admin/index.html`, `npj26/index.html`, `favicon.svg`, `img/`) and `projects.json`, the landing and admin pages' project list. It fails if any evaluation data reaches the site.
 
 ```bash
-npx tsx tools/build-talk-redirects.ts --out _site --to https://chat.example.com --page-404 landing/404.html --keep decks
+npx tsx tools/build-site.ts --out packages/frontend-chat/dist-site    # npm run build:server (the API image)
 ```
 
-Tests: `packages/api/src/talk-redirects.test.ts` (fixture projects; runs the stub's and the 404 page's scripts against a fake location).
+It replaced the GitHub Pages build, and `tools/build-talk-redirects.ts` with it, on 2026-11-06. Tests: `packages/api/src/site.test.ts` (the serving side) and the image boot in `.github/workflows/test.yml`.
 
 ## deploy-commit.sh
 

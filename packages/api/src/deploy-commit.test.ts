@@ -104,7 +104,6 @@ describe('the image commit under this repository\'s .dockerignore', { skip: noRe
         'docs/deployment.md': 'more docs\n',
         'README.md': 'more docs\n',
         '.github/workflows/test.yml': 'on: [push]\n',
-        'landing/index.html': '<!doctype html><p>\n',
         'tools/push-content.ts': 'export const x = 1;\n',
         'eval/scripts/grade.py': 'print(1)\n',
         'packages/api/src/server.test.ts': 'test 2\n',
@@ -132,12 +131,12 @@ describe('the image commit under this repository\'s .dockerignore', { skip: noRe
     } finally { r.remove(); }
   });
 
-  test('server code, project content, the dashboard page and the talk build are image commits', () => {
+  test('server code, project content, the dashboard page, the page builds and the landing are image commits', () => {
     const r = new Repo();
     try {
       r.commit('code', base());
       for (const file of ['packages/api/src/server.ts', 'projects/demo/project.json',
-        'eval/dashboard/index.html', 'tools/build-frontends.ts', 'package.json']) {
+        'eval/dashboard/index.html', 'tools/build-frontends.ts', 'landing/index.html', 'package.json']) {
         const c = r.commit(`edit ${file}`, { [file]: `changed ${file}\n` });
         assert.equal(r.deployCommit(c), c, file);
       }
@@ -162,7 +161,7 @@ describe('the image commit under this repository\'s .dockerignore', { skip: noRe
     try {
       const c = r.commit('code', base());
       assert.deepEqual(r.list(c), [
-        '.dockerignore', 'Dockerfile', 'eval/dashboard/index.html', 'package.json',
+        '.dockerignore', 'Dockerfile', 'eval/dashboard/index.html', 'landing/index.html', 'package.json',
         'packages/api/src/server.ts', 'projects/demo/eval/index.json', 'projects/demo/project.json',
         'tools/build-frontends.ts',
       ]);
